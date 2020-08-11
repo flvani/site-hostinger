@@ -11,10 +11,17 @@ window.dataLayer = window.dataLayer || [];
 
 
 SITE.ga = function () {
-    if( ga && window.location.href.indexOf( 'diatonicmap.com.br') >= 0
+    if( ga && ( window.location.href.indexOf( 'diatonicmap.com.br') >= 0 || window.location.href.indexOf( 'android_asset') >= 0 )
            && SITE.getVersion('mainSITE', '' ) !== 'debug' 
            && SITE.getVersion('mainSITE', '' ) !== 'unknown'  ) {
-        ga.apply(this, arguments);
+        if (window.AnalyticsApplication) {
+            // Call Android interface
+            window.AnalyticsApplication.logEvent(JSON.stringify(arguments));
+        } else {
+            // No Android interface found
+            console.log("No native APIs found.");
+            ga.apply(this, arguments);
+        }
     } else {
         console.log('Funcao ga não definida.');
     }

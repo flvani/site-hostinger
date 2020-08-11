@@ -114,9 +114,9 @@ SITE.Mapa = function( interfaceParams, tabParams, playerParams ) {
     this.gaitaNamePlaceHolder = document.getElementById(interfaceParams.accordionNamePlaceHolder);
     this.gaitaImagePlaceHolder = document.getElementById(interfaceParams.accordionImagePlaceHolder);
     
-    this.printButton.addEventListener("touchstart", function(event) {  that.printPartiture(this, event); }, false);
+    //this.printButton.addEventListener("touchstart", function(event) {  that.printPartiture(this, event); }, false);
     this.printButton.addEventListener("click", function(event) { that.printPartiture(this, event); }, false);
-    this.toolsButton.addEventListener("touchstart", function(event) { that.openEstudio(this, event); }, false);
+    //this.toolsButton.addEventListener("touchstart", function(event) { that.openEstudio(this, event); }, false);
     this.toolsButton.addEventListener("click", function(event) { that.openEstudio(this, event); }, false);
     this.fileLoadMap.addEventListener('change', function(event) { that.loadMap(event); }, false);        
     this.fileLoadRepertoire.addEventListener('change', function(event) { that.carregaRepertorioLocal(event); }, false);        
@@ -1167,6 +1167,12 @@ SITE.Mapa.prototype.showSettings = function() {
 //                <th colspan="2">Acordeão:</th><td><div id="settingsAcordeonsMenu" class="topMenu"></div></td>\
 //              </tr>\
 
+        var cookieValue = document.cookie.match(/(;)?cookiebar=([^;]*);?/)[2];
+        var cookieSets = ""
+        if (cookieValue == 'CookieDisallowed') { // CookieAllowed
+            cookieSets = '<td></td><td>&nbsp;<a href="#" onclick="document.cookie=\'cookiebar=;expires=Thu, 01 Jan 1970 00:00:01 GMT;path=/\'; setupCookieBar(); return false;">Click aqui para habilitar cookies</a><td>'
+        }
+
         this.settings.window.dataDiv.innerHTML= '\
         <div class="menu-group">\
             <table>\
@@ -1200,14 +1206,16 @@ SITE.Mapa.prototype.showSettings = function() {
               <tr>\
                 <td> </td><td colspan="2"><input id="chkAutoRefresh" type="checkbox">&nbsp;<span data-translate="PrefsPropsCKAutoRefresh" >'+SITE.translator.getResource('PrefsPropsCKAutoRefresh')+'</span></td>\
               </tr>\
+              <tr>'+ cookieSets +'</tr>\
             </table>\
         </div>\
         <div id="pg" class="pushbutton-group" style="right: 0; bottom: 0;" >\
             <div id="botao1"></div>\n\
             <div id="botao2"></div>\n\
             <div id="botao3"></div>\n\
-        </div>';
-        
+        </div>' ;
+    
+
         this.settings.window.addPushButtons([
             'botao1|apply',
             'botao2|reset|PrefsReset',

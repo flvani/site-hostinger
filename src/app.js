@@ -1,12 +1,4 @@
 
-/* 
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
-
-
-
 if (!window.SITE)
     window.SITE = {};
 
@@ -19,6 +11,8 @@ SITE.App = function( interfaceParams, tabParams, playerParams ) {
     this.lastStaffGroup = -1; // também auxilia no controle de scroll
     this.container = document.getElementById('mapaDiv')
     this.tab = {title:'', text:'', ddmId:'menuSongs', type: 'songs' }
+    
+    this.Back = this.Close; // define a funcao a ser chamada quando o comando back é acioando no telefone
     
     ABCXJS.write.color.useTransparency = SITE.properties.colors.useTransparency;
     ABCXJS.write.color.highLight = SITE.properties.colors.highLight;
@@ -43,8 +37,7 @@ SITE.App = function( interfaceParams, tabParams, playerParams ) {
                      || this.accordion.loaded.getFirstSong();
 
     this.openBtn = document.getElementById(interfaceParams.openBtn) ;
-    //this.openBtn.addEventListener("touchstart", function(event) {  that.openEstudio(); }, false);
-    this.openBtn.addEventListener("click", function(event) { that.openEstudio(); }, false);
+    this.openBtn.addEventListener("click", function(event) { that.openAppView(); }, false);
 
     this.songSelector = document.getElementById(interfaceParams.mapMenuSongsDiv) ;
 
@@ -56,32 +49,7 @@ SITE.App = function( interfaceParams, tabParams, playerParams ) {
         that.showSettings();
     }, false );
 
-    this.aPolicy = document.getElementById("aPolicy");
-    this.aTerms = document.getElementById("aTerms");
-    this.aVersion = document.getElementById("aVersion");
-
-    this.aPolicy.addEventListener("click", function(evt) {
-        evt.preventDefault();
-        this.blur();
-        //that.showModal('PrivacyTitle', '', 'privacy/index.html', { width: '1024', height: '600', print:false } );
-        that.showModal('PrivacyTitle', '', 'privacidade/index.html', { width: '800', height: '500', print:false } );
-    }, false );
-
-    this.aTerms.addEventListener("click", function(evt) {
-        evt.preventDefault();
-        this.blur();
-        //that.showModal('TermsTitle', '', 'privacy/terms.n.conditions.html', { width: '1024', height: '600', print:false } );
-        that.showModal('TermsTitle', '', 'privacidade/termos.e.condicoes.html', { width: '800', height: '500', print:false } );
-    }, false );
-
-    this.aVersion.addEventListener("click", function(evt) {
-        evt.preventDefault();
-        this.blur();
-        //that.showModal('AboutAppTitle', '', 'privacy/aboutApp.html', { width: '1024', height: '600', print:false } );
-        that.showModal('AboutAppTitle', '', 'privacidade/sobreApp.html', { width: '800', height: '500', print:false } );
-    }, false );
-
-   
+    this.setPrivacyLang();
 
     this.defineInstrument(true);
     
@@ -207,17 +175,17 @@ SITE.App.prototype.menuCallback = function (ev) {
     }
 };
 
-SITE.App.prototype.openEstudio = function (button, event) {
+SITE.App.prototype.openAppView = function (button, event) {
     var self = this;
     var tab = self.getActiveTab();
-    
+
     if(event) {
         event.preventDefault();
         button.blur();
     }
     
-    if( ! this.studio ) {
-        this.studio = new SITE.AppView(
+    if( ! this.appView ) {
+        this.appView = new SITE.AppView(
             null
             ,{   // interfaceParams
                 studioDiv: 'studioDiv'
@@ -247,7 +215,7 @@ SITE.App.prototype.openEstudio = function (button, event) {
                         ,label:false
                     }
                 }
-               ,onchange: function( studio ) { studio.onChange(); }
+               ,onchange: function( appView ) { appView.onChange(); }
           } 
           , {   // playerParams
                 modeBtn: "modeBtn"
@@ -268,13 +236,15 @@ SITE.App.prototype.openEstudio = function (button, event) {
         );
     }
 
+    this.Back = this.closeAppView;
+
     if( tab.text ) {
         SITE.ga('send', 'event', 'Mapa5', 'view', tab.title);
         
         
-        var loader = this.startLoader( "OpenEstudio" );
+        var loader = this.startLoader( "openAppView" );
         loader.start(  function() { 
-            self.studio.setup( tab, self.accordion.getId() );
+            self.appView.setup( tab, self.accordion.getId() );
             loader.stop();
         }, '<br/>&#160;&#160;&#160;'+SITE.translator.getResource('wait')+'<br/><br/>' );
     }
@@ -714,20 +684,21 @@ SITE.App.prototype.applySettings = function() {
         SITE.ga('send', 'event', 'Configuration', 'changeInstrument', SITE.properties.options.pianoSound?'piano':'accordion');
         
         this.defineInstrument();
+        this.setPrivacyLang();
     }
     
     //this.media.show(this.getActiveTab());
 
-    if (this.studio) {
+    if (this.appView) {
         
-        //this.studio.setAutoRefresh(SITE.properties.options.autoRefresh);
+        //this.appView.setAutoRefresh(SITE.properties.options.autoRefresh);
 
-        this.studio.warningsDiv.style.display = SITE.properties.options.showWarnings ? 'block' : 'none';
+        this.appView.warningsDiv.style.display = SITE.properties.options.showWarnings ? 'block' : 'none';
         
         if( SITE.properties.options.keyboardRight )
-            this.studio.resize = this.studio.resizeRight;
+            this.appView.resize = this.appView.resizeRight;
         else    
-            this.studio.resize = this.studio.resizeLeft;
+            this.appView.resize = this.appView.resizeLeft;
 
     }
     
@@ -751,28 +722,28 @@ SITE.App.prototype.changePageOrientation = function (orientation) {
 
 
 SITE.App.prototype.resizeActiveWindow = function() {
-    if(this.studio && window.getComputedStyle(this.studio.Div.parent).display !== 'none') {
-       this.studio.resize();
+    if(this.appView && window.getComputedStyle(this.appView.Div.parent).display !== 'none') {
+       this.appView.resize();
     } else {    
         this.resize();
     }    
 };
 
 SITE.App.prototype.silencia = function(force) {
-    if(this.studio && window.getComputedStyle(this.studio.Div.parent).display !== 'none') {
-        if( this.studio.midiPlayer.playing) {
+    if(this.appView && window.getComputedStyle(this.appView.Div.parent).display !== 'none') {
+        if( this.appView.midiPlayer.playing) {
             if(force )
-                this.studio.midiPlayer.stopPlay();
+                this.appView.midiPlayer.stopPlay();
             else
-                this.studio.startPlay('normal'); // pause
+                this.appView.startPlay('normal'); // pause
             
         }
     }
 };
 
 SITE.App.prototype.setFocus = function() {
-/*     if(this.studio && window.getComputedStyle(this.studio.Div.parent).display !== 'none') {
-        this.studio.editorWindow.aceEditor.focus();
+/*     if(this.appView && window.getComputedStyle(this.appView.Div.parent).display !== 'none') {
+        this.appView.editorWindow.aceEditor.focus();
     } */
 }
 
@@ -793,7 +764,7 @@ SITE.App.prototype.showModal = function ( title, subTitle, url, options ) {
         this.modalWindow = new DRAGGABLE.ui.Window(
             null
           , ['print|printBtn']
-          , {title: '', translator: SITE.translator, draggable: true, statusbar: false, top: "30px" , height:"90%", left: "60px", width:"calc(90% - 60px)", zIndex: 70}
+          , {title: '', translator: SITE.translator, draggable: true, statusbar: false, top: "30px" , height:"90%", left: "60px", width:"calc(92% - 60px)", zIndex: 70}
           , { listener: this, method:'modalCallback' }
         );
         this.modalWindow.dataDiv.style.height = "auto";
@@ -806,6 +777,8 @@ SITE.App.prototype.showModal = function ( title, subTitle, url, options ) {
     
         this.modalWindow.addPushButtons( [ 'btClose|close' ] );
     }
+
+    this.Back = this.modalClose;
 
     this.modalWindow.setTitle(title, SITE.translator);
     this.modalWindow.setSubTitle(subTitle, SITE.translator);
@@ -830,7 +803,7 @@ SITE.App.prototype.showModal = function ( title, subTitle, url, options ) {
     that.iframe.addEventListener("load", function () { 
         that.container = this.contentDocument.getElementById('modalContainer');
         that.info = this.contentDocument.getElementById('siteVerI');
-        $(that.iframe).ready(function() { 
+        $(that.iframe).ready(function() {
 
             if( that.info ) that.info.innerHTML=SITE.siteVersion;
             
@@ -858,29 +831,15 @@ SITE.App.prototype.showModal = function ( title, subTitle, url, options ) {
             
             that.modalWindow.topDiv.style.opacity = "1";
             loader.stop();
-    });    
-
-    loader.start(  function() { 
-    
-
-        });
-
-
+        });    
     }, '<br/>&#160;&#160;&#160;'+SITE.translator.getResource('wait')+'<br/><br/>' );
-
-
 };
 
 SITE.App.prototype.modalCallback = function ( action ) {
     that = this;
 
     if( action === 'CLOSE' ) {
-/*         $(that.iframe).ready(function() { // to avoid ajax cache
-            that.modalWindow.setVisible(false);
-        });
- */        that.iframe.setAttribute("data", ""); 
-        that.modalWindow.setVisible(false);
-
+        that.modalClose();
     } else if( action === 'PRINT' ) {
         var container = this.iframe.contentDocument.getElementById('modalContainer');
         if( container ) {
@@ -892,4 +851,63 @@ SITE.App.prototype.modalCallback = function ( action ) {
             //container.style.top = t;
         }
     }
+};
+
+SITE.App.prototype.modalClose = function () {
+    this.iframe.setAttribute("data", ""); 
+    this.modalWindow.setVisible(false);
+    this.Back = this.Close;
+};
+
+SITE.App.prototype.closeAppView = function() {
+    this.appView.setVisible(false);
+    this.appView.keyboardWindow.setVisible(false);
+    this.appView.studioStopPlay();
+    this.Back = this.Close;
+    SITE.SaveProperties();
+};
+
+SITE.App.prototype.Close = function (  ) {
+    window.DiatonicApp &&  window.DiatonicApp.closeApp();
+};
+
+SITE.App.prototype.goBackOrClose = function (  ) {
+    return this.Back();
+};
+    
+SITE.App.prototype.setPrivacyLang = function (  ) {
+    var that = this;
+    this.aPolicy = document.getElementById("aPolicy");
+    this.aTerms = document.getElementById("aTerms");
+    this.aVersion = document.getElementById("aVersion");
+
+    this.aPolicy.addEventListener("click", function(evt) {
+        evt.preventDefault();
+        this.blur();
+        if( SITE.properties.options.language.toUpperCase().indexOf('PT')>=0 )  {
+            that.showModal('PrivacyTitle', '', 'privacidade/politica.html', { width: '800', height: '500', print:false } );
+        } else {
+            that.showModal('TermsTitle', '', 'privacy/policy.html', { width: '800', height: '500', print:false } );
+        }
+    }, false );
+
+    this.aTerms.addEventListener("click", function(evt) {
+        evt.preventDefault();
+        this.blur();
+        if( SITE.properties.options.language.toUpperCase().indexOf('PT')>=0 )  {
+            that.showModal('TermsTitle', '', 'privacidade/termos.e.condicoes.html', { width: '800', height: '500', print:false } );
+        } else {
+            that.showModal('TermsTitle', '', 'privacy/terms.n.conditions.html', { width: '800', height: '500', print:false } );
+        }
+    }, false );
+
+    this.aVersion.addEventListener("click", function(evt) {
+        evt.preventDefault();
+        this.blur();
+        if( SITE.properties.options.language.toUpperCase().indexOf('PT')>=0 )  {
+            that.showModal('AboutAppTitle', '', 'privacidade/sobreApp.html', { width: '800', height: '500', print:false } );
+        } else {
+            that.showModal('AboutAppTitle', '', 'privacy/aboutApp.html', { width: '800', height: '500', print:false } );
+        }
+    }, false );
 };

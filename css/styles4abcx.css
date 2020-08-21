@@ -344,7 +344,34 @@ and open the template in the editor.
     top: -4px;
     height:20px;
 }    
-.btn-group ,
+
+.checkbox-group {
+    display: inline-block;
+    margin-left: 10px;
+    margin-top: 2px;
+    height: 25px;
+    padding: 2px;
+    vertical-align: top;
+}
+
+.others-group {
+    display: inline-block;
+    vertical-align: top;
+    height: 25px;
+}
+
+.playtime-label {
+    display: inline-block !important;
+    width:90px !important;
+    text-align: right !important;
+    padding: 4px !important;
+    font-family: "Milonga", "Lucida Grande","Lucida Sans Unicode", Tahoma, Sans-Serif !important;
+    font-size: 16px !important;
+    margin: 2px 5px 1px 5px!important;
+}
+  
+    
+  .btn-group ,
 .dropdown-group {
     width: auto;
     white-space: normal;
@@ -554,16 +581,6 @@ and open the template in the editor.
     -webkit-transition: max-height 0.5s ease-in-out;
     transition: max-height 0.5s ease-in-out;
 }
-
-.checkboxGroup {
-    display: inline-block;
-    margin-left: 10px;
-    margin-top: 2px;
-    height: 25px;
-    padding: 2px;
-    vertical-align: top;
-}
-
 
 .rounded-corners {
     border: 2px solid;
@@ -1124,117 +1141,104 @@ and open the template in the editor.
     Created on : 12/11/2018, 14:19:16
     Author     : Flávio Vani
 */
-.slidecontainer {
-    float: left;
-    height: 23px;
-    width: 134px; 
-    margin-top: 1px;
-    border-radius: 3px;
+
+.slide-container {
+  position: relative;
+  display: inline-block;
+  margin: 1px 5px 1px 5px;
+  border-radius: 3px;
+  font-family: "Milonga", "Lucida Grande","Lucida Sans Unicode", Tahoma, Sans-Serif !important;
+	font-size: 12px;
+  font-weight: bolder;
+  text-align: center;
 }
 
-.slidecontainer > .layer1 {
-    z-index: 1;
-    width: 134px;
-    position:absolute;
-    height: 23px !important;
-    opacity: 1;
-    border-radius: 3px;
-    background: gray; 
-    background: #FFAFAF; 
-}
-.slidecontainer > .layer2 {
-    z-index: 2;
-    width: 134px; 
-    position:absolute;
-    
+.slide-tracker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border-radius: 5px;
 }
 
-.slidelabel {
-    width: 134px !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    margin-top: 4px !important;
-    text-align: center !important;
+.slide-thumb  {
+  position: relative;
+  margin: 0;
+  padding: 0;
 }
 
-.slidebutton {
-    margin: 0 !important;
-    padding: 0 !important;
-    height: 23px !important;
-    font-size: 18px !important;
-    cursor: pointer !important; 
+.slide-thumb > span{
+  display: block;
+	position: absolute;
+  left: 50%;
+  top: 0;
+	transform: translate(-50%, 0);
+  border-radius: 6px;
+  text-shadow: 1px 1px gray;
+  box-shadow: 1px 1px gray;
+  opacity: 60%;
 }
 
-.slidebuttonDiv {
-    margin: 0 !important;
-    padding: 0 !important;
-    height: 23px !important;
-    width: 17px !important;
-    float: left;
+.slide-container > input[type='range'] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  background: transparent;
+  cursor: crosshair;
 }
 
-.slidebuttonDiv:hover {
-    background-color: transparent;
+.slide-container > input[type='range']{
+  -webkit-appearance: none;
+}
+.slide-container > input[type='range']::-webkit-slider-runnable-track{
+  -webkit-appearance: none;
+} 
+.slide-container > input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
 }
 
-.slider {
-    margin: 0;
-    padding: 0;
-    float:left;
-    width: 100px; 
-    height: 23px; 
-    appearance: none;
-    -webkit-appearance: none;  /* Override default CSS styles */
-    -moz-appearance: none; /* Override default look */
-    background: #d3d3d3; /* Grey background */
-    outline: none; /* Remove outline */
-    border: none;
-    border-radius: 0;
-    opacity: 0.3; /* Set transparency (for mouse-over effects on hover) */
-    -webkit-transition: .2s; /* 0.2 seconds transition on hover */
-    transition: opacity .2s;
+.slide-container >  input[type='range']::-moz-range-track {
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  background: transparent;
+  background-size: 0% 100%;
 }
 
-.slider:hover {
-    opacity: 0.5; /* Fully shown on mouse-over */
-    cursor: pointer; /* Cursor on hover */
+.slide-container > input[type='range']::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  background: transparent;
+  background-size: 0% 100%;
 }
 
-/* The slider handle (use -webkit- (Chrome, Opera, Safari, Edge) and -moz- (Firefox) to override default look) */ 
-.slider::-webkit-slider-thumb {
-    appearance: none;
-    -webkit-appearance: none; /* Override default look */
-    -moz-appearance: none; /* Override default look */
-    width: 23px; /* Set a specific slider handle width */
-    height: 23px; /* Slider handle height */
+.slide-container > input[type='range']::-webkit-slider-thumb {
+  margin-top: -1px;
+  border: none;
+  height: 100%;
+  width: 0;
+  background:transparent;
+  border-radius: 5px;
 }
 
-.slider::-webkit-slider-runnable-track {
+.slide-container >  input[type='range']::-moz-range-thumb {
+  margin-top: -1px;
+  border: none;
+  height: 100%;
+  width: 0;
+  background:transparent;
+  border-radius: 5px;
 }
 
-.slider::-moz-range-thumb {
-    appearance: none;
-    -moz-appearance: none; /* Override default look */
-    -webkit-appearance: none; /* Override default look */
-    width: 23px; /* Set a specific slider handle width */
-    height: 23px; /* Slider handle height */
-    border: none; /* Remove outline */
-    border-radius: 0;
+.slide-container > input[type='range']:focus {
+  outline: none;
 }
-
-.slider::-moz-range-track {
-   width: 0;
-   height: 0;
-   background: none;
-   border: none;
-   border-radius: 0;
-}
-
-.rev180dg {
-  transform: rotate(180deg) translate(0px,2px);
-}
-
-.normal {
-  transform: translate(-1px,4px);
-}
-

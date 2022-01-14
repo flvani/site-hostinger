@@ -9909,7 +9909,8 @@ ABCXJS.write.Printer.prototype.printTune = function(abctune, options) {
         }
     }
     
-    this.paper.topDiv.style.width = "" +  (this.maxwidth + this.paddingright) + "px";
+    //this.paper.topDiv.style.width = "" +  (this.maxwidth + this.paddingright) + "px";
+    this.paper.topDiv.style.width = "auto";
 
 };
 
@@ -10387,9 +10388,9 @@ SVG.Printer = function ( d ) {
         var h = size? size.h*this.scale + 'px' : '0';
         var d = size? '' : 'display: none; ';
         
-//        // not in use
-//        id = id? 'id="'+id+'"' : '' ;
-//        kls = kls? 'class="'+kls+'"' : '' ;
+        //        // not in use
+        //        id = id? 'id="'+id+'"' : '' ;
+        //        kls = kls? 'class="'+kls+'"' : '' ;
         
         return '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="'+d+'width:'+w+'; height: '+h+';" >\n';
     };
@@ -12775,12 +12776,14 @@ ABCXJS.midi.Player.prototype.getTime = function() {
     }
     
     var secs  = Math.floor(time/1000);
-    var ms    = Math.floor((time - secs*1000)/10);
+    var cs    = Math.floor((time - secs*1000)/10);
     var mins  = Math.floor(secs/60);
     var secs  = secs - mins*60;
-    var cTime  = pad(mins,2) + ':' + pad(secs,2) + '.' + pad(ms,2);
-    return {cTime: cTime, time: time };
+    var cTimeMiS  = pad(mins,2) + ':' + pad(secs,2) ;
+    var cTimeMiScs  = pad(mins,2) + ':' + pad(secs,2) + '.' + pad(cs,2);
+    return { cTime: cTimeMiS, cTimeMiScs: cTimeMiScs, time: time };
 };
+
 /*!
  * perfect-scrollbar v1.3.0
  * (c) 2017 Hyunje Jun
@@ -12896,7 +12899,7 @@ EventElement.prototype.bind = function bind (eventName, handler) {
     this.handlers[eventName] = [];
   }
   this.handlers[eventName].push(handler);
-  this.element.addEventListener(eventName, handler, false);
+  this.element.addEventListener(eventName, handler, {passive:true});
 };
 
 EventElement.prototype.unbind = function unbind (eventName, target) {
@@ -14313,7 +14316,7 @@ DRAGGABLE.ui.Window = function( parent, aButtons, options, callback, aToolBarBut
 
         this.resizeCorner.addEventListener( 'mouseover', function() { self.resizeCorner.style.cursor='nwse-resize'; }, false);
         this.resizeCorner.addEventListener( 'mousedown', this.mouseResize, false);
-        this.resizeCorner.addEventListener('touchstart', this.mouseResize, false);
+        this.resizeCorner.addEventListener('touchstart', this.mouseResize, {passive:true});
     }
     
     this.divMove = function (e) {
@@ -14552,7 +14555,7 @@ DRAGGABLE.ui.Window.prototype.addTitle = function( id, title  ) {
         self.menuDiv.addEventListener( 'mouseover', function() { self.menuDiv.style.cursor='move'; }, false);
     }
     self.menuDiv.addEventListener( 'mousedown', self.mouseMove, false);
-    self.menuDiv.addEventListener('touchstart', self.mouseMove, false);
+    self.menuDiv.addEventListener('touchstart', self.mouseMove, {passive:true});
     
 };
 
@@ -14611,7 +14614,7 @@ DRAGGABLE.ui.Window.prototype.addAction = function( action, div, self ) {
     };
     
     div.addEventListener( 'click', f, false);
-    div.addEventListener( 'touchstart', f, false);
+    div.addEventListener( 'touchstart', f, {passive:true});
     div.addEventListener( 'mousedown', function(e) { e.preventDefault(); e.stopPropagation(); }, false);
 };
 
@@ -14824,7 +14827,7 @@ DRAGGABLE.ui.DropdownMenu = function (topDiv, options, menu) {
             e.stopPropagation(); 
             e.preventDefault(); 
             self.eventsCentral(this.getAttribute("data-ddm")); 
-        }, false);
+        }, {passive:true});
  
         e2.addEventListener("keydown",function(e) {
             e.stopPropagation(); 
@@ -15288,7 +15291,7 @@ DRAGGABLE.ui.DropdownMenu.prototype.addAction = function( ddm, action, div, self
        div.addEventListener( 'touchmove', swiping, false );
        e.preventDefault(); 
        e.stopPropagation(); 
-    }, false);
+    }, {passive:true});
     
     div.addEventListener( 'touchend', function (e) {
         

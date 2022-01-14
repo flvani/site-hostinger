@@ -366,17 +366,19 @@ and open the template in the editor.
 .playtime-label {
     display: inline-block;
     vertical-align: middle;
-    width:90px;
-    text-align: right;
+    width:60px;
+    text-align: center;
     line-height: 28px;
     padding: 0;
     margin: 0;
-    font-family: "Milonga", "Lucida Grande","Lucida Sans Unicode", Tahoma, Sans-Serif;
-    font-size: 16px;
-}
-  
-    
-  .btn-group ,
+    font-family: 'Lucida Sans Unicode', 'Trebuchet MS', 'Arial';
+    font-stretch: narrower;
+    font-weight: bold;
+    font-kerning: normal;
+    font-size: 20px;
+}   
+
+.btn-group ,
 .dropdown-group {
     width: auto;
     white-space: normal;
@@ -731,8 +733,8 @@ and open the template in the editor.
     float: left;
     background: #e9edf0;
     position: relative;
-    min-width: 756px;
-    min-height: 304px;
+    min-width: 680px;
+    min-height: 240px;
     z-index: 10;
     opacity: 1;
     display:block;
@@ -745,8 +747,8 @@ and open the template in the editor.
 }
 
 .tv-container {
-    min-width: 1024px;
-    min-height: 400px;
+    min-width: 820px;
+    min-height: 240px;
     width: inherit;
     height: inherit;
 }
@@ -776,8 +778,8 @@ and open the template in the editor.
     position: relative;
     margin: 0px auto;
     padding: 0px;
-    width: 600px;
-    height: 400px;
+    width: 820px;
+    height: 240px;
     overflow: auto;
 }
 /*

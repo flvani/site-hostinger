@@ -31,6 +31,7 @@ SITE.Mapa = function( interfaceParams, tabParams, playerParams ) {
     this.settingsMenu = document.getElementById(interfaceParams.settingsMenu);
     this.mapDiv = document.getElementById(interfaceParams.mapDiv);
 
+    //interfaceParams.accordion_options.render_keyboard_opts.scale = 0.8;
     this.accordion = new window.ABCXJS.tablature.Accordion( 
           interfaceParams.accordion_options 
         , SITE.properties.options.tabFormat 
@@ -167,7 +168,7 @@ SITE.Mapa = function( interfaceParams, tabParams, playerParams ) {
     this.stopButton.addEventListener("click", function(evt) {
         evt.preventDefault();
         if(that.currentPlayTimeLabel)
-            that.currentPlayTimeLabel.innerHTML = "00:00.00";
+            that.currentPlayTimeLabel.innerHTML = "00:00";
         that.midiPlayer.stopPlay();
     }, false);
     
@@ -1054,10 +1055,13 @@ SITE.Mapa.prototype.renderTAB = function( tab ) {
     }
     
     var paper = new SVG.Printer( tab.div );
+    
+    //this.printerparams = {scale: 0.8}; // flavio - scale era 1
+
     tab.printer = new ABCXJS.write.Printer(paper, this.printerparams, this.accordion.loadedKeyboard );
             
     //tab.printer.printTune( tab.abc, {color:'black', backgroundColor:'#ffd' } ); 
-    tab.printer.printTune( tab.abc ); 
+    tab.printer.printABC( tab.abc ); // flavio - era printTune
     
     tab.printer.addSelectListener(this);
     this.accordion.clearKeyboard(true);
@@ -1218,11 +1222,11 @@ SITE.Mapa.prototype.showSettings = function() {
                 <th colspan="2"><span data-translate="PrefsIdiom" >'+SITE.translator.getResource('PrefsIdiom')+'</span></th>\
                 <th><div id="settingsLanguageMenu" class="topMenu"></div></th>\
               </tr>\
-              <tr>\
+              <tr style="display:none;">\
               <th colspan="2"><br><span data-translate="PrefsTabFormat" >'+SITE.translator.getResource('PrefsTabFormat')+'</span></th>\
               <th><br><div id="settingsTabMenu" class="topMenu"></div></th>\
               </tr>\
-              <tr>\
+              <tr style="display:none;">\
                 <td> </td><td colspan="2"><input id="chkOnlyNumbers" type="checkbox">&nbsp;<span data-translate="PrefsPropsOnlyNumbers" >'+SITE.translator.getResource('PrefsPropsOnlyNumbers')+'</span></td>\
               </tr>\
               <tr>\
@@ -1398,7 +1402,7 @@ SITE.Mapa.prototype.applySettings = function() {
         if (this.studio) {
             this.studio.accordion.setFormatoTab(SITE.properties.options.tabFormat,!SITE.properties.options.tabShowOnlyNumbers)
             this.studio.accordion.loadedKeyboard.reprint();
-            this.studio.renderedTune.printer.printTune( this.studio.renderedTune.abc ); 
+            this.studio.renderedTune.printer.printABC( this.studio.renderedTune.abc ); // falvio - era printTune
         }
 
         if (this.tab2part) {

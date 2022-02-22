@@ -2428,43 +2428,48 @@ SITE.Mapa.prototype.showHelp = function ( title, subTitle, url, options ) {
 
         } else {
             
-            window.setTimeout( function() {
-                that.helpWindow.dataDiv.style.opacity = "0";
-                /* se pensar em implementar janela full para o help, eis o começo
-                    that.helpWindow.move(0,80);
-                    that.helpWindow.setSize( "calc( 100% - 10px)", "calc( 100% - 90px)" );
-                    options.height = that.helpWindow.topDiv.clientHeight;
-                    that.iframe.style.height = options.height + 'px';
-                */
+            window.setInterval( function checkFrameLoaded() {
                 var header = that.iframe.contentDocument.getElementById('helpHeader');
-                var frm = that.iframe.contentDocument.getElementById('helpFrame');
-                var container = that.iframe.contentDocument.getElementById('helpContainer');
-                if( header ) header.style.display = 'none';
-                if( frm ) frm.style.overflow = 'hidden';
-    
-                that.iframe.style.height = options.height+"px";
-    
-                if( container ) {
-                    container.style.top = '0';
-                    container.style.height = (options.height-18)+"px";;
-                    container.style.overflow = 'hidden';
-                    container.style.border = '1px solid rgba(255, 153, 34, 0.2)';
-                    var v = new PerfectScrollbar( container, {
-                        handlers: ['click-rail', 'drag-thumb', 'keyboard', 'wheel', 'touch'],
-                        wheelSpeed: 1,
-                        wheelPropagation: false,
-                        suppressScrollX: false,
-                        minScrollbarLength: 100,
-                        swipeEasing: true,
-                        scrollingThreshold: 500
-                    });
+                if( header ){
+                    clearInterval( checkFrameLoaded )
+                    that.helpWindow.dataDiv.style.opacity = "0";
+                    /* se pensar em implementar janela full para o help, eis o começo
+                        that.helpWindow.move(0,80);
+                        that.helpWindow.setSize( "calc( 100% - 10px)", "calc( 100% - 90px)" );
+                        options.height = that.helpWindow.topDiv.clientHeight;
+                        that.iframe.style.height = options.height + 'px';
+                    */
+                    var header = that.iframe.contentDocument.getElementById('helpHeader');
+                    var frm = that.iframe.contentDocument.getElementById('helpFrame');
+                    var container = that.iframe.contentDocument.getElementById('helpContainer');
+                    if( header ) header.style.display = 'none';
+                    if( frm ) frm.style.overflow = 'hidden';
+        
+                    that.iframe.style.height = options.height+"px";
+        
+                    if( container ) {
+                        container.style.top = '0';
+                        container.style.height = (options.height-18)+"px";;
+                        container.style.overflow = 'hidden';
+                        container.style.border = '1px solid rgba(255, 153, 34, 0.2)';
+                        var v = new PerfectScrollbar( container, {
+                            handlers: ['click-rail', 'drag-thumb', 'keyboard', 'wheel', 'touch'],
+                            wheelSpeed: 1,
+                            wheelPropagation: false,
+                            suppressScrollX: false,
+                            minScrollbarLength: 100,
+                            swipeEasing: true,
+                            scrollingThreshold: 500
+                        });
+                    }
+        
+                    that.helpWindow.dataDiv.style.opacity = "1";
+                    loader.stop();
                 }
-    
-                that.helpWindow.dataDiv.style.opacity = "1";
-                loader.stop();
-                    
+                
             }, 100);
-            
+
+            //window.setTimeout( function() {}, 100);
         }
 
     }, '<br/>&#160;&#160;&#160;'+SITE.translator.getResource('wait')+'<br/><br/>' );

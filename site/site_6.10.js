@@ -2428,10 +2428,10 @@ SITE.Mapa.prototype.showHelp = function ( title, subTitle, url, options ) {
 
         } else {
             
-            window.setInterval( function checkFrameLoaded() {
+            var myInterval = window.setInterval( function checkFrameLoaded() {
                 var header = that.iframe.contentDocument.getElementById('helpHeader');
                 if( header ){
-                    clearInterval( checkFrameLoaded )
+                    clearInterval( myInterval )
                     that.helpWindow.dataDiv.style.opacity = "0";
                     /* se pensar em implementar janela full para o help, eis o começo
                         that.helpWindow.move(0,80);

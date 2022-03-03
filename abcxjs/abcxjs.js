@@ -2099,7 +2099,7 @@ window.ABCXJS.parse.Parse = function(transposer_, accordion_) {
         return ret;
     };
 
-    var addWords = function(staff, line, words, fingers) {
+    var addWords = function(staff, line, words, fingers, bassfingers) {
 //        este bloco parece não fazer sentido        
 //        if (!line) {
 //            warn("Can't add words before the first line of music", words, 0);
@@ -2110,7 +2110,7 @@ window.ABCXJS.parse.Parse = function(transposer_, accordion_) {
             words = words + ' ';	// Just makes it easier to parse below, since every word has a divider after it.
         var word_list = [];
 
-        if(!fingers)
+        if(!(fingers || bassfingers))
             staff.lyricsRows++;
 
         // first make a list of words from the string we are passed. A word is divided on either a space or dash.
@@ -2121,6 +2121,10 @@ window.ABCXJS.parse.Parse = function(transposer_, accordion_) {
             
             if (fingers && word.trim() !== "" && ".1.2.3.4.5.23.24.25.34.35.45.234.235.245.345.2345.*.".indexOf("."+word.trim()+".") < 0 ) {
                 warn( "Alien fingering detected", words, i-word.trim().length );
+            }
+
+            if (bassfingers && word.trim() !== "" && ".1.2.3.4.5.23.24.25.34.35.45.234.235.245.345.2345.*.".indexOf("."+word.trim()+".") < 0 ) {
+                warn( "Alien bass-fingering detected", words, i-word.trim().length );
             }
             
             last_divider = i + 1;
@@ -2153,8 +2157,13 @@ window.ABCXJS.parse.Parse = function(transposer_, accordion_) {
                     word_list.push({skip: true, to: 'slur'});
                     break;
                 case '*':
-                    addWord(i);
-                    word_list.push({skip: true, to: 'next'});
+                    if(!(fingers || bassfingers)) {
+                        addWord(i);
+                        word_list.push({skip: true, to: 'next'});
+                    } else {
+                        addWord(i);
+                        word_list.push({syllable: '*', divider: ' ' });
+                    }
                     break;
                 case '|':
                     addWord(i);
@@ -2187,7 +2196,12 @@ window.ABCXJS.parse.Parse = function(transposer_, accordion_) {
                 } else {
                     if (el.el_type === 'note' && el.rest === undefined && !inSlur) {
                         var word = word_list.shift();
-                        if( fingers ) {
+                        if( bassfingers ){
+                            if (el.bassfingering === undefined)
+                                el.bassfingering = [word];
+                            else
+                                el.bassfingering.push(word);
+                        } else if( fingers ) {
                             if (el.fingering === undefined)
                                 el.fingering = [word];
                             else
@@ -3338,10 +3352,12 @@ window.ABCXJS.parse.Parse = function(transposer_, accordion_) {
         }
         if (ret.newline && multilineVars.continueall === undefined)
             startNewLine();
+        if (ret.bassfingering)
+            addWords(tune.getCurrentStaff(), tune.getCurrentVoice(), line.substring(2), false, true);
         if (ret.fingering)
-            addWords(tune.getCurrentStaff(), tune.getCurrentVoice(), line.substring(2), true);
+            addWords(tune.getCurrentStaff(), tune.getCurrentVoice(), line.substring(2), true, false);
         if (ret.words)
-            addWords(tune.getCurrentStaff(), tune.getCurrentVoice(), line.substring(2), false);
+            addWords(tune.getCurrentStaff(), tune.getCurrentVoice(), line.substring(2), false, false);
         if (ret.symbols)
             addSymbols(tune.getCurrentVoice(), line.substring(2));
         if (ret.recurse)
@@ -3684,11 +3700,9 @@ window.ABCXJS.parse.parseDirective = {};
 			case "stretchlast":tune.formatting.stretchlast = true;break;
 			case "titleleft":tune.formatting.titleleft = true;break;
 			case "measurebox":tune.formatting.measurebox = true;break;
-
-                        case "landscape":multilineVars.landscape = true;break;
+			case "landscape":multilineVars.landscape = true;break;
 			case "papersize":multilineVars.papersize = restOfString;break;
 			case "titlecaps":multilineVars.titlecaps = true;break;
-
 			case "botmargin":
 			case "botspace":
 			case "composerspace":
@@ -4576,6 +4590,8 @@ window.ABCXJS.parse.ParseHeader = function(tokenizer, warn, multilineVars, tune,
 							break;
 						case  's':
 							return {symbols: true};
+						case  'b':
+							return {bassfingering: true};
 						case  'f':
 							return {fingering: true};
 						case  'w':
@@ -7328,6 +7344,7 @@ ABCXJS.write.StaffGroupElement.prototype.draw = function(printer, groupNumber) {
 ABCXJS.write.VoiceElement = function(voicenumber, staffnumber, abcstaff) {
     this.children = [];
     this.fingers = [];
+    this.bassfingers = [];
     this.beams = [];
     this.otherchildren = []; // ties, slurs, triplets
     this.w = 0;
@@ -7358,6 +7375,10 @@ ABCXJS.write.VoiceElement.prototype.addChild = function(child) {
         if(child.children[i].type === 'fingering'){
             var relativeChild =  child.children[i] ;
             this.fingers[this.fingers.length] = relativeChild ;
+            child.children.splice(i,1);
+        } else  if(child.children[i].type === 'bassfingering'){
+            var relativeChild =  child.children[i] ;
+            this.bassfingers[this.bassfingers.length] = relativeChild ;
             child.children.splice(i,1);
         }
     }
@@ -7682,6 +7703,9 @@ ABCXJS.write.RelativeElement.prototype.draw = function(printer, x, staveInfo ) {
             break;
         case "fingering":
             this.graphelem = printer.printFingering(this.x, staveInfo, this.c);
+            break;
+        case "bassfingering":
+            this.graphelem = printer.printBassFingering(this.x, staveInfo, this.c);
             break;
         case "lyrics":
             this.graphelem = printer.printLyrics(this.x, staveInfo, this.c);
@@ -8222,14 +8246,49 @@ ABCXJS.write.Layout.prototype.layoutABCLine = function( abctune, line, width ) {
         var fingerIdx = 0;
         if(this.staffgroup.voices[2].stave.clef.type === 'accordionTab') {
             var voz = this.staffgroup.voices[2].children;
+            var stave = this.staffgroup.voices[2].stave;
             for (i=0; i<voz.length; i++) {
                 if(voz[i].abcelem.el_type === 'note'){
                     //verificar se algum dos pitches, que não seja baixo, é do tipo 'tabText'[2|3]
                     var pitches = voz[i].abcelem.pitches
                     for (p=0; p<pitches.length; p++) {
                         if(pitches[p].type.substr(0,7) === 'tabText' && pitches[p].c !== 'scripts.rarrow' && pitches[p].bass === undefined && fingerIdx < fingers.length ){
-                            voz[i].children[voz[i].children.length] = fingers[fingerIdx++];
+                            if(fingers[fingerIdx].c.trim() !== '*' ) {
+                                voz[i].children[voz[i].children.length] = fingers[fingerIdx++];
+                                voz[i].children[voz[i].children.length-1].dx =-5;
+                                //voz[i].children[voz[i].children.length-1].parent.pushBottom()
+                                stave.lowest = Math.min(-4, stave.lowest);
+                            } else {
+                                fingerIdx++
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            // existe dedilhado mas não consegui tratar 
+            console.log('abc_layout: existe dedilhado mas não consegui tratar')
+        }
+    }
+    if( this.staffgroup.voices[1].stave.clef.type === 'bass' &&  this.staffgroup.voices[1].bassfingers.length > 0 ) {
+        var bassfingers = this.staffgroup.voices[1].bassfingers;
+        var bassFingerIdx = 0;
+        if(this.staffgroup.voices[2].stave.clef.type === 'accordionTab') {
+            var voz = this.staffgroup.voices[2].children;
+            var stave = this.staffgroup.voices[2].stave;
+            for (i=0; i<voz.length; i++) {
+                if(voz[i].abcelem.el_type === 'note'){
+                    //verificar se algum dos pitches, que não seja baixo, é do tipo 'tabText'[2|3]
+                    var pitches = voz[i].abcelem.pitches
+                    for (p=0; p<pitches.length; p++) {
+                        if(pitches[p].type.substr(0,7) === 'tabText' && pitches[p].c !== 'scripts.rarrow' && pitches[p].bass && bassFingerIdx < bassfingers.length ){
+                            voz[i].children[voz[i].children.length] = bassfingers[bassFingerIdx++];
                             voz[i].children[voz[i].children.length-1].dx =-5;
+                            //voz[i].children[voz[i].children.length-1].y = 24;
+                            //voz[i].children[voz[i].children.length-1].parent.pushTop(24)
+                            stave.highest = Math.max(25.5, stave.highest);
+                        
                             break;
                         }
                     }
@@ -8600,6 +8659,17 @@ ABCXJS.write.Layout.prototype.printNote = function(elem, nostem, dontDraw) { //s
         });
         lyricStr = lyricStr.substring(1); // remove the first linefeed
         abselem.addRight(new ABCXJS.write.RelativeElement(lyricStr, 0, maxLen * 5, 0, {type: "fingering"}));
+    }
+
+    if (elem.bassfingering !== undefined  && !this.tune.formatting.hideFingering) {
+        var lyricStr = "";
+        var maxLen = 0;
+        window.ABCXJS.parse.each(elem.bassfingering, function(ly) {
+            lyricStr += "\n" + ly.syllable + ly.divider ;
+            maxLen = Math.max( maxLen, (ly.syllable + ly.divider).length*1.3 );
+        });
+        lyricStr = lyricStr.substring(1); // remove the first linefeed
+        abselem.addRight(new ABCXJS.write.RelativeElement(lyricStr, 0, maxLen * 5, 0, {type: "bassfingering"}));
     }
 
     if (!dontDraw && elem.gracenotes !== undefined) {
@@ -9737,11 +9807,20 @@ ABCXJS.write.Printer.prototype.printLyrics = function(x, staveInfo, msg) {
 };
 
 ABCXJS.write.Printer.prototype.printFingering = function(x, staveInfo, msg) {
-    var y = this.calcY(staveInfo.lowest)-10;
+    var y = this.calcY(staveInfo.lowest+4);
     try {
         this.paper.printSymbol(x-3, y, 'cn.'+msg.trim());
     } catch(e){
-        this.paper.text(x, y+12, msg.trim(), 'abc_lyrics', 'start');        
+        this.paper.text(x, y+12, msg.trim(), 'abc_fingers', 'start');        
+    }
+};
+
+ABCXJS.write.Printer.prototype.printBassFingering = function(x, staveInfo, msg) {
+    var y = this.calcY(staveInfo.highest+1.5);
+    try {
+        this.paper.printSymbol(x-3, y, 'cn.'+msg.trim());
+    } catch(e){
+        this.paper.text(x, y+12, msg.trim(), 'abc_bassfingers', 'start');        
     }
 };
 
@@ -12654,7 +12733,10 @@ EventElement.prototype.bind = function bind (eventName, handler) {
     this.handlers[eventName] = [];
   }
   this.handlers[eventName].push(handler);
-  this.element.addEventListener(eventName, handler, {passive:true});
+  if(handler === 'touch' || handler === 'touchstart' )
+    this.element.addEventListener(eventName, handler, {passive:true});
+  else
+    this.element.addEventListener(eventName, handler, {passive:false});
 };
 
 EventElement.prototype.unbind = function unbind (eventName, target) {
@@ -14849,6 +14931,9 @@ DRAGGABLE.ui.DropdownMenu.prototype.highlightItem = function (ddm, up) {
     // up can be true or false (indicating direction) or it can be a string indicating an item
     var toSel = up, next = false, prev;
     var menu = this.headers[ddm];
+
+    if( menu === undefined ) return;
+
     var acts = menu.actionList;
     if( typeof up === "boolean" ) {
         toSel = false;

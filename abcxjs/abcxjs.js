@@ -4091,6 +4091,7 @@ window.ABCXJS.parse.parseDirective = {};
 	};
 
 })();
+<<<<<<< HEAD
 //    abc_parse_header.js: parses a the header fields from a string representing ABC Music Notation into a usable internal structure.
 //    Copyright (C) 2010 Paul Rosen (paul at paulrosen dot net)
 //
@@ -4592,6 +4593,534 @@ window.ABCXJS.parse.ParseHeader = function(tokenizer, warn, multilineVars, tune,
 							return {symbols: true};
 						case  'b':
 							return {bassfingering: true};
+						case  'f':
+							return {fingering: true};
+						case  'w':
+							return {words: true};
+						case 'E':
+						case 'm':
+							warn("Ignored header", line, 0);
+							break;
+						default:
+							// It wasn't a recognized header value, so parse it as music.
+							if (nextLine.length)
+								nextLine = "\x12" + nextLine;
+							//parseRegularMusicLine(line+nextLine);
+							//nextLine = "";
+							return {regular: true, str: line+nextLine};
+					}
+				}
+				if (nextLine.length > 0)
+					return {recurse: true, str: nextLine};
+				return {};
+			}
+		}
+
+		// If we got this far, we have a regular line of mulsic
+		return {regular: true, str: line};
+	};
+};
+=======
+//    abc_parse_header.js: parses a the header fields from a string representing ABC Music Notation into a usable internal structure.
+//    Copyright (C) 2010 Paul Rosen (paul at paulrosen dot net)
+//
+//    This program is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+//
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+//
+//    You should have received a copy of the GNU General Public License
+//    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+>>>>>>> d38a9ec5c4afd72b062b197287f50064800a284b
+/*global window */
+
+if (!window.ABCXJS)
+	window.ABCXJS = {};
+
+if (!window.ABCXJS.parse)
+	window.ABCXJS.parse = {};
+
+window.ABCXJS.parse.ParseHeader = function(tokenizer, warn, multilineVars, tune, transposer) {
+	this.reset = function(tokenizer, warn, multilineVars, tune) {
+		window.ABCXJS.parse.parseKeyVoice.initialize(tokenizer, warn, multilineVars, tune);
+		window.ABCXJS.parse.parseDirective.initialize(tokenizer, warn, multilineVars, tune);
+	};
+	this.reset(tokenizer, warn, multilineVars, tune);
+
+	this.setTitle = function(title) {
+		if (multilineVars.hasMainTitle) {
+                  multilineVars.subtitle = tokenizer.translateString(tokenizer.stripComment(title));
+		  tune.addSubtitle(multilineVars.subtitle);	// display secondary title
+                } else {
+		  tune.addMetaText("title", tokenizer.translateString(tokenizer.theReverser(tokenizer.stripComment(title))));
+		  multilineVars.hasMainTitle = true;
+		}
+	};
+
+	this.setMeter = function(line) {
+		line = tokenizer.stripComment(line);
+		if (line === 'C') {
+			if (multilineVars.havent_set_length === true)
+				multilineVars.default_length = 0.125;
+			return {type: 'common_time'};
+		} else if (line === 'C|') {
+			if (multilineVars.havent_set_length === true)
+				multilineVars.default_length = 0.125;
+			return {type: 'cut_time'};
+		} else if (line === 'o') {
+			if (multilineVars.havent_set_length === true)
+				multilineVars.default_length = 0.125;
+			return {type: 'tempus_perfectum'};
+		} else if (line === 'c') {
+			if (multilineVars.havent_set_length === true)
+				multilineVars.default_length = 0.125;
+			return {type: 'tempus_imperfectum'};
+		} else if (line === 'o.') {
+			if (multilineVars.havent_set_length === true)
+				multilineVars.default_length = 0.125;
+			return {type: 'tempus_perfectum_prolatio'};
+		} else if (line === 'c.') {
+			if (multilineVars.havent_set_length === true)
+				multilineVars.default_length = 0.125;
+			return {type: 'tempus_imperfectum_prolatio'};
+		} else if (line.length === 0 || line.toLowerCase() === 'none') {
+			if (multilineVars.havent_set_length === true)
+				multilineVars.default_length = 0.125;
+			return null;
+		}
+		else
+		{
+			var tokens = tokenizer.tokenize(line, 0, line.length);
+			// the form is [open_paren] decimal [ plus|dot decimal ]... [close_paren] slash decimal [plus same_as_before]
+			try {
+				var parseNum = function() {
+					// handles this much: [open_paren] decimal [ plus|dot decimal ]... [close_paren]
+					var ret = {value: 0, num: ""};
+
+					var tok = tokens.shift();
+					if (tok.token === '(')
+						tok = tokens.shift();
+					while (1) {
+						if (tok.type !== 'number') throw "Expected top number of meter";
+						ret.value += parseInt(tok.token);
+						ret.num += tok.token;
+						if (tokens.length === 0 || tokens[0].token === '/') return ret;
+						tok = tokens.shift();
+						if (tok.token === ')') {
+							if (tokens.length === 0 || tokens[0].token === '/') return ret;
+							throw "Unexpected paren in meter";
+						}
+						if (tok.token !== '.' && tok.token !== '+') throw "Expected top number of meter";
+						ret.num += tok.token;
+						if (tokens.length === 0) throw "Expected top number of meter";
+						tok = tokens.shift();
+					}
+					return ret;	// just to suppress warning
+				};
+
+				var parseFraction = function() {
+					// handles this much: parseNum slash decimal
+					var ret = parseNum();
+					if (tokens.length === 0) return ret;
+					var tok = tokens.shift();
+					if (tok.token !== '/') throw "Expected slash in meter";
+					tok = tokens.shift();
+					if (tok.type !== 'number') throw "Expected bottom number of meter";
+					ret.den = tok.token;
+					ret.value = ret.value / parseInt(ret.den);
+					return ret;
+				};
+
+				if (tokens.length === 0) throw "Expected meter definition in M: line";
+				var meter = {type: 'specified', value: [ ]};
+				var totalLength = 0;
+				while (1) {
+					var ret = parseFraction();
+					totalLength += ret.value;
+					var mv = { num: ret.num };
+					if (ret.den !== undefined)
+						mv.den = ret.den;
+					meter.value.push(mv);
+					if (tokens.length === 0) break;
+					//var tok = tokens.shift();
+					//if (tok.token !== '+') throw "Extra characters in M: line";
+				}
+
+				if (multilineVars.havent_set_length === true) {
+					multilineVars.default_length = totalLength < 0.75 ? 0.0625 : 0.125;
+				}
+				return meter;
+			} catch (e) {
+				warn(e, line, 0);
+			}
+		}
+		return null;
+	};
+
+	this.calcTempo = function(relTempo) {
+		var dur = 1/4;
+		if (multilineVars.meter && multilineVars.meter.type === 'specified') {
+			dur = 1 / parseInt(multilineVars.meter.value[0].den);
+		} else if (multilineVars.origMeter && multilineVars.origMeter.type === 'specified') {
+			dur = 1 / parseInt(multilineVars.origMeter.value[0].den);
+		}
+		//var dur = multilineVars.default_length ? multilineVars.default_length : 1;
+		for (var i = 0; i < relTempo.duration; i++)
+			relTempo.duration[i] = dur * relTempo.duration[i];
+		return relTempo;
+	};
+
+	this.resolveTempo = function() {
+            if (multilineVars.tempo) {	// If there's a tempo waiting to be resolved
+                this.calcTempo(multilineVars.tempo);
+                tune.metaText.tempo = multilineVars.tempo;
+                delete multilineVars.tempo;
+            }
+	};
+
+	this.addUserDefinition = function(line, start, end) {
+		var equals = line.indexOf('=', start);
+		if (equals === -1) {
+			warn("Need an = in a macro definition", line, start);
+			return;
+		}
+
+		var before = window.ABCXJS.parse.strip(line.substring(start, equals));
+		var after = window.ABCXJS.parse.strip(line.substring(equals+1));
+
+		if (before.length !== 1) {
+			warn("Macro definitions can only be one character", line, start);
+			return;
+		}
+		var legalChars = "HIJKLMNOPQRSTUVWXYhijklmnopqrstuvw~";
+		if (legalChars.indexOf(before) === -1) {
+			warn("Macro definitions must be H-Y, h-w, or tilde", line, start);
+			return;
+		}
+		if (after.length === 0) {
+			warn("Missing macro definition", line, start);
+			return;
+		}
+		if (multilineVars.macros === undefined)
+			multilineVars.macros = {};
+		multilineVars.macros[before] = after;
+	};
+
+	this.setDefaultLength = function(line, start, end) {
+		var len = window.ABCXJS.parse.gsub(line.substring(start, end), " ", "");
+		var len_arr = len.split('/');
+		if (len_arr.length === 2) {
+			var n = parseInt(len_arr[0]);
+			var d = parseInt(len_arr[1]);
+			if (d > 0) {
+				multilineVars.default_length = n / d;	// a whole note is 1
+				multilineVars.havent_set_length = false;
+			}
+		}
+	};
+
+	this.setTempo = function(line, start, end) {
+		//Q - tempo; can be used to specify the notes per minute, e.g. If
+		//the meter denominator is a 4 note then Q:120 or Q:C=120
+		//is 120 quarter notes per minute. Similarly  Q:C3=40 would be 40
+		//dotted half notes per minute. An absolute tempo may also be
+		//set, e.g. Q:1/8=120 is 120 eighth notes per minute,
+		//irrespective of the meter's denominator.
+		//
+		// This is either a number, "C=number", "Cnumber=number", or fraction [fraction...]=number
+		// It depends on the M: field, which may either not be present, or may appear after this.
+		// If M: is not present, an eighth note is used.
+		// That means that this field can't be calculated until the end, if it is the first three types, since we don't know if we'll see an M: field.
+		// So, if it is the fourth type, set it here, otherwise, save the info in the multilineVars.
+		// The temporary variables we keep are the duration and the bpm. In the first two forms, the duration is 1.
+		// In addition, a quoted string may both precede and follow. If a quoted string is present, then the duration part is optional.
+		try {
+			var tokens = tokenizer.tokenize(line, start, end);
+
+			if (tokens.length === 0) throw "Missing parameter in Q: field";
+
+			var tempo = {};
+			var delaySet = true;
+			var token = tokens.shift();
+			if (token.type === 'quote') {
+				tempo.preString = token.token;
+				token = tokens.shift();
+				if (tokens.length === 0) {	// It's ok to just get a string for the tempo
+					return {type: 'immediate', tempo: tempo};
+				}
+			}
+			if (token.type === 'alpha' && token.token === 'C')	 { // either type 2 or type 3
+				if (tokens.length === 0) throw "Missing tempo after C in Q: field";
+				token = tokens.shift();
+				if (token.type === 'punct' && token.token === '=') {
+					// This is a type 2 format. The duration is an implied 1
+					if (tokens.length === 0) throw "Missing tempo after = in Q: field";
+					token = tokens.shift();
+					if (token.type !== 'number') throw "Expected number after = in Q: field";
+					tempo.duration = [1];
+					tempo.bpm = parseInt(token.token);
+				} else if (token.type === 'number') {
+					// This is a type 3 format.
+					tempo.duration = [parseInt(token.token)];
+					if (tokens.length === 0) throw "Missing = after duration in Q: field";
+					token = tokens.shift();
+					if (token.type !== 'punct' || token.token !== '=') throw "Expected = after duration in Q: field";
+					if (tokens.length === 0) throw "Missing tempo after = in Q: field";
+					token = tokens.shift();
+					if (token.type !== 'number') throw "Expected number after = in Q: field";
+					tempo.bpm = parseInt(token.token);
+				} else throw "Expected number or equal after C in Q: field";
+
+			} else if (token.type === 'number') {	// either type 1 or type 4
+				var num = parseInt(token.token);
+				if (tokens.length === 0 || tokens[0].type === 'quote') {
+					// This is type 1
+					tempo.duration = [1];
+					tempo.bpm = num;
+				} else {	// This is type 4
+					delaySet = false;
+					token = tokens.shift();
+					if (token.type !== 'punct' && token.token !== '/') throw "Expected fraction in Q: field";
+					token = tokens.shift();
+					if (token.type !== 'number') throw "Expected fraction in Q: field";
+					var den = parseInt(token.token);
+					tempo.duration = [num/den];
+					// We got the first fraction, keep getting more as long as we find them.
+					while (tokens.length > 0  && tokens[0].token !== '=' && tokens[0].type !== 'quote') {
+						token = tokens.shift();
+						if (token.type !== 'number') throw "Expected fraction in Q: field";
+						num = parseInt(token.token);
+						token = tokens.shift();
+						if (token.type !== 'punct' && token.token !== '/') throw "Expected fraction in Q: field";
+						token = tokens.shift();
+						if (token.type !== 'number') throw "Expected fraction in Q: field";
+						den = parseInt(token.token);
+						tempo.duration.push(num/den);
+					}
+					token = tokens.shift();
+					if (token.type !== 'punct' && token.token !== '=') throw "Expected = in Q: field";
+					token = tokens.shift();
+					if (token.type !== 'number') throw "Expected tempo in Q: field";
+					tempo.bpm = parseInt(token.token);
+				}
+			} else throw "Unknown value in Q: field";
+			if (tokens.length !== 0) {
+				token = tokens.shift();
+				if (token.type === 'quote') {
+					tempo.postString = token.token;
+					token = tokens.shift();
+				}
+				if (tokens.length !== 0) throw "Unexpected string at end of Q: field";
+			}
+			if (multilineVars.printTempo === false)
+				tempo.suppress = true;
+			return {type: delaySet?'delaySet':'immediate', tempo: tempo};
+		} catch (msg) {
+			warn(msg, line, start);
+			return {type: 'none'};
+		}
+	};
+
+	this.letter_to_inline_header = function(line, i)
+	{
+		var ws = tokenizer.eatWhiteSpace(line, i);
+		i +=ws;
+		if (line.length >= i+5 && line.charAt(i) === '[' && line.charAt(i+2) === ':') {
+			var e = line.indexOf(']', i);
+			switch(line.substring(i, i+3))
+			{
+				case "[I:":
+					var err = window.ABCXJS.parse.parseDirective.addDirective(line.substring(i+3, e));
+					if (err) warn(err, line, i);
+					return [ e-i+1+ws ];
+				case "[M:":
+					var meter = this.setMeter(line.substring(i+3, e));
+					if (tune.hasBeginMusic() && meter)
+						tune.appendStartingElement('meter', multilineVars.currTexLineNum, -1, -1, meter);
+					else
+						multilineVars.meter = meter;
+					return [ e-i+1+ws ];
+				case "[K:":
+                                        // parseKey não precisa conhecer o transposer porque a string da linha já foi transposta integralmente antes deste ponto.
+					var result = window.ABCXJS.parse.parseKeyVoice.parseKey(line.substring(i+3, e) ); // flavio
+					if (result.foundClef && tune.hasBeginMusic())
+						tune.appendStartingElement('clef', multilineVars.currTexLineNum, -1, -1, multilineVars.clef);
+					if (result.foundKey && tune.hasBeginMusic())
+						tune.appendStartingElement('key', multilineVars.currTexLineNum, -1, -1, window.ABCXJS.parse.parseKeyVoice.fixKey(multilineVars.clef, multilineVars.key));
+					return [ e-i+1+ws ];
+				case "[P:":
+					tune.appendElement('part', multilineVars.currTexLineNum, -1, -1, {title: line.substring(i+3, e)});
+					return [ e-i+1+ws ];
+				case "[L:":
+					this.setDefaultLength(line, i+3, e);
+					return [ e-i+1+ws ];
+				case "[Q:":
+					if (e > 0) {
+						var tempo = this.setTempo(line, i+3, e);
+						if (tempo.type === 'delaySet') tune.appendElement('tempo', multilineVars.currTexLineNum, -1, -1, this.calcTempo(tempo.tempo));
+						else if (tempo.type === 'immediate') tune.appendElement('tempo', multilineVars.currTexLineNum, -1, -1, tempo.tempo);
+						return [ e-i+1+ws, line.charAt(i+1), line.substring(i+3, e)];
+					}
+					break;
+				case "[V:":
+					if (e > 0) {
+						window.ABCXJS.parse.parseKeyVoice.parseVoice(line, i+3, e);
+						//startNewLine();
+						return [ e-i+1+ws, line.charAt(i+1), line.substring(i+3, e)];
+					}
+					break;
+
+				default:
+					// TODO: complain about unhandled header
+			}
+		}
+		return [ 0 ];
+	};
+
+	this.letter_to_body_header = function(line, i)
+	{
+		if (line.length >= i+3) {
+			switch(line.substring(i, i+2))
+			{
+				case "I:":
+					var err = window.ABCXJS.parse.parseDirective.addDirective(line.substring(i+2));
+					if (err) warn(err, line, i);
+					return [ line.length ];
+				case "M:":
+					var meter = this.setMeter(line.substring(i+2));
+					if (tune.hasBeginMusic() && meter)
+						tune.appendStartingElement('meter', multilineVars.currTexLineNum, -1, -1, meter);
+					return [ line.length ];
+				case "K:":
+					var result = window.ABCXJS.parse.parseKeyVoice.parseKey(line.substring(i+2), transposer);
+					if (result.foundClef && tune.hasBeginMusic())
+						tune.appendStartingElement('clef', multilineVars.currTexLineNum, -1, -1, multilineVars.clef);
+					if (result.foundKey && tune.hasBeginMusic())
+						tune.appendStartingElement('key', multilineVars.currTexLineNum, -1, -1, window.ABCXJS.parse.parseKeyVoice.fixKey(multilineVars.clef, multilineVars.key));
+					return [ line.length ];
+				case "P:":
+					if (tune.hasBeginMusic())
+						tune.appendElement('part', multilineVars.currTexLineNum, -1, -1, {title: line.substring(i+2)});
+					return [ line.length ];
+				case "L:":
+					this.setDefaultLength(line, i+2, line.length);
+					return [ line.length ];
+				case "Q:":
+					var e = line.indexOf('\x12', i+2);
+					if (e === -1) e = line.length;
+					var tempo = this.setTempo(line, i+2, e);
+					if (tempo.type === 'delaySet') tune.appendElement('tempo', multilineVars.currTexLineNum, -1, -1, this.calcTempo(tempo.tempo));
+					else if (tempo.type === 'immediate') tune.appendElement('tempo', multilineVars.currTexLineNum, -1, -1, tempo.tempo);
+				return [ e, line.charAt(i), window.ABCXJS.parse.strip(line.substring(i+2))];
+				case "V:":
+					window.ABCXJS.parse.parseKeyVoice.parseVoice(line, 2, line.length);
+//						startNewLine();
+					return [ line.length, line.charAt(i), window.ABCXJS.parse(line.substring(i+2))];
+				default:
+					// TODO: complain about unhandled header
+			}
+		}
+		return [ 0 ];
+	};
+
+	var metaTextHeaders = {
+		A: 'author',
+		B: 'book',
+		C: 'composer',
+		D: 'discography',
+		F: 'url',
+		G: 'group',
+		I: 'instruction',
+		N: 'notes',
+		O: 'origin',
+		R: 'rhythm',
+		S: 'source',
+		W: 'unalignedWords',
+		Z: 'transcription',
+                X: 'pieceId'
+	};
+
+	this.parseHeader = function(line, lineNumber ) {
+		if (window.ABCXJS.parse.startsWith(line, '%%')) {
+			var err = window.ABCXJS.parse.parseDirective.addDirective(line.substring(2));
+			if (err) warn(err, line, 2);
+			return {};
+		}
+		line = tokenizer.stripComment(line);
+		if (line.length === 0)
+			return {};
+
+		if (line.length >= 2) {
+			if (line.charAt(1) === ':') {
+				var nextLine = "";
+				if (line.indexOf('\x12') >= 0 && line.charAt(0) !== 'w') {	// w: is the only header field that can have a continuation.
+					nextLine = line.substring(line.indexOf('\x12')+1);
+					line = line.substring(0, line.indexOf('\x12'));	//This handles a continuation mark on a header field
+				}
+				var field = metaTextHeaders[line.charAt(0)];
+				if (field !== undefined) {
+					if (field === 'unalignedWords')
+						tune.addMetaTextArray(field, window.ABCXJS.parse.parseDirective.parseFontChangeLine(tokenizer.translateString(tokenizer.stripComment(line.substring(2)))));
+					else
+						tune.addMetaText(field, tokenizer.translateString(tokenizer.stripComment(line.substring(2))));
+					return {};
+				} else {
+					switch(line.charAt(0))
+					{
+						case  'H':
+							tune.addMetaText("history", tokenizer.translateString(tokenizer.stripComment(line.substring(2))));
+							multilineVars.is_in_history = true;
+							break;
+						case  'K':
+							// since the key is the last thing that can happen in the header, we can resolve the tempo now
+							this.resolveTempo();
+							var result = window.ABCXJS.parse.parseKeyVoice.parseKey( line.substring(2), transposer, line, lineNumber );
+							if (!multilineVars.is_in_header && tune.hasBeginMusic()) {
+								if (result.foundClef) {
+									tune.appendStartingElement('clef', multilineVars.currTexLineNum, -1, -1, multilineVars.clef);
+                                                                    }        
+								if (result.foundKey)
+									tune.appendStartingElement('key', multilineVars.currTexLineNum, -1, -1, window.ABCXJS.parse.parseKeyVoice.fixKey(multilineVars.clef, multilineVars.key));
+							}
+							multilineVars.is_in_header = false;	// The first key signifies the end of the header.
+							break;
+						case  'L':
+							this.setDefaultLength(line, 2, line.length);
+							break;
+						case  'M':
+							multilineVars.origMeter = multilineVars.meter = this.setMeter(line.substring(2));
+							break;
+						case  'P':
+							// TODO-PER: There is more to do with parts, but the writer doesn't care.
+							if (multilineVars.is_in_header)
+								tune.addMetaText("partOrder", tokenizer.translateString(tokenizer.stripComment(line.substring(2))));
+							else
+								multilineVars.partForNextLine = tokenizer.translateString(tokenizer.stripComment(line.substring(2)));
+							break;
+						case  'Q':
+							var tempo = this.setTempo(line, 2, line.length);
+							if (tempo.type === 'delaySet') multilineVars.tempo = tempo.tempo;
+							else if (tempo.type === 'immediate') tune.metaText.tempo = tempo.tempo;
+							break;
+						case  'T':
+							this.setTitle(line.substring(2));
+							break;
+						case 'U':
+							this.addUserDefinition(line, 2, line.length);
+							break;
+						case  'V':
+							window.ABCXJS.parse.parseKeyVoice.parseVoice(line, 2, line.length);
+							if (!multilineVars.is_in_header)
+								return {newline: true};
+							break;
+						case  's':
+							return {symbols: true};
 						case  'f':
 							return {fingering: true};
 						case  'w':
@@ -5439,6 +5968,7 @@ window.ABCXJS.parse.parseKeyVoice = {};
 
 })();
 
+<<<<<<< HEAD
 //    abc_tokenizer.js: tokenizes an ABC Music Notation string to support abc_parse.
 //    Copyright (C) 2010 Paul Rosen (paul at paulrosen dot net)
 //
@@ -9325,6 +9855,3840 @@ ABCXJS.write.Layout.prototype.printTimeSignature= function(elem) {
 };
 //    abc_write.js: Prints an abc file parsed by abc_parse.js
 //    Copyright (C) 2010 Gregory Dyke (gregdyke at gmail dot com)
+=======
+//    abc_tokenizer.js: tokenizes an ABC Music Notation string to support abc_parse.
+//    Copyright (C) 2010 Paul Rosen (paul at paulrosen dot net)
+>>>>>>> d38a9ec5c4afd72b062b197287f50064800a284b
+//
+//    This program is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+//
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+//
+//    You should have received a copy of the GNU General Public License
+//    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+/*global window */
+
+if (!window.ABCXJS)
+	window.ABCXJS = {};
+
+if (!window.ABCXJS.parse)
+	window.ABCXJS.parse = {};
+
+// this is a series of functions that get a particular element out of the passed stream.
+// the return is the number of characters consumed, so 0 means that the element wasn't found.
+// also returned is the element found. This may be a different length because spaces may be consumed that aren't part of the string.
+// The return structure for most calls is { len: num_chars_consumed, token: str }
+window.ABCXJS.parse.tokenizer = function() {
+	this.skipWhiteSpace = function(str) {
+		for (var i = 0; i < str.length; i++) {
+		  if (!this.isWhiteSpace(str.charAt(i)))
+				return i;
+		}
+		return str.length;	// It must have been all white space
+	};
+	var finished = function(str, i) {
+		return i >= str.length;
+	};
+	this.eatWhiteSpace = function(line, index) {
+		for (var i = index; i < line.length; i++) {
+		  if (!this.isWhiteSpace(line.charAt(i)))
+				return i-index;
+		}
+		return i-index;
+	};
+
+	// This just gets the basic pitch letter, ignoring leading spaces, and normalizing it to a capital
+	this.getKeyPitch = function(str) {
+		var i = this.skipWhiteSpace(str);
+		if (finished(str, i))
+			return {len: 0};
+		switch (str.charAt(i)) {
+			case 'A':return {len: i+1, token: 'A'};
+			case 'B':return {len: i+1, token: 'B'};
+			case 'C':return {len: i+1, token: 'C'};
+			case 'D':return {len: i+1, token: 'D'};
+			case 'E':return {len: i+1, token: 'E'};
+			case 'F':return {len: i+1, token: 'F'};
+			case 'G':return {len: i+1, token: 'G'};
+		}
+		return {len: 0};
+	};
+
+	// This just gets the basic accidental, ignoring leading spaces, and only the ones that appear in a key
+	this.getSharpFlat = function(str) {
+		if (str === 'bass')
+			return {len: 0};
+		switch (str.charAt(0)) {
+			case '#':return {len: 1, token: '#'};
+			case 'b':return {len: 1, token: 'b'};
+		}
+		return {len: 0};
+	};
+
+	this.getMode = function(str) {
+		var skipAlpha = function(str, start) {
+			// This returns the index of the next non-alphabetic char, or the entire length of the string if not found.
+		  while (start < str.length && ((str.charAt(start) >= 'a' && str.charAt(start) <= 'z') || (str.charAt(start) >= 'A' && str.charAt(start) <= 'Z')))
+				start++;
+			return start;
+		};
+
+		var i = this.skipWhiteSpace(str);
+		if (finished(str, i))
+			return {len: 0};
+		var firstThree = str.substring(i,i+3).toLowerCase();
+		if (firstThree.length > 1 && firstThree.charAt(1) === ' ' || firstThree.charAt(1) === '^' || firstThree.charAt(1) === '_' || firstThree.charAt(1) === '=') firstThree = firstThree.charAt(0);	// This will handle the case of 'm'
+		switch (firstThree) {
+			case 'mix':return {len: skipAlpha(str, i), token: 'Mix'};
+			case 'dor':return {len: skipAlpha(str, i), token: 'Dor'};
+			case 'phr':return {len: skipAlpha(str, i), token: 'Phr'};
+			case 'lyd':return {len: skipAlpha(str, i), token: 'Lyd'};
+			case 'loc':return {len: skipAlpha(str, i), token: 'Loc'};
+			case 'aeo':return {len: skipAlpha(str, i), token: 'm'};
+			case 'maj':return {len: skipAlpha(str, i), token: ''};
+			case 'ion':return {len: skipAlpha(str, i), token: ''};
+			case 'min':return {len: skipAlpha(str, i), token: 'm'};
+			case 'm':return {len: skipAlpha(str, i), token: 'm'};
+		}
+		return {len: 0};
+	};
+
+	this.getClef = function(str, bExplicitOnly) {
+		var strOrig = str;
+		var i = this.skipWhiteSpace(str);
+		if (finished(str, i))
+			return {len: 0};
+		// The word 'clef' is optional, but if it appears, a clef MUST appear
+		var needsClef = false;
+		var strClef = str.substring(i);
+		if (window.ABCXJS.parse.startsWith(strClef, 'clef=')) {
+			needsClef = true;
+			strClef = strClef.substring(5);
+			i += 5;
+		}
+		if (strClef.length === 0 && needsClef)
+			return {len: i+5, warn: "No clef specified: " + strOrig};
+
+		var j = this.skipWhiteSpace(strClef);
+		if (finished(strClef, j))
+			return {len: 0};
+		if (j > 0) {
+			i += j;
+			strClef = strClef.substring(j);
+		}
+		var name = null;
+		if (window.ABCXJS.parse.startsWith(strClef, 'treble'))
+			name = 'treble';
+		else if (window.ABCXJS.parse.startsWith(strClef, 'bass3'))
+			name = 'bass3';
+		else if (window.ABCXJS.parse.startsWith(strClef, 'bass'))
+			name = 'bass';
+		else if (window.ABCXJS.parse.startsWith(strClef, 'tenor'))
+			name = 'tenor';
+		else if (window.ABCXJS.parse.startsWith(strClef, 'alto2'))
+			name = 'alto2';
+		else if (window.ABCXJS.parse.startsWith(strClef, 'alto1'))
+			name = 'alto1';
+		else if (window.ABCXJS.parse.startsWith(strClef, 'alto'))
+			name = 'alto';
+		else if (!bExplicitOnly && (needsClef && window.ABCXJS.parse.startsWith(strClef, 'none')))
+			name = 'none';
+		else if (window.ABCXJS.parse.startsWith(strClef, 'perc'))
+			name = 'perc';
+		else if (!bExplicitOnly && (needsClef && window.ABCXJS.parse.startsWith(strClef, 'C')))
+			name = 'tenor';
+		else if (!bExplicitOnly && (needsClef && window.ABCXJS.parse.startsWith(strClef, 'F')))
+			name = 'bass';
+		else if (!bExplicitOnly && (needsClef && window.ABCXJS.parse.startsWith(strClef, 'G')))
+			name = 'treble';
+		else
+			return {len: i+5, warn: "Unknown clef specified: " + strOrig};
+
+		strClef = strClef.substring(name.length);
+		j = this.isMatch(strClef, '+8');
+		if (j > 0)
+			name += "+8";
+		else {
+			j = this.isMatch(strClef, '-8');
+			if (j > 0)
+				name += "-8";
+		}
+		return {len: i+name.length, token: name, explicit: needsClef};
+	};
+
+	// This returns one of the legal bar lines
+	// This is called alot and there is no obvious tokenable items, so this is broken apart.
+    this.getBarLine = function(line, i ){
+		//var bn = this.getBarLine_original(line, i);
+		var bn = ABCXJS.parse.getBarLine(line, i);  
+
+		// originalmente não havia informação sobre quantidade de repeticoes
+		if( ! bn.repeat ) {
+           bn.repeat = 1;
+		}
+
+		return bn;
+
+	}
+/*
+	this.getBarLine_original = function(line, i) {
+		switch (line.charAt(i)) {
+			case ']':
+				++i;
+				switch (line.charAt(i)) {
+					case '|': return {len: 2, token: "bar_thick_thin"};
+					case '[':
+						++i;
+						if ((line.charAt(i) >= '1' && line.charAt(i) <= '9') || line.charAt(i) === '"')
+							return {len: 2, token: "bar_invisible"};
+						return {len: 1, warn: "Unknown bar symbol"};
+					default:
+						return {len: 1, token: "bar_invisible"};
+				}
+				break;
+			case ':':
+				++i;
+				switch (line.charAt(i)) {
+					case ':': return {len: 2, token: "bar_dbl_repeat"};
+					case '|':	// :|
+						++i;
+						switch (line.charAt(i)) {
+							case ']':	// :|]
+								++i;
+								switch (line.charAt(i)) {
+									case '|':	// :|]|
+										++i;
+										if (line.charAt(i) === ':')  return {len: 5, token: "bar_dbl_repeat"};
+										return {len: 3, token: "bar_right_repeat"};
+									default:
+										return {len: 3, token: "bar_right_repeat"};
+								}
+								break;
+							case ':':	// :|:
+								return {len: 3, token: "bar_dbl_repeat"};
+							case '|':	// :||
+								++i;
+								if (line.charAt(i) === ':')  return {len: 4, token: "bar_dbl_repeat"};
+								return {len: 3, token: "bar_right_repeat"};
+							default:
+								return {len: 2, token: "bar_right_repeat"};
+						}
+						break;
+					default:
+						return {len: 1, warn: "Unknown bar symbol"};
+				}
+				break;
+			case '[':	// [
+				++i;
+				if (line.charAt(i) === '|') {	// [|
+					++i;
+					switch (line.charAt(i)) {
+						case ':': return {len: 3, token: "bar_left_repeat"};
+						case ']': return {len: 3, token: "bar_invisible"};
+						default: return {len: 2, token: "bar_thick_thin"};
+					}
+				} else {
+					if ((line.charAt(i) >= '1' && line.charAt(i) <= '9') || line.charAt(i) === '"')
+						return {len: 1, token: "bar_invisible"};
+					return {len: 0};
+				}
+				break;
+			case '|':	// |
+				++i;
+				switch (line.charAt(i)) {
+					case ']': return {len: 2, token: "bar_thin_thick"};
+					case '|': // ||
+						++i;
+						if (line.charAt(i) === ':') return {len: 3, token: "bar_left_repeat"};
+						return {len: 2, token: "bar_thin_thin"};
+					case ':':	// |:
+						var colons = 0;
+						while (line.charAt(i+colons) === ':') colons++;
+						return { len: 1+colons, token: "bar_left_repeat"};
+					default: return {len: 1, token: "bar_thin"};
+				}
+				break;
+		}
+		return {len: 0};
+	};
+*/
+
+	// this returns all the characters in the string that match one of the characters in the legalChars string
+	this.getTokenOf = function(str, legalChars) {
+		for (var i = 0; i < str.length; i++) {
+			if (legalChars.indexOf(str.charAt(i)) < 0)
+				return {len: i, token: str.substring(0, i)};
+		}
+		return {len: i, token: str};
+	};
+
+	this.getToken = function(str, start, end) {
+		// This returns the next set of chars that doesn't contain spaces
+		var i = start;
+		while (i < end && !this.isWhiteSpace(str.charAt(i)))
+			i++;
+		return str.substring(start, i);
+	};
+
+	// This just sees if the next token is the word passed in, with possible leading spaces
+	this.isMatch = function(str, match) {
+		var i = this.skipWhiteSpace(str);
+		if (finished(str, i))
+			return 0;
+		if (window.ABCXJS.parse.startsWith(str.substring(i), match))
+			return i+match.length;
+		return 0;
+	};
+
+	this.getPitchFromTokens = function(tokens) {
+		var ret = { };
+		var pitches = ABCXJS.parse.pitches;
+		ret.position = pitches[tokens[0].token];
+		if (ret.position === undefined)
+			return { warn: "Pitch expected. Found: " + tokens[0].token };
+		tokens.shift();
+		while (tokens.length) {
+			switch (tokens[0].token) {
+				case ',': ret.position -= 7; tokens.shift(); break;
+				case '\'': ret.position += 7; tokens.shift(); break;
+				default: return ret;
+			}
+		}
+		return ret;
+	};
+
+	this.getKeyAccidentals2 = function(tokens) {
+		var accs;
+		// find and strip off all accidentals in the token list
+		while (tokens.length > 0) {
+			var acc;
+			if (tokens[0].token === '^') {
+				acc = 'sharp';
+				tokens.shift();
+				if (tokens.length === 0) return {accs: accs, warn: 'Expected note name after ' + acc};
+				switch (tokens[0].token) {
+					case '^': acc = 'dblsharp'; tokens.shift(); break;
+					case '/': acc = 'quartersharp'; tokens.shift(); break;
+				}
+			} else if (tokens[0].token === '=') {
+				acc = 'natural';
+				tokens.shift();
+			} else if (tokens[0].token === '_') {
+				acc = 'flat';
+				tokens.shift();
+				if (tokens.length === 0) return {accs: accs, warn: 'Expected note name after ' + acc};
+				switch (tokens[0].token) {
+					case '_': acc = 'dblflat'; tokens.shift(); break;
+					case '/': acc = 'quarterflat'; tokens.shift(); break;
+				}
+			} else {
+				// Not an accidental, we'll assume that a later parse will recognize it.
+				return { accs: accs };
+			}
+			if (tokens.length === 0) return {accs: accs, warn: 'Expected note name after ' + acc};
+			switch (tokens[0].token.charAt(0))
+			{
+				case 'a':
+				case 'b':
+				case 'c':
+				case 'd':
+				case 'e':
+				case 'f':
+				case 'g':
+				case 'A':
+				case 'B':
+				case 'C':
+				case 'D':
+				case 'E':
+				case 'F':
+				case 'G':
+					if (accs === undefined)
+						accs = [];
+					accs.push({ acc: acc, note: tokens[0].token.charAt(0) });
+					if (tokens[0].token.length === 1)
+						tokens.shift();
+					else
+						tokens[0].token = tokens[0].token.substring(1);
+					break;
+				default:
+					return {accs: accs, warn: 'Expected note name after ' + acc + ' Found: ' + tokens[0].token };
+			}
+		}
+		return { accs: accs };
+	};
+
+	// This gets an accidental marking for the key signature. It has the accidental then the pitch letter.
+	this.getKeyAccidental = function(str) {
+		var accTranslation = {
+			'^': 'sharp',
+			'^^': 'dblsharp',
+			'=': 'natural',
+			'_': 'flat',
+			'__': 'dblflat',
+			'_/': 'quarterflat',
+			'^/': 'quartersharp'
+		};
+		var i = this.skipWhiteSpace(str);
+		if (finished(str, i))
+			return {len: 0};
+		var acc = null;
+		switch (str.charAt(i))
+		{
+			case '^':
+			case '_':
+			case '=':
+				acc = str.charAt(i);
+				break;
+			default:return {len: 0};
+		}
+		i++;
+		if (finished(str, i))
+			return {len: 1, warn: 'Expected note name after accidental'};
+		switch (str.charAt(i))
+		{
+			case 'a':
+			case 'b':
+			case 'c':
+			case 'd':
+			case 'e':
+			case 'f':
+			case 'g':
+			case 'A':
+			case 'B':
+			case 'C':
+			case 'D':
+			case 'E':
+			case 'F':
+			case 'G':
+				return {len: i+1, token: {acc: accTranslation[acc], note: str.charAt(i)}};
+			case '^':
+			case '_':
+			case '/':
+				acc += str.charAt(i);
+				i++;
+				if (finished(str, i))
+					return {len: 2, warn: 'Expected note name after accidental'};
+				switch (str.charAt(i))
+				{
+					case 'a':
+					case 'b':
+					case 'c':
+					case 'd':
+					case 'e':
+					case 'f':
+					case 'g':
+					case 'A':
+					case 'B':
+					case 'C':
+					case 'D':
+					case 'E':
+					case 'F':
+					case 'G':
+						return {len: i+1, token: {acc: accTranslation[acc], note: str.charAt(i)}};
+					default:
+						return {len: 2, warn: 'Expected note name after accidental'};
+				}
+				break;
+			default:
+				return {len: 1, warn: 'Expected note name after accidental'};
+		}
+	};
+
+	this.isWhiteSpace = function(ch) {
+		return ch === ' ' || ch === '\t' || ch === '\x12';
+	};
+
+	this.getMeat = function(line, start, end) {
+		// This removes any comments starting with '%' and trims the ends of the string so that there are no leading or trailing spaces.
+		// it returns just the start and end characters that contain the meat.
+		var comment = line.indexOf('%', start);
+		if (comment >= 0 && comment < end)
+			end = comment;
+		while (start < end && (line.charAt(start) === ' ' || line.charAt(start) === '\t' || line.charAt(start) === '\x12'))
+			start++;
+		while (start < end && (line.charAt(end-1) === ' ' || line.charAt(end-1) === '\t' || line.charAt(end-1) === '\x12'))
+			end--;
+		return {start: start, end: end};
+	};
+
+	var isLetter = function(ch) {
+		return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
+	};
+
+	var isNumber = function(ch) {
+		return (ch >= '0' && ch <= '9');
+	};
+
+	this.tokenize = function(line, start, end) {
+		// this returns all the tokens inside the passed string. A token is a punctuation mark, a string of digits, a string of letters.
+		//  Quoted strings are one token.
+		//  If there is a minus sign next to a number, then it is included in the number.
+		// If there is a period immediately after a number, with a number immediately following, then a float is returned.
+		// The type of token is returned: quote, alpha, number, punct
+		var ret = this.getMeat(line, start, end);
+		start = ret.start;
+		end = ret.end;
+		var tokens = [];
+		var i;
+		while (start < end) {
+			if (line.charAt(start) === '"') {
+				i = start+1;
+				while (i < end && line.charAt(i) !== '"') i++;
+				tokens.push({ type: 'quote', token: line.substring(start+1, i), start: start+1, end: i});
+				i++;
+			} else if (isLetter(line.charAt(start))) {
+				i = start+1;
+				while (i < end && isLetter(line.charAt(i))) i++;
+				tokens.push({ type: 'alpha', token: line.substring(start, i), continueId: isNumber(line.charAt(i)), start: start, end: i});
+				start = i + 1;
+			} else if (line.charAt(start) === '.' && isNumber(line.charAt(i+1))) {
+				i = start+1;
+				var int2 = null;
+				var float2 = null;
+				while (i < end && isNumber(line.charAt(i))) i++;
+
+				float2 = parseFloat(line.substring(start, i));
+				tokens.push({ type: 'number', token: line.substring(start, i), intt: int2, floatt: float2, continueId: isLetter(line.charAt(i)), start: start, end: i});
+				start = i + 1;
+			} else if (isNumber(line.charAt(start)) || (line.charAt(start) === '-' && isNumber(line.charAt(i+1)))) {
+				i = start+1;
+				var intt = null;
+				var floatt = null;
+				while (i < end && isNumber(line.charAt(i))) i++;
+				if (line.charAt(i) === '.' && isNumber(line.charAt(i+1))) {
+					i++;
+					while (i < end && isNumber(line.charAt(i))) i++;
+				} else
+					intt = parseInt(line.substring(start, i));
+
+				floatt = parseFloat(line.substring(start, i));
+				tokens.push({ type: 'number', token: line.substring(start, i), intt: intt, floatt: floatt, continueId: isLetter(line.charAt(i)), start: start, end: i});
+				start = i + 1;
+			} else if (line.charAt(start) === ' ' || line.charAt(start) === '\t') {
+				i = start+1;
+			} else {
+				tokens.push({ type: 'punct', token: line.charAt(start), start: start, end: start+1});
+				i = start+1;
+			}
+			start = i;
+		}
+		return tokens;
+	};
+
+	this.getVoiceToken = function(line, start, end) {
+		// This finds the next token. A token is delimited by a space or an equal sign. If it starts with a quote, then the portion between the quotes is returned.
+		var i = start;
+		while (i < end && this.isWhiteSpace(line.charAt(i)) || line.charAt(i) === '=')
+			i++;
+
+		if (line.charAt(i) === '"') {
+			var close = line.indexOf('"', i+1);
+			if (close === -1 || close >= end)
+				return {len: 1, err: "Missing close quote"};
+			return {len: close-start+1, token: this.translateString(line.substring(i+1, close))};
+		} else {
+			var ii = i;
+			while (ii < end && !this.isWhiteSpace(line.charAt(ii)) && line.charAt(ii) !== '=')
+				ii++;
+			return {len: ii-start+1, token: line.substring(i, ii)};
+		}
+	};
+
+	var charMap = {
+		"`a": 'à', "'a": "á", "^a": "â", "~a": "ã", "\"a": "ä", "oa": "å", "=a": "ā", "ua": "ă", ";a": "ą",
+		"`e": 'è', "'e": "é", "^e": "ê", "\"e": "ë", "=e": "ē", "ue": "ĕ", ";e": "ę", ".e": "ė",
+		"`i": 'ì', "'i": "í", "^i": "î", "\"i": "ï", "=i": "ī", "ui": "ĭ", ";i": "į",
+		"`o": 'ò', "'o": "ó", "^o": "ô", "~o": "õ", "\"o": "ö", "=o": "ō", "uo": "ŏ", "/o": "ø",
+		"`u": 'ù', "'u": "ú", "^u": "û", "~u": "ũ", "\"u": "ü", "ou": "ů", "=u": "ū", "uu": "ŭ", ";u": "ų",
+		"`A": 'À', "'A": "Á", "^A": "Â", "~A": "Ã", "\"A": "Ä", "oA": "Å", "=A": "Ā", "uA": "Ă", ";A": "Ą",
+		"`E": 'È', "'E": "É", "^E": "Ê", "\"E": "Ë", "=E": "Ē", "uE": "Ĕ", ";E": "Ę", ".E": "Ė",
+		"`I": 'Ì', "'I": "Í", "^I": "Î", "~I": "Ĩ", "\"I": "Ï", "=I": "Ī", "uI": "Ĭ", ";I": "Į", ".I": "İ",
+		"`O": 'Ò', "'O": "Ó", "^O": "Ô", "~O": "Õ", "\"O": "Ö", "=O": "Ō", "uO": "Ŏ", "/O": "Ø",
+		"`U": 'Ù', "'U": "Ú", "^U": "Û", "~U": "Ũ", "\"U": "Ü", "oU": "Ů", "=U": "Ū", "uU": "Ŭ", ";U": "Ų",
+		"ae": "æ", "AE": "Æ", "oe": "œ", "OE": "Œ", "ss": "ß",
+		"'c": "ć", "^c": "ĉ", "uc": "č", "cc": "ç", ".c": "ċ", "cC": "Ç", "'C": "Ć", "^C": "Ĉ", "uC": "Č", ".C": "Ċ",
+		"~n": "ñ",
+		"=s": "š", "vs": "š",
+		"vz": 'ž'
+
+// More chars: Ñ Ĳ ĳ Ď ď Đ đ Ĝ ĝ Ğ ğ Ġ ġ Ģ ģ Ĥ ĥ Ħ ħ Ĵ ĵ Ķ ķ ĸ Ĺ ĺ Ļ ļ Ľ ľ Ŀ ŀ Ł ł Ń ń Ņ ņ Ň ň ŉ Ŋ ŋ   Ŕ ŕ Ŗ ŗ Ř ř Ś ś Ŝ ŝ Ş ş Š Ţ ţ Ť ť Ŧ ŧ Ŵ ŵ Ŷ ŷ Ÿ ÿ Ÿ Ź ź Ż ż Ž 
+	};
+	var charMap1 = {
+		"#": "♯",
+		"b": "♭",
+		"=": "♮"
+	};
+	var charMap2 = {
+		"201": "♯",
+		"202": "♭",
+		"203": "♮",
+		"241": "¡",
+		"242": "¢", "252": "a", "262": "2", "272": "o", "302": "Â", "312": "Ê", "322": "Ò", "332": "Ú", "342": "â", "352": "ê", "362": "ò", "372": "ú",
+		"243": "£", "253": "«", "263": "3", "273": "»", "303": "Ã", "313": "Ë", "323": "Ó", "333": "Û", "343": "ã", "353": "ë", "363": "ó", "373": "û",
+		"244": "¤", "254": "¬", "264": "  ́", "274": "1⁄4", "304": "Ä", "314": "Ì", "324": "Ô", "334": "Ü", "344": "ä", "354": "ì", "364": "ô", "374": "ü",
+		"245": "¥", "255": "-", "265": "μ", "275": "1⁄2", "305": "Å", "315": "Í", "325": "Õ", "335": "Ý",  "345": "å", "355": "í", "365": "õ", "375": "ý",
+		"246": "¦", "256": "®", "266": "¶", "276": "3⁄4", "306": "Æ", "316": "Î", "326": "Ö", "336": "Þ", "346": "æ", "356": "î", "366": "ö", "376": "þ",
+		"247": "§", "257": " ̄", "267": "·", "277": "¿", "307": "Ç", "317": "Ï", "327": "×", "337": "ß", "347": "ç", "357": "ï", "367": "÷", "377": "ÿ",
+		"250": " ̈", "260": "°", "270": " ̧", "300": "À", "310": "È", "320": "Ð", "330": "Ø", "340": "à", "350": "è", "360": "ð", "370": "ø",
+		"251": "©", "261": "±", "271": "1", "301": "Á", "311": "É", "321": "Ñ", "331": "Ù", "341": "á", "351": "é", "361": "ñ", "371": "ù" };
+	this.translateString = function(str) {
+		var arr = str.split('\\');
+		if (arr.length === 1) return str;
+		var out = null;
+		window.ABCXJS.parse.each(arr, function(s) {
+			if (out === null)
+				out = s;
+			else {
+				var c = charMap[s.substring(0, 2)];
+				if (c !== undefined)
+					out += c + s.substring(2);
+				else {
+					c = charMap2[s.substring(0, 3)];
+					if (c !== undefined)
+						out += c + s.substring(3);
+					else {
+						c = charMap1[s.substring(0, 1)];
+						if (c !== undefined)
+							out += c + s.substring(1);
+						else
+							out += "\\" + s;
+					}
+				}
+			}
+		});
+		return out;
+	};
+	this.getNumber = function(line, index) {
+		var num = 0;
+		while (index < line.length) {
+			switch (line.charAt(index)) {
+				case '0':num = num*10;index++;break;
+				case '1':num = num*10+1;index++;break;
+				case '2':num = num*10+2;index++;break;
+				case '3':num = num*10+3;index++;break;
+				case '4':num = num*10+4;index++;break;
+				case '5':num = num*10+5;index++;break;
+				case '6':num = num*10+6;index++;break;
+				case '7':num = num*10+7;index++;break;
+				case '8':num = num*10+8;index++;break;
+				case '9':num = num*10+9;index++;break;
+				default:
+					return {num: num, index: index};
+			}
+		}
+		return {num: num, index: index};
+	};
+
+	this.getFraction = function(line, index) {
+		var num = 1;
+		var den = 1;
+		if (line.charAt(index) !== '/' && line.charAt(index) !== '.') {
+			var ret = this.getNumber(line, index);
+			num = ret.num;
+			index = ret.index;
+		}
+		if (line.charAt(index) === '.') {
+			index++;
+			var ret = this.getNumber(line, index);
+			var frac = ret.num;
+			index = ret.index;
+                        num = parseFloat(num+'.'+frac);
+                    
+                }
+		if (line.charAt(index) === '/') {
+			index++;
+			if (line.charAt(index) === '/') {
+				var div = 0.5;
+				while (line.charAt(index++) === '/')
+					div = div /2;
+				return {value: num * div, index: index-1};
+			} else {
+				var iSave = index;
+				var ret2 = this.getNumber(line, index);
+				if (ret2.num === 0 && iSave === index)	// If we didn't use any characters, it is an implied 2
+					ret2.num = 2;
+				if (ret2.num !== 0)
+					den = ret2.num;
+				index = ret2.index;
+			}
+		}
+
+		return {value: num/den, index: index};
+	};
+
+	this.theReverser = function(str) {
+		if (window.ABCXJS.parse.endsWith(str, ", The"))
+			return "The " + str.substring(0, str.length-5);
+		if (window.ABCXJS.parse.endsWith(str, ", A"))
+			return "A " + str.substring(0, str.length-3);
+		return str;
+	};
+
+	this.stripComment = function(str) {
+		var i = str.indexOf('%');
+		if (i >= 0)
+			return window.ABCXJS.parse.strip(str.substring(0, i));
+		return window.ABCXJS.parse.strip(str);
+	};
+
+	this.getInt = function(str) {
+		// This parses the beginning of the string for a number and returns { value: num, digits: num }
+		// If digits is 0, then the string didn't point to a number.
+		var x = parseInt(str);
+		if (isNaN(x))
+			return {digits: 0};
+		var s = "" + x;
+		var i = str.indexOf(s);	// This is to account for leading spaces
+		return {value: x, digits: i+s.length};
+	};
+
+	this.getFloat = function(str) {
+		// This parses the beginning of the string for a number and returns { value: num, digits: num }
+		// If digits is 0, then the string didn't point to a number.
+		var x = parseFloat(str);
+		if (isNaN(x))
+			return {digits: 0};
+		var s = "" + x;
+		var i = str.indexOf(s);	// This is to account for leading spaces
+		return {value: x, digits: i+s.length};
+	};
+
+	this.getMeasurement = function(tokens) {
+		if (tokens.length === 0) return { used: 0 };
+		var used = 1;
+		var num = '';
+		if (tokens[0].token === '-') {
+			tokens.shift();
+			num = '-';
+			used++;
+		}
+		else if (tokens[0].type !== 'number') return { used: 0 };
+		num += tokens.shift().token;
+		if (tokens.length === 0) return { used: 1, value: parseInt(num) };
+		var x = tokens.shift();
+		if (x.token === '.') {
+			used++;
+			if (tokens.length === 0) return { used: used, value: parseInt(num) };
+			if (tokens[0].type === 'number') {
+				x = tokens.shift();
+				num = num + '.' + x.token;
+				used++;
+				if (tokens.length === 0) return { used: used, value: parseFloat(num) };
+			}
+			x = tokens.shift();
+		}
+		switch (x.token) {
+			case 'pt': return { used: used+1, value: parseFloat(num) };
+			case 'cm': return { used: used+1, value: parseFloat(num)/2.54*72 };
+			case 'in': return { used: used+1, value: parseFloat(num)*72 };
+			default: tokens.unshift(x); return { used: used, value: parseFloat(num) };
+		}
+		return { used: 0 };
+	};
+	var substInChord = function(str)
+	{
+		while ( str.indexOf("\\n") !== -1)
+		{
+			str = str.replace("\\n", "\n");
+		}
+		return str;
+	};
+	this.getBrackettedSubstring = function(line, i, maxErrorChars, _matchChar)
+	{
+            // This extracts the sub string by looking at the first character and searching for that
+            // character later in the line (or search for the optional _matchChar).
+            // For instance, if the first character is a quote it will look for
+            // the end quote. If the end of the line is reached, then only up to the default number
+            // of characters are returned, so that a missing end quote won't eat up the entire line.
+            // It returns the substring and the number of characters consumed.
+            // The number of characters consumed is normally two more than the size of the substring,
+            // but in the error case it might not be.
+            var matchChar = _matchChar || line.charAt(i);
+            var nextPos = line.substr( i+1 ).indexOf(matchChar);
+            if( nextPos === -1) {
+                if( line.charAt( i+1 ) ===  ' ' ) // entendido como break line
+                    return  [1, "", false, 0];
+                else {
+                    // procura o primeiro espaço em branco após matchChar
+                    var nextPos = line.substr( i+1 ).indexOf(' ');
+                    if( nextPos === -1) {
+                        // we hit the end of line, so we'll just pick an arbitrary num of chars so the line doesn't disappear.
+			nextPos = i+maxErrorChars>line.length-1?line.length-1:i+maxErrorChars;
+			return [nextPos-i+1, substInChord(line.substring(i+1, nextPos)), false];
+                    }
+                }
+                
+            }
+            
+            var str = line.substr(i+1, nextPos ).split(":");
+            return [nextPos+2, str[0], true, str[1]===undefined?0:str[1] ];
+
+//		var pos = i+1;
+//		while ((pos < line.length) && (line.charAt(pos) !== matchChar))
+//			++pos;
+//		if (line.charAt(pos) === matchChar)
+//			return [pos-i+1,substInChord(line.substring(i+1, pos)), true];
+//		else	// we hit the end of line, so we'll just pick an arbitrary num of chars so the line doesn't disappear.
+//		{
+//			pos = i+maxErrorChars;
+//			if (pos > line.length-1)
+//				pos = line.length-1;
+//			return [pos-i+1, substInChord(line.substring(i+1, pos)), false];
+//		}
+	};
+};
+/* 
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+/*global window */
+
+if (!window.ABCXJS)
+	window.ABCXJS = {};
+
+if (!window.ABCXJS.parse)
+	window.ABCXJS.parse = {};
+    
+window.ABCXJS.parse.Transposer = function ( offSet ) {
+    
+    this.pitches           = ABCXJS.parse.pitches;
+    
+    this.tokenizer         = new ABCXJS.parse.tokenizer();
+    
+    this.reset( offSet );
+    
+};
+
+window.ABCXJS.parse.Transposer.prototype.reset = function( offSet ) {
+    this.offSet          = offSet;
+    this.currKey         = [];
+    this.newKeyAcc       = [];
+    this.oldKeyAcc       = [];
+    this.changedLines    = [];
+    this.deletedLines    = [];
+    this.newX            =  0;
+    this.workingX        =  0;
+    this.workingLine     = -1;
+    this.workingLineIdx  = -1;
+};
+
+window.ABCXJS.parse.Transposer.prototype.numberToStaff = function(number, newKacc) {
+    var s ;
+    if(newKacc.length > 0 && newKacc[0].acc === 'flat')
+        s = ABCXJS.parse.number2staff[number];
+    else
+        s = ABCXJS.parse.number2staffSharp[number];
+    
+    // octave can be altered below
+    s.octVar = 0;
+    
+    if(s.acc === "" && ("EFBC").indexOf(s.note) >= 0 ) {
+        var o ;
+        switch(s.note) {
+            case 'E':
+                //procurar Fflat
+                o = {note:'F',acc:'flat', octVar:0};
+                break;
+            case 'F':
+                //procurar Esharp
+                o = {note:'E',acc:'sharp', octVar:0};
+                break;
+            case 'B':
+                //procurar Cflat
+                o = {note:'C',acc:'flat', octVar:1};
+                break;
+            case 'C':
+                //procurar Bsharp
+                o = {note:'B',acc:'sharp', octVar:-1};
+                break;
+        }
+        for( var a = 0; a < newKacc.length; a ++ ) {
+            if( newKacc[a].note.toUpperCase() === o.note && newKacc[a].acc === o.acc ){
+                s = o;
+                break;
+            }
+        }
+    }
+    return s;
+};
+
+window.ABCXJS.parse.Transposer.prototype.transposeRegularMusicLine = function(line, lineNumber, multilineVars) {
+
+    var index = 0;
+    var found = false;
+    var inside = false;
+    var state = 0;
+    var lastState = 0;
+    var xi = -1;
+    var xf = -1;
+    var accSyms = "^_=";  // state 1
+    var pitSyms = "ABCDEFGabcdefg"; // state 2
+    var octSyms = ",\'"; // state 3
+    var exclusionSyms = '"!+'; 
+    
+    this.workingLine = line;
+    this.vars = multilineVars;
+    this.isBass = (this.vars.currentVoice.clef.type==='bass') || false;
+    this.isChord = false;
+    this.workingLineIdx = this.changedLines.length;
+    this.changedLines[ this.workingLineIdx ] = { line:lineNumber, text: line };
+    this.workingX = 0;
+    this.newX =0;
+    this.baraccidentals = [];
+    this.baraccidentalsNew = [];
+    
+    while (index < line.length) {
+        found = false;
+        inside = false;
+        lastState = 0;
+        while (index < line.length && !found && line.charAt(index) !== '%') {
+            
+            // ignora o conteúdo de accents
+            if( !inside && exclusionSyms.indexOf(line.charAt(index)) >= 0 ) {
+                var nextPos = line.substr( index+1 ).indexOf(line.charAt(index));
+                if( nextPos < 0 ) {
+                    index = line.length;
+                } else {
+                    if(line.charAt(index)==='"') {
+                        this.transposeChord( index+1, nextPos ); 
+                    }    
+                    index += nextPos + 2;
+                }
+                continue;
+            }
+            
+            if(line.charAt(index) === '|'){
+                this.baraccidentals = [];
+                this.baraccidentalsNew = [];
+            }
+            
+            state = 
+              accSyms.indexOf(line.charAt(index)) >= 0 ? 1 : 
+              pitSyms.indexOf(line.charAt(index)) >= 0 ? 2 :
+              octSyms.indexOf(line.charAt(index)) >= 0 ? 3 : 0;
+            
+            if( ( state < lastState && inside ) || (lastState === 2 && state === 2 && inside ) ) {
+               found = true;
+               xf = index;
+            } else if( state > lastState && !inside) {
+              inside = true;
+              xi = index;
+            }
+            
+            lastState = state;
+            state = 0;
+            
+            if (found) {
+              this.transposeNote(xi, xf - xi);
+            } else {
+                if( line.charAt(index) === '[' ) {
+                    index = this.checkForInlineFields( index );
+                } else {
+                    if(line.charAt(index) === ']' ) {
+                        this.isChord = false;
+                        delete this.lastPitch ;
+                    }
+                    index++;
+                }
+            }   
+            
+        }
+        
+        if(inside && !found) {
+            this.transposeNote(xi, index - xi);
+        }
+        
+        if(line.charAt(index) === '%' ){
+            index = line.length;
+        }
+      
+    }
+    return this.changedLines[ this.workingLineIdx ].text;
+};
+
+window.ABCXJS.parse.Transposer.prototype.checkForInlineFields = function ( index ) {
+    var c = this.workingLine.substring(index);
+    var rex = c.match(/^\[([IKLMmNPQRrUV]\:.*?)\]/g);
+    var newidx = index;
+    if(rex) {
+        var key = rex[0].substr(1,rex[0].length-2).split(":");
+        switch(key[0]) {
+            case 'K': //Será que deveria me preocupar em colocar em cNewKey informação da armadura daqui para frente?
+               this.transposeChord(index+3,key[1].length);
+               newidx+=rex[0].length;
+               break;
+            case 'V':
+               this.updateVoiceInfo(key[1]);
+               newidx+=rex[0].length;
+               break;
+            default:
+               newidx+=rex[0].length;
+        }
+    } else {
+        this.isChord = 1;
+        newidx+=1;
+    }
+    return newidx;
+};
+
+window.ABCXJS.parse.Transposer.prototype.updateVoiceInfo = function ( id ) {
+    this.vars.currentVoice = this.vars.voices[id] ;
+    this.isBass = (this.vars.currentVoice.clef.type==='bass') || false;
+    
+};
+
+window.ABCXJS.parse.Transposer.prototype.transposeChord = function ( xi, size ) {
+    
+    var c = this.denormalizeAcc(this.workingLine.substring(xi,xi+size));
+    var rex = c.match(/([ABCDEFG][#b]*[M+m°]*[0-9]*(\/[ABCDEFG0-9])*)/g);
+    
+    if( Math.abs(this.offSet)%12 === 0 || !rex || c!==rex[0]  ) return ;
+    
+    var newStr = c;
+    
+    rex = c.match(/([ABCDEFG].*(\/[ABCDEFG]).*)/g);
+    c = rex===null? [c] : c.split('/');
+    
+    for( var t = 0; t < c.length; t++) {
+        
+        var cKey = this.parseKey( c[t] );
+        var newKey = this.keyToNumber( cKey );
+        var cNewKey = this.denormalizeAcc( this.numberToKey(newKey + this.offSet, this.offSet ));
+
+        newStr  = newStr.replace(cKey, cNewKey );
+    }
+    this.updateWorkingLine( newStr, xi, size/*, cNewKey.length*/ );
+    //this.workingLine = this.workingLine.substr(0, xi) + cNewKey + this.workingLine.substr(xi+size);
+};
+
+window.ABCXJS.parse.Transposer.prototype.transposeNote = function(xi, size )
+{
+    var abcNote = this.workingLine.substr(xi, size);
+    var elem = this.makeElem(abcNote);
+    var pitch = elem.pitch;
+    var oct = this.extractStaffOctave(pitch);
+    var crom = this.staffNoteToCromatic(this.extractStaffNote(pitch));
+
+    var txtAcc = elem.accidental;
+    var dAcc = this.getAccOffset(txtAcc);
+    
+    if(elem.accidental) {
+        this.baraccidentals[pitch] = dAcc;
+    }
+
+    var dKi = this.getKeyAccOffset(this.numberToKey(crom, this.offSet), this.oldKeyAcc);
+
+    var newNote = 0;
+    if (this.baraccidentals[pitch] !== undefined) {
+        newNote = crom + this.baraccidentals[pitch] + this.offSet;
+    } else { // use normal accidentals
+        newNote = crom + dKi + this.offSet;
+    }
+
+    var newOct = this.extractCromaticOctave(newNote);
+    var newNote = this.extractCromaticNote(newNote);
+
+    var newStaff = this.numberToStaff(newNote, this.newKeyAcc);
+    var dKf = this.getKeyAccOffset(newStaff.note, this.newKeyAcc);
+    
+    var deltaOctave = newOct + newStaff.octVar; 
+    
+    if( this.isBass ) {
+        if ( this.isChord && this.isChord > 1 ) {
+            var p = this.getPitch(newStaff.note, oct + deltaOctave );
+
+            if( this.offset > 0 ) {
+                if( p < elem.pitch ) deltaOctave++;
+            } else {
+                if( p > elem.pitch ) deltaOctave--;
+            }
+            p = this.getPitch(newStaff.note, oct + deltaOctave );
+            if(p < this.lastPitch ){
+                // assumir que o acorde é cadastrado em ordem crescente e
+                // se ao final da conversão de uma nota do acorde, esta for menor que a prévia, somar uma oitava. 
+                deltaOctave++;
+            }
+        } else {
+            deltaOctave = 0;
+        }
+        this.isChord && this.isChord ++; 
+    }
+
+
+    this.lastPitch = pitch = this.getPitch(newStaff.note, oct + deltaOctave );
+    dAcc = this.getAccOffset(newStaff.acc);
+
+    var newElem = {};
+    newElem.pitch = pitch;
+    if(newStaff.acc !== '' ) newElem.accidental = newStaff.acc;
+    
+    // se a nota sair com um acidente (inclusive natural) registrar acidente na barra para o pitch.
+    var dBarAcc = this.getAccOffset( this.baraccidentalsNew[newElem.pitch] );
+    if(dAcc === 0) {
+        if( dBarAcc && dBarAcc !==0 || dKf !== 0) {
+          newElem.accidental = 'natural';
+        }
+    } else {
+        if( dBarAcc && dBarAcc !== 0 ) {
+           if(dBarAcc === dAcc ) delete newElem.accidental;
+        } else if(dKf !== 0) {
+           if(dKf === dAcc ) delete newElem.accidental;
+        }
+    }
+    
+    if( newElem.accidental ) {
+      this.baraccidentalsNew[newElem.pitch] = newElem.accidental;
+    }
+
+    oct = this.extractStaffOctave(pitch);
+    var key = this.numberToKey(this.staffNoteToCromatic(this.extractStaffNote(pitch)), this.offSet);
+    txtAcc = newElem.accidental;
+    abcNote = this.getAbcNote(key, txtAcc, oct);
+    this.updateWorkingLine( abcNote, xi, size/*, abcNote.length */);
+    return newElem;
+};
+
+window.ABCXJS.parse.Transposer.prototype.updateWorkingLine = function( newText, xi, size/*, newSize*/ ) {
+    var p0 = this.changedLines[this.workingLineIdx].text.substr(0, this.newX);
+    var p1 = this.workingLine.substr(this.workingX, xi - this.workingX);
+    var p2 = this.workingLine.substr(xi + size);
+    this.workingX = xi + size;
+    this.changedLines[this.workingLineIdx].text = p0 + p1 + newText;
+    this.newX = this.changedLines[this.workingLineIdx].text.length;
+    this.changedLines[this.workingLineIdx].text += p2;
+};
+
+window.ABCXJS.parse.Transposer.prototype.getAbcNote = function( key, txtAcc, oct) {
+   var cOct = "";
+   if( oct >= 5 ) {
+       key = key.toLowerCase();  
+       cOct = Array(oct-4).join("'");
+   }  else {
+       key = key.toUpperCase();  
+       cOct = Array(4-(oct-1)).join(",");
+   }
+   return this.accNameToABC(txtAcc) + key + cOct;
+};
+
+window.ABCXJS.parse.Transposer.prototype.transposeKey = function ( str, line, lineNumber ) {
+
+    var cKey = this.parseKey( str );
+    
+    this.currKey[this.currKey.length] = cKey;
+    
+    if( Math.abs(this.offSet)%12 === 0 || ! cKey ) return this.tokenizer.tokenize(str, 0, str.length);
+    
+    var newKey = this.keyToNumber( cKey );
+    var cNewKey = this.denormalizeAcc( this.numberToKey(newKey + this.offSet, this.offSet ));
+    
+    this.currKey[this.currKey.length-1] = cNewKey;
+
+    var newStr  = str.replace(cKey, cNewKey );
+    var newLine = line.substr( 0, line.indexOf(str) ) + newStr;
+    
+    this.changedLines[ this.changedLines.length ] = { line:lineNumber, text: newLine };
+
+    this.oldKeyAcc = ABCXJS.parse.parseKeyVoice.standardKey(this.denormalizeAcc(str));
+    this.newKeyAcc = ABCXJS.parse.parseKeyVoice.standardKey(this.denormalizeAcc(newStr));
+    
+    return this.tokenizer.tokenize(newStr, 0, newStr.length);
+};
+
+window.ABCXJS.parse.Transposer.prototype.parseKey = function ( str ) {
+    var cKey = null;
+    var tokens = this.tokenizer.tokenize(str, 0, str.length);
+    var retPitch = this.tokenizer.getKeyPitch(tokens[0].token);
+
+    if (retPitch.len > 0) {
+        // The accidental and mode might be attached to the pitch, so we might want to just remove the first character.
+        cKey = retPitch.token;
+        if (tokens[0].token.length > 1)
+            tokens[0].token = tokens[0].token.substring(1);
+        else
+            tokens.shift();
+        // We got a pitch to start with, so we might also have an accidental and a mode
+        if (tokens.length > 0) {
+            var retAcc = this.tokenizer.getSharpFlat(tokens[0].token);
+            if (retAcc.len > 0) {
+                cKey += retAcc.token;
+            }
+        }
+    }
+    
+    return cKey;
+};
+
+
+window.ABCXJS.parse.Transposer.prototype.deleteTabLine = function ( n ) {
+    this.deletedLines[n] = true;
+};
+
+window.ABCXJS.parse.Transposer.prototype.updateEditor = function ( lines ) {
+    
+    for( i = 0; i < this.changedLines.length; i++ ){
+        lines[this.changedLines[i].line] = this.changedLines[i].text;
+    }
+    
+    var newStr = lines[0]; // supoe q a linha zero nunca sera apagada
+    
+    for( var i = 1; i < lines.length; i++ ){
+        if( ! this.deletedLines[i] ) {
+            newStr += '\n' + lines[i];
+        }
+    }
+    this.deletedLines = [];
+    this.changedLines = [];
+    return newStr+'\n';
+};
+
+window.ABCXJS.parse.Transposer.prototype.getKeyVoice = function ( idx ) {
+return (this.currKey[idx]?this.currKey[idx]:"C");
+};
+
+window.ABCXJS.parse.Transposer.prototype.normalizeAcc = function ( cKey ) {
+    return ABCXJS.parse.normalizeAcc(cKey);
+};
+
+window.ABCXJS.parse.Transposer.prototype.denormalizeAcc = function ( cKey ) {
+    return ABCXJS.parse.denormalizeAcc(cKey);
+};
+
+window.ABCXJS.parse.Transposer.prototype.getKeyAccOffset = function(note, keyAcc)
+// recupera os acidentes da clave e retorna um offset no modelo cromatico
+{
+  for( var a = 0; a < keyAcc.length; a ++) {
+      if( keyAcc[a].note.toLowerCase() === note.toLowerCase() ) {
+          return this.getAccOffset(keyAcc[a].acc);
+      }
+  }
+  return 0;    
+};
+               
+window.ABCXJS.parse.Transposer.prototype.staffNoteToCromatic = function (note) {
+  return note*2 + (note>2?-1:0);
+};
+
+//window.ABCXJS.parse.Transposer.prototype.cromaticToStaffNote = function (note) {
+//  return (note>5?note+1:note)/2;
+//};
+
+window.ABCXJS.parse.Transposer.prototype.extractStaffNote = function(pitch) {
+    pitch = pitch % 7;
+    return pitch<0? pitch+=7:pitch;
+};
+
+window.ABCXJS.parse.Transposer.prototype.extractCromaticOctave = function(pitch) {
+    return Math.floor(pitch/12) ;
+};
+
+window.ABCXJS.parse.Transposer.prototype.extractCromaticNote = function(pitch) {
+    pitch = pitch % 12;
+    return pitch<0? pitch+=12:pitch;
+};
+
+window.ABCXJS.parse.Transposer.prototype.extractStaffOctave = function(pitch) {
+    return Math.floor((28 + pitch) / 7);
+};
+
+window.ABCXJS.parse.Transposer.prototype.numberToKey = function(number, offset) {
+    var r = number;
+    r %= ABCXJS.parse.number2keysharp.length;
+    
+    if( r < 0 ) r += ABCXJS.parse.number2keysharp.length;
+    
+    if( offset > 0 ) {
+        r = ABCXJS.parse.number2keysharp[r];
+    } else {
+        r = ABCXJS.parse.number2keyflat[r];
+    }
+    return r;
+};
+
+window.ABCXJS.parse.Transposer.prototype.keyToNumber = function(key) {
+    key = this.normalizeAcc(key);
+    return ABCXJS.parse.key2number[key];
+};
+
+window.ABCXJS.parse.Transposer.prototype.getAccOffset = function(txtAcc)
+// a partir do nome do acidente, retorna o offset no modelo cromatico
+{
+    var ret = 0;
+
+    switch (txtAcc) {
+        case 'accidentals.dblsharp':
+        case 'dblsharp':
+            ret = 2;
+            break;
+        case 'accidentals.sharp':
+        case 'sharp':
+            ret = 1;
+            break;
+        case 'accidentals.nat':
+        case 'nat':
+        case 'natural':
+            ret = 0;
+            break;
+        case 'accidentals.flat':
+        case 'flat':
+            ret = -1;
+            break;
+        case 'accidentals.dblflat':
+        case 'dblflat':
+            ret = -2;
+            break;
+    }
+    return ret;
+};
+
+window.ABCXJS.parse.Transposer.prototype.accNameToABC = function(txtAcc)
+// a partir do nome do acidente, retorna o offset no modelo cromatico
+{
+    var ret = "";
+
+    switch (txtAcc) {
+        case 'accidentals.dblsharp':
+        case 'dblsharp':
+            ret = "^^";
+            break;
+        case 'accidentals.sharp':
+        case 'sharp':
+            ret = '^';
+            break;
+        case 'accidentals.nat':
+        case 'nat':
+        case 'natural':
+            ret = "=";
+            break;
+        case 'accidentals.flat':
+        case 'flat':
+            ret = '_';
+            break;
+        case 'accidentals.dblflat':
+        case 'dblflat':
+            ret = '__';
+            break;
+    }
+    return ret;
+};
+
+window.ABCXJS.parse.Transposer.prototype.accAbcToName = function(abc)
+// a partir do nome do acidente, retorna o offset no modelo cromatico
+{
+    var ret = "";
+
+    switch (abc) {
+        case '^^':
+            ret = "dblsharp";
+            break;
+        case '^':
+            ret = 'sharp';
+            break;
+        case '=':
+            ret = "natural";
+            break;
+        case '_':
+            ret = 'flat';
+            break;
+        case '__':
+            ret = 'dblflat';
+            break;
+    }
+    return ret;
+};
+
+window.ABCXJS.parse.Transposer.prototype.getAccName = function(offset)
+{
+    var names = ['dblflat','flat','natural','sharp','dblsharp'];
+    return names[offset+2];
+};
+
+window.ABCXJS.parse.Transposer.prototype.getPitch = function( staff, octave) {
+   return this.pitches[staff] + (octave - 4) * 7; 
+};
+
+window.ABCXJS.parse.Transposer.prototype.makeElem = function(abcNote){
+   var pitSyms = "ABCDEFGabcdefg"; // 2
+   var i = 0;
+   while( pitSyms.indexOf(abcNote.charAt(i)) === -1 ) {
+       i++;
+   }
+   var acc = this.accAbcToName(abcNote.substr(0,i));
+   var pitch = this.pitches[abcNote.charAt(i)];
+   while( i < abcNote.length ) {
+      switch ( abcNote.charAt(i) ) {
+          case "'": pitch +=7; break;
+          case "," : pitch -=7; break;
+      }
+      i++;
+   }
+   return ( acc ? { pitch: pitch, accidental: acc } : { pitch: pitch } );
+};
+/*global window, ABCXJS */
+
+if (!window.ABCXJS)
+	window.ABCXJS = {};
+
+if (!window.ABCXJS.write)
+	window.ABCXJS.write = {};
+
+ABCXJS.write.Glyphs = function () {
+    var glyphs = {
+          'n.0': {d: [["M", 4.83, -14.97], ["c", 0.33, -0.03, 1.11, 0, 1.47, 0.06], ["c", 1.68, 0.36, 2.97, 1.59, 3.78, 3.6], ["c", 1.2, 2.97, 0.81, 6.96, -0.9, 9.27], ["c", -0.78, 1.08, -1.71, 1.71, -2.91, 1.95], ["c", -0.45, 0.09, -1.32, 0.09, -1.77, 0], ["c", -0.81, -0.18, -1.47, -0.51, -2.07, -1.02], ["c", -2.34, -2.07, -3.15, -6.72, -1.74, -10.2], ["c", 0.87, -2.16, 2.28, -3.42, 4.14, -3.66], ["z"], ["m", 1.11, 0.87], ["c", -0.21, -0.06, -0.69, -0.09, -0.87, -0.06], ["c", -0.54, 0.12, -0.87, 0.42, -1.17, 0.99], ["c", -0.36, 0.66, -0.51, 1.56, -0.6, 3], ["c", -0.03, 0.75, -0.03, 4.59, -0, 5.31], ["c", 0.09, 1.5, 0.27, 2.4, 0.6, 3.06], ["c", 0.24, 0.48, 0.57, 0.78, 0.96, 0.9], ["c", 0.27, 0.09, 0.78, 0.09, 1.05, -0], ["c", 0.39, -0.12, 0.72, -0.42, 0.96, -0.9], ["c", 0.33, -0.66, 0.51, -1.56, 0.6, -3.06], ["c", 0.03, -0.72, 0.03, -4.56, -0, -5.31], ["c", -0.09, -1.47, -0.27, -2.37, -0.6, -3.03], ["c", -0.24, -0.48, -0.54, -0.78, -0.93, -0.9], ["z"]], w: 10.78, h: 14.959}
+        , 'n.1': {d: [["M", 3.30, -15.06], ["c", 0.06, -0.06, 0.21, -0.03, 0.66, 0.15], ["c", 0.81, 0.39, 1.08, 0.39, 1.83, 0.03], ["c", 0.21, -0.09, 0.39, -0.15, 0.42, -0.15], ["c", 0.12, 0, 0.21, 0.09, 0.27, 0.21], ["c", 0.06, 0.12, 0.06, 0.33, 0.06, 5.94], ["c", 0, 3.93, 0, 5.85, 0.03, 6.03], ["c", 0.06, 0.36, 0.15, 0.69, 0.27, 0.96], ["c", 0.36, 0.75, 0.93, 1.17, 1.68, 1.26], ["c", 0.3, 0.03, 0.39, 0.09, 0.39, 0.3], ["c", 0, 0.15, -0.03, 0.18, -0.09, 0.24], ["c", -0.06, 0.06, -0.09, 0.06, -0.48, 0.06], ["c", -0.42, -0, -0.69, -0.03, -2.1, -0.24], ["c", -0.9, -0.15, -1.77, -0.15, -2.67, -0], ["c", -1.41, 0.21, -1.68, 0.24, -2.1, 0.24], ["c", -0.39, -0, -0.42, -0, -0.48, -0.06], ["c", -0.06, -0.06, -0.06, -0.09, -0.06, -0.24], ["c", 0, -0.21, 0.06, -0.27, 0.36, -0.3], ["c", 0.75, -0.09, 1.32, -0.51, 1.68, -1.26], ["c", 0.12, -0.27, 0.21, -0.6, 0.27, -0.96], ["c", 0.03, -0.18, 0.03, -1.59, 0.03, -4.29], ["c", 0, -3.87, 0, -4.05, -0.06, -4.14], ["c", -0.09, -0.15, -0.18, -0.24, -0.39, -0.24], ["c", -0.12, -0, -0.15, 0.03, -0.21, 0.06], ["c", -0.03, 0.06, -0.45, 0.99, -0.96, 2.13], ["c", -0.48, 1.14, -0.9, 2.1, -0.93, 2.16], ["c", -0.06, 0.15, -0.21, 0.24, -0.33, 0.24], ["c", -0.24, 0, -0.42, -0.18, -0.42, -0.39], ["c", 0, -0.06, 3.27, -7.62, 3.33, -7.74], ["z"]], w: 8.94, h: 15.058}
+        , 'n.2': {d: [["M", 4.23, -14.97], ["c", 0.57, -0.06, 1.68, 0, 2.34, 0.18], ["c", 0.69, 0.18, 1.5, 0.54, 2.01, 0.9], ["c", 1.35, 0.96, 1.95, 2.25, 1.77, 3.81], ["c", -0.15, 1.35, -0.66, 2.34, -1.68, 3.15], ["c", -0.6, 0.48, -1.44, 0.93, -3.12, 1.65], ["c", -1.32, 0.57, -1.8, 0.81, -2.37, 1.14], ["c", -0.57, 0.33, -0.57, 0.33, -0.24, 0.27], ["c", 0.39, -0.09, 1.26, -0.09, 1.68, 0], ["c", 0.72, 0.15, 1.41, 0.45, 2.1, 0.9], ["c", 0.99, 0.63, 1.86, 0.87, 2.55, 0.75], ["c", 0.24, -0.06, 0.42, -0.15, 0.57, -0.3], ["c", 0.12, -0.09, 0.3, -0.42, 0.3, -0.51], ["c", 0, -0.09, 0.12, -0.21, 0.24, -0.24], ["c", 0.18, -0.03, 0.39, 0.12, 0.39, 0.3], ["c", 0, 0.12, -0.15, 0.57, -0.3, 0.87], ["c", -0.54, 1.02, -1.56, 1.74, -2.79, 2.01], ["c", -0.42, 0.09, -1.23, 0.09, -1.62, 0.03], ["c", -0.81, -0.18, -1.32, -0.45, -2.01, -1.11], ["c", -0.45, -0.45, -0.63, -0.57, -0.96, -0.69], ["c", -0.84, -0.27, -1.89, 0.12, -2.25, 0.9], ["c", -0.12, 0.21, -0.21, 0.54, -0.21, 0.72], ["c", 0, 0.12, -0.12, 0.21, -0.27, 0.24], ["c", -0.15, 0, -0.27, -0.03, -0.33, -0.15], ["c", -0.09, -0.21, 0.09, -1.08, 0.33, -1.71], ["c", 0.24, -0.66, 0.66, -1.26, 1.29, -1.89], ["c", 0.45, -0.45, 0.9, -0.81, 1.92, -1.56], ["c", 1.29, -0.93, 1.89, -1.44, 2.34, -1.98], ["c", 0.87, -1.05, 1.26, -2.19, 1.2, -3.63], ["c", -0.06, -1.29, -0.39, -2.31, -0.96, -2.91], ["c", -0.36, -0.33, -0.72, -0.51, -1.17, -0.54], ["c", -0.84, -0.03, -1.53, 0.42, -1.59, 1.05], ["c", -0.03, 0.33, 0.12, 0.6, 0.57, 1.14], ["c", 0.45, 0.54, 0.54, 0.87, 0.42, 1.41], ["c", -0.15, 0.63, -0.54, 1.11, -1.08, 1.38], ["c", -0.63, 0.33, -1.2, 0.33, -1.83, 0], ["c", -0.24, -0.12, -0.33, -0.18, -0.54, -0.39], ["c", -0.18, -0.18, -0.27, -0.3, -0.36, -0.51], ["c", -0.24, -0.45, -0.27, -0.84, -0.21, -1.38], ["c", 0.12, -0.75, 0.45, -1.41, 1.02, -1.98], ["c", 0.72, -0.72, 1.74, -1.17, 2.85, -1.32], ["z"]], w: 10.764, h: 14.993}
+        , 'n.3': {d: [["M", 3.78, -14.97], ["c", 0.3, -0.03, 1.41, 0, 1.83, 0.06], ["c", 2.22, 0.3, 3.51, 1.32, 3.72, 2.91], ["c", 0.03, 0.33, 0.03, 1.26, -0.03, 1.65], ["c", -0.12, 0.84, -0.48, 1.47, -1.05, 1.77], ["c", -0.27, 0.15, -0.36, 0.24, -0.45, 0.39], ["c", -0.09, 0.21, -0.09, 0.36, 0, 0.57], ["c", 0.09, 0.15, 0.18, 0.24, 0.51, 0.39], ["c", 0.75, 0.42, 1.23, 1.14, 1.41, 2.13], ["c", 0.06, 0.42, 0.06, 1.35, 0, 1.71], ["c", -0.18, 0.81, -0.48, 1.38, -1.02, 1.95], ["c", -0.75, 0.72, -1.8, 1.2, -3.18, 1.38], ["c", -0.42, 0.06, -1.56, 0.06, -1.95, 0], ["c", -1.89, -0.33, -3.18, -1.29, -3.51, -2.64], ["c", -0.03, -0.12, -0.03, -0.33, -0.03, -0.6], ["c", 0, -0.36, 0, -0.42, 0.06, -0.63], ["c", 0.12, -0.3, 0.27, -0.51, 0.51, -0.75], ["c", 0.24, -0.24, 0.45, -0.39, 0.75, -0.51], ["c", 0.21, -0.06, 0.27, -0.06, 0.6, -0.06], ["c", 0.33, 0, 0.39, 0, 0.6, 0.06], ["c", 0.3, 0.12, 0.51, 0.27, 0.75, 0.51], ["c", 0.36, 0.33, 0.57, 0.75, 0.6, 1.2], ["c", 0, 0.21, 0, 0.27, -0.06, 0.42], ["c", -0.09, 0.18, -0.12, 0.24, -0.54, 0.54], ["c", -0.51, 0.36, -0.63, 0.54, -0.6, 0.87], ["c", 0.06, 0.54, 0.54, 0.9, 1.38, 0.99], ["c", 0.36, 0.06, 0.72, 0.03, 0.96, -0.06], ["c", 0.81, -0.27, 1.29, -1.23, 1.44, -2.79], ["c", 0.03, -0.45, 0.03, -1.95, -0.03, -2.37], ["c", -0.09, -0.75, -0.33, -1.23, -0.75, -1.44], ["c", -0.33, -0.18, -0.45, -0.18, -1.98, -0.18], ["c", -1.35, 0, -1.41, 0, -1.5, -0.06], ["c", -0.18, -0.12, -0.24, -0.39, -0.12, -0.6], ["c", 0.12, -0.15, 0.15, -0.15, 1.68, -0.15], ["c", 1.5, 0, 1.62, 0, 1.89, -0.15], ["c", 0.18, -0.09, 0.42, -0.36, 0.54, -0.57], ["c", 0.18, -0.42, 0.27, -0.9, 0.3, -1.95], ["c", 0.03, -1.2, -0.06, -1.8, -0.36, -2.37], ["c", -0.24, -0.48, -0.63, -0.81, -1.14, -0.96], ["c", -0.3, -0.06, -1.08, -0.06, -1.38, 0.03], ["c", -0.6, 0.15, -0.9, 0.42, -0.96, 0.84], ["c", -0.03, 0.3, 0.06, 0.45, 0.63, 0.84], ["c", 0.33, 0.24, 0.42, 0.39, 0.45, 0.63], ["c", 0.03, 0.72, -0.57, 1.5, -1.32, 1.65], ["c", -1.05, 0.27, -2.1, -0.57, -2.1, -1.65], ["c", 0, -0.45, 0.15, -0.96, 0.39, -1.38], ["c", 0.12, -0.21, 0.54, -0.63, 0.81, -0.81], ["c", 0.57, -0.42, 1.38, -0.69, 2.25, -0.81], ["z"]], w: 9.735, h: 14.967}
+        , 'n.4': {d: [["M", 8.64, -14.94], ["c", 0.27, -0.09, 0.42, -0.12, 0.54, -0.03], ["c", 0.09, 0.06, 0.15, 0.21, 0.15, 0.3], ["c", -0.03, 0.06, -1.92, 2.31, -4.23, 5.04], ["c", -2.31, 2.73, -4.23, 4.98, -4.26, 5.01], ["c", -0.03, 0.06, 0.12, 0.06, 2.55, 0.06], ["l", 2.61, 0], ["l", 0, -2.37], ["c", 0, -2.19, 0.03, -2.37, 0.06, -2.46], ["c", 0.03, -0.06, 0.21, -0.18, 0.57, -0.42], ["c", 1.08, -0.72, 1.38, -1.08, 1.86, -2.16], ["c", 0.12, -0.3, 0.24, -0.54, 0.27, -0.57], ["c", 0.12, -0.12, 0.39, -0.06, 0.45, 0.12], ["c", 0.06, 0.09, 0.06, 0.57, 0.06, 3.96], ["l", 0, 3.9], ["l", 1.08, 0], ["c", 1.05, 0, 1.11, 0, 1.2, 0.06], ["c", 0.24, 0.15, 0.24, 0.54, 0, 0.69], ["c", -0.09, 0.06, -0.15, 0.06, -1.2, 0.06], ["l", -1.08, 0], ["l", 0, 0.33], ["c", 0, 0.57, 0.09, 1.11, 0.3, 1.53], ["c", 0.36, 0.75, 0.93, 1.17, 1.68, 1.26], ["c", 0.3, 0.03, 0.39, 0.09, 0.39, 0.3], ["c", 0, 0.15, -0.03, 0.18, -0.09, 0.24], ["c", -0.06, 0.06, -0.09, 0.06, -0.48, 0.06], ["c", -0.42, 0, -0.69, -0.03, -2.1, -0.24], ["c", -0.9, -0.15, -1.77, -0.15, -2.67, 0], ["c", -1.41, 0.21, -1.68, 0.24, -2.1, 0.24], ["c", -0.39, 0, -0.42, 0, -0.48, -0.06], ["c", -0.06, -0.06, -0.06, -0.09, -0.06, -0.24], ["c", 0, -0.21, 0.06, -0.27, 0.36, -0.3], ["c", 0.75, -0.09, 1.32, -0.51, 1.68, -1.26], ["c", 0.21, -0.42, 0.3, -0.96, 0.3, -1.53], ["l", 0, -0.33], ["l", -2.7, 0], ["c", -2.91, 0, -2.85, 0, -3.09, -0.15], ["c", -0.18, -0.12, -0.3, -0.39, -0.27, -0.54], ["c", 0.03, -0.06, 0.18, -0.24, 0.33, -0.45], ["c", 0.75, -0.9, 1.59, -2.07, 2.13, -3.03], ["c", 0.33, -0.54, 0.84, -1.62, 1.05, -2.16], ["c", 0.57, -1.41, 0.84, -2.64, 0.9, -4.05], ["c", 0.03, -0.63, 0.06, -0.72, 0.24, -0.81], ["l", 0.12, -0.06], ["l", 0.45, 0.12], ["c", 0.66, 0.18, 1.02, 0.24, 1.47, 0.27], ["c", 0.6, 0.03, 1.23, -0.09, 2.01, -0.33], ["z"]], w: 11.795, h: 14.994}
+        , 'n.5': {d: [["M", 1.02, -14.94], ["c", 0.12, -0.09, 0.03, -0.09, 1.08, 0.06], ["c", 2.49, 0.36, 4.35, 0.36, 6.96, -0.06], ["c", 0.57, -0.09, 0.66, -0.06, 0.81, 0.06], ["c", 0.15, 0.18, 0.12, 0.24, -0.15, 0.51], ["c", -1.29, 1.26, -3.24, 2.04, -5.58, 2.31], ["c", -0.6, 0.09, -1.2, 0.12, -1.71, 0.12], ["c", -0.39, 0, -0.45, 0, -0.57, 0.06], ["c", -0.09, 0.06, -0.15, 0.12, -0.21, 0.21], ["l", -0.06, 0.12], ["l", 0, 1.65], ["l", 0, 1.65], ["l", 0.21, -0.21], ["c", 0.66, -0.57, 1.41, -0.96, 2.19, -1.14], ["c", 0.33, -0.06, 1.41, -0.06, 1.95, 0], ["c", 2.61, 0.36, 4.02, 1.74, 4.26, 4.14], ["c", 0.03, 0.45, 0.03, 1.08, -0.03, 1.44], ["c", -0.18, 1.02, -0.78, 2.01, -1.59, 2.7], ["c", -0.72, 0.57, -1.62, 1.02, -2.49, 1.2], ["c", -1.38, 0.27, -3.03, 0.06, -4.2, -0.54], ["c", -1.08, -0.54, -1.71, -1.32, -1.86, -2.28], ["c", -0.09, -0.69, 0.09, -1.29, 0.57, -1.74], ["c", 0.24, -0.24, 0.45, -0.39, 0.75, -0.51], ["c", 0.21, -0.06, 0.27, -0.06, 0.6, -0.06], ["c", 0.33, 0, 0.39, 0, 0.6, 0.06], ["c", 0.3, 0.12, 0.51, 0.27, 0.75, 0.51], ["c", 0.36, 0.33, 0.57, 0.75, 0.6, 1.2], ["c", 0, 0.21, 0, 0.27, -0.06, 0.42], ["c", -0.09, 0.18, -0.12, 0.24, -0.54, 0.54], ["c", -0.18, 0.12, -0.36, 0.3, -0.42, 0.33], ["c", -0.36, 0.42, -0.18, 0.99, 0.36, 1.26], ["c", 0.51, 0.27, 1.47, 0.36, 2.01, 0.27], ["c", 0.93, -0.21, 1.47, -1.17, 1.65, -2.91], ["c", 0.06, -0.45, 0.06, -1.89, 0, -2.31], ["c", -0.15, -1.2, -0.51, -2.1, -1.05, -2.55], ["c", -0.21, -0.18, -0.54, -0.36, -0.81, -0.39], ["c", -0.3, -0.06, -0.84, -0.03, -1.26, 0.06], ["c", -0.93, 0.18, -1.65, 0.6, -2.16, 1.2], ["c", -0.15, 0.21, -0.27, 0.3, -0.39, 0.3], ["c", -0.15, 0, -0.3, -0.09, -0.36, -0.18], ["c", -0.06, -0.09, -0.06, -0.15, -0.06, -3.66], ["c", 0, -3.39, 0, -3.57, 0.06, -3.66], ["c", 0.03, -0.06, 0.09, -0.15, 0.15, -0.18], ["z"]], w: 10.212, h: 14.997}
+        , 'n.6': {d: [["M", 4.98, -14.97], ["c", 0.36, -0.03, 1.2, 0, 1.59, 0.06], ["c", 0.9, 0.15, 1.68, 0.51, 2.25, 1.05], ["c", 0.57, 0.51, 0.87, 1.23, 0.84, 1.98], ["c", -0.03, 0.51, -0.21, 0.9, -0.6, 1.26], ["c", -0.24, 0.24, -0.45, 0.39, -0.75, 0.51], ["c", -0.21, 0.06, -0.27, 0.06, -0.6, 0.06], ["c", -0.33, 0, -0.39, 0, -0.6, -0.06], ["c", -0.3, -0.12, -0.51, -0.27, -0.75, -0.51], ["c", -0.39, -0.36, -0.57, -0.78, -0.57, -1.26], ["c", 0, -0.27, 0, -0.3, 0.09, -0.42], ["c", 0.03, -0.09, 0.18, -0.21, 0.3, -0.3], ["c", 0.12, -0.09, 0.3, -0.21, 0.39, -0.27], ["c", 0.09, -0.06, 0.21, -0.18, 0.27, -0.24], ["c", 0.06, -0.12, 0.09, -0.15, 0.09, -0.33], ["c", 0, -0.18, -0.03, -0.24, -0.09, -0.36], ["c", -0.24, -0.39, -0.75, -0.6, -1.38, -0.57], ["c", -0.54, 0.03, -0.9, 0.18, -1.23, 0.48], ["c", -0.81, 0.72, -1.08, 2.16, -0.96, 5.37], ["l", 0, 0.63], ["l", 0.3, -0.12], ["c", 0.78, -0.27, 1.29, -0.33, 2.1, -0.27], ["c", 1.47, 0.12, 2.49, 0.54, 3.27, 1.29], ["c", 0.48, 0.51, 0.81, 1.11, 0.96, 1.89], ["c", 0.06, 0.27, 0.06, 0.42, 0.06, 0.93], ["c", 0, 0.54, 0, 0.69, -0.06, 0.96], ["c", -0.15, 0.78, -0.48, 1.38, -0.96, 1.89], ["c", -0.54, 0.51, -1.17, 0.87, -1.98, 1.08], ["c", -1.14, 0.3, -2.4, 0.33, -3.24, 0.03], ["c", -1.5, -0.48, -2.64, -1.89, -3.27, -4.02], ["c", -0.36, -1.23, -0.51, -2.82, -0.42, -4.08], ["c", 0.3, -3.66, 2.28, -6.3, 4.95, -6.66], ["z"], ["m", 0.66, 7.41], ["c", -0.27, -0.09, -0.81, -0.12, -1.08, -0.06], ["c", -0.72, 0.18, -1.08, 0.69, -1.23, 1.71], ["c", -0.06, 0.54, -0.06, 3, 0, 3.54], ["c", 0.18, 1.26, 0.72, 1.77, 1.8, 1.74], ["c", 0.39, -0.03, 0.63, -0.09, 0.9, -0.27], ["c", 0.66, -0.42, 0.9, -1.32, 0.9, -3.24], ["c", 0, -2.22, -0.36, -3.12, -1.29, -3.42], ["z"]], w: 9.956, h: 14.982}
+        , 'n.7': {d: [["M", 0.21, -14.97], ["c", 0.21, -0.06, 0.45, 0, 0.54, 0.15], ["c", 0.06, 0.09, 0.06, 0.15, 0.06, 0.39], ["c", 0, 0.24, 0, 0.33, 0.06, 0.42], ["c", 0.06, 0.12, 0.21, 0.24, 0.27, 0.24], ["c", 0.03, 0, 0.12, -0.12, 0.24, -0.21], ["c", 0.96, -1.2, 2.58, -1.35, 3.99, -0.42], ["c", 0.15, 0.12, 0.42, 0.3, 0.54, 0.45], ["c", 0.48, 0.39, 0.81, 0.57, 1.29, 0.6], ["c", 0.69, 0.03, 1.5, -0.3, 2.13, -0.87], ["c", 0.09, -0.09, 0.27, -0.3, 0.39, -0.45], ["c", 0.12, -0.15, 0.24, -0.27, 0.3, -0.3], ["c", 0.18, -0.06, 0.39, 0.03, 0.51, 0.21], ["c", 0.06, 0.18, 0.06, 0.24, -0.27, 0.72], ["c", -0.18, 0.24, -0.54, 0.78, -0.78, 1.17], ["c", -2.37, 3.54, -3.54, 6.27, -3.87, 9], ["c", -0.03, 0.33, -0.03, 0.66, -0.03, 1.26], ["c", 0, 0.9, 0, 1.08, 0.15, 1.89], ["c", 0.06, 0.45, 0.06, 0.48, 0.03, 0.6], ["c", -0.06, 0.09, -0.21, 0.21, -0.3, 0.21], ["c", -0.03, 0, -0.27, -0.06, -0.54, -0.15], ["c", -0.84, -0.27, -1.11, -0.3, -1.65, -0.3], ["c", -0.57, 0, -0.84, 0.03, -1.56, 0.27], ["c", -0.6, 0.18, -0.69, 0.21, -0.81, 0.15], ["c", -0.12, -0.06, -0.21, -0.18, -0.21, -0.3], ["c", 0, -0.15, 0.6, -1.44, 1.2, -2.61], ["c", 1.14, -2.22, 2.73, -4.68, 5.1, -8.01], ["c", 0.21, -0.27, 0.36, -0.48, 0.33, -0.48], ["c", 0, 0, -0.12, 0.06, -0.27, 0.12], ["c", -0.54, 0.3, -0.99, 0.39, -1.56, 0.39], ["c", -0.75, 0.03, -1.2, -0.18, -1.83, -0.75], ["c", -0.99, -0.9, -1.83, -1.17, -2.31, -0.72], ["c", -0.18, 0.15, -0.36, 0.51, -0.45, 0.84], ["c", -0.06, 0.24, -0.06, 0.33, -0.09, 1.98], ["c", 0, 1.62, -0.03, 1.74, -0.06, 1.8], ["c", -0.15, 0.24, -0.54, 0.24, -0.69, 0], ["c", -0.06, -0.09, -0.06, -0.15, -0.06, -3.57], ["c", 0, -3.42, 0, -3.48, 0.06, -3.57], ["c", 0.03, -0.06, 0.09, -0.12, 0.15, -0.15], ["z"]], w: 10.561, h: 15.093}
+        , 'n.8': {d: [["M", 4.98, -14.97], ["c", 0.33, -0.03, 1.02, -0.03, 1.32, 0], ["c", 1.32, 0.12, 2.49, 0.6, 3.21, 1.32], ["c", 0.39, 0.39, 0.66, 0.81, 0.78, 1.29], ["c", 0.09, 0.36, 0.09, 1.08, 0, 1.44], ["c", -0.21, 0.84, -0.66, 1.59, -1.59, 2.55], ["l", -0.3, 0.3], ["l", 0.27, 0.18], ["c", 1.47, 0.93, 2.31, 2.31, 2.25, 3.75], ["c", -0.03, 0.75, -0.24, 1.35, -0.63, 1.95], ["c", -0.45, 0.66, -1.02, 1.14, -1.83, 1.53], ["c", -1.8, 0.87, -4.2, 0.87, -6, 0.03], ["c", -1.62, -0.78, -2.52, -2.16, -2.46, -3.66], ["c", 0.06, -0.99, 0.54, -1.77, 1.8, -2.97], ["c", 0.54, -0.51, 0.54, -0.54, 0.48, -0.57], ["c", -0.39, -0.27, -0.96, -0.78, -1.2, -1.14], ["c", -0.75, -1.11, -0.87, -2.4, -0.3, -3.6], ["c", 0.69, -1.35, 2.25, -2.25, 4.2, -2.4], ["z"], ["m", 1.53, 0.69], ["c", -0.42, -0.09, -1.11, -0.12, -1.38, -0.06], ["c", -0.3, 0.06, -0.6, 0.18, -0.81, 0.3], ["c", -0.21, 0.12, -0.6, 0.51, -0.72, 0.72], ["c", -0.51, 0.87, -0.42, 1.89, 0.21, 2.52], ["c", 0.21, 0.21, 0.36, 0.3, 1.95, 1.23], ["c", 0.96, 0.54, 1.74, 0.99, 1.77, 1.02], ["c", 0.09, 0, 0.63, -0.6, 0.99, -1.11], ["c", 0.21, -0.36, 0.48, -0.87, 0.57, -1.23], ["c", 0.06, -0.24, 0.06, -0.36, 0.06, -0.72], ["c", 0, -0.45, -0.03, -0.66, -0.15, -0.99], ["c", -0.39, -0.81, -1.29, -1.44, -2.49, -1.68], ["z"], ["m", -1.44, 8.07], ["l", -1.89, -1.08], ["c", -0.03, 0, -0.18, 0.15, -0.39, 0.33], ["c", -1.2, 1.08, -1.65, 1.95, -1.59, 3], ["c", 0.09, 1.59, 1.35, 2.85, 3.21, 3.24], ["c", 0.33, 0.06, 0.45, 0.06, 0.93, 0.06], ["c", 0.63, -0, 0.81, -0.03, 1.29, -0.27], ["c", 0.9, -0.42, 1.47, -1.41, 1.41, -2.4], ["c", -0.06, -0.66, -0.39, -1.29, -0.9, -1.65], ["c", -0.12, -0.09, -1.05, -0.63, -2.07, -1.23], ["z"]], w: 10.926, h: 14.989}
+        , 'n.9': {d: [["M", 4.23, -14.97], ["c", 0.42, -0.03, 1.29, 0, 1.62, 0.06], ["c", 0.51, 0.12, 0.93, 0.3, 1.38, 0.57], ["c", 1.53, 1.02, 2.52, 3.24, 2.73, 5.94], ["c", 0.18, 2.55, -0.48, 4.98, -1.83, 6.57], ["c", -1.05, 1.26, -2.4, 1.89, -3.93, 1.83], ["c", -1.23, -0.06, -2.31, -0.45, -3.03, -1.14], ["c", -0.57, -0.51, -0.87, -1.23, -0.84, -1.98], ["c", 0.03, -0.51, 0.21, -0.9, 0.6, -1.26], ["c", 0.24, -0.24, 0.45, -0.39, 0.75, -0.51], ["c", 0.21, -0.06, 0.27, -0.06, 0.6, -0.06], ["c", 0.33, -0, 0.39, -0, 0.6, 0.06], ["c", 0.3, 0.12, 0.51, 0.27, 0.75, 0.51], ["c", 0.39, 0.36, 0.57, 0.78, 0.57, 1.26], ["c", 0, 0.27, 0, 0.3, -0.09, 0.42], ["c", -0.03, 0.09, -0.18, 0.21, -0.3, 0.3], ["c", -0.12, 0.09, -0.3, 0.21, -0.39, 0.27], ["c", -0.09, 0.06, -0.21, 0.18, -0.27, 0.24], ["c", -0.06, 0.12, -0.06, 0.15, -0.06, 0.33], ["c", 0, 0.18, 0, 0.24, 0.06, 0.36], ["c", 0.24, 0.39, 0.75, 0.6, 1.38, 0.57], ["c", 0.54, -0.03, 0.9, -0.18, 1.23, -0.48], ["c", 0.81, -0.72, 1.08, -2.16, 0.96, -5.37], ["l", 0, -0.63], ["l", -0.3, 0.12], ["c", -0.78, 0.27, -1.29, 0.33, -2.1, 0.27], ["c", -1.47, -0.12, -2.49, -0.54, -3.27, -1.29], ["c", -0.48, -0.51, -0.81, -1.11, -0.96, -1.89], ["c", -0.06, -0.27, -0.06, -0.42, -0.06, -0.96], ["c", 0, -0.51, 0, -0.66, 0.06, -0.93], ["c", 0.15, -0.78, 0.48, -1.38, 0.96, -1.89], ["c", 0.15, -0.12, 0.33, -0.27, 0.42, -0.36], ["c", 0.69, -0.51, 1.62, -0.81, 2.76, -0.93], ["z"], ["m", 1.17, 0.66], ["c", -0.21, -0.06, -0.57, -0.06, -0.81, -0.03], ["c", -0.78, 0.12, -1.26, 0.69, -1.41, 1.74], ["c", -0.12, 0.63, -0.15, 1.95, -0.09, 2.79], ["c", 0.12, 1.71, 0.63, 2.4, 1.77, 2.46], ["c", 1.08, 0.03, 1.62, -0.48, 1.8, -1.74], ["c", 0.06, -0.54, 0.06, -3, 0, -3.54], ["c", -0.15, -1.05, -0.51, -1.53, -1.26, -1.68], ["z"]], w: 9.959, h: 14.986}
+        , 'f': {d: [["M", 9.93, -14.28], ["c", 1.53, -0.18, 2.88, 0.45, 3.12, 1.5], ["c", 0.12, 0.51, 0, 1.32, -0.27, 1.86], ["c", -0.15, 0.3, -0.42, 0.57, -0.63, 0.69], ["c", -0.69, 0.36, -1.56, 0.03, -1.83, -0.69], ["c", -0.09, -0.24, -0.09, -0.69, 0, -0.87], ["c", 0.06, -0.12, 0.21, -0.24, 0.45, -0.42], ["c", 0.42, -0.24, 0.57, -0.45, 0.6, -0.72], ["c", 0.03, -0.33, -0.09, -0.39, -0.63, -0.42], ["c", -0.3, 0, -0.45, 0, -0.6, 0.03], ["c", -0.81, 0.21, -1.35, 0.93, -1.74, 2.46], ["c", -0.06, 0.27, -0.48, 2.25, -0.48, 2.31], ["c", 0, 0.03, 0.39, 0.03, 0.9, 0.03], ["c", 0.72, 0, 0.9, 0, 0.99, 0.06], ["c", 0.42, 0.15, 0.45, 0.72, 0.03, 0.9], ["c", -0.12, 0.06, -0.24, 0.06, -1.17, 0.06], ["l", -1.05, 0], ["l", -0.78, 2.55], ["c", -0.45, 1.41, -0.87, 2.79, -0.96, 3.06], ["c", -0.87, 2.37, -2.37, 4.74, -3.78, 5.91], ["c", -1.05, 0.9, -2.04, 1.23, -3.09, 1.08], ["c", -1.11, -0.18, -1.89, -0.78, -2.04, -1.59], ["c", -0.12, -0.66, 0.15, -1.71, 0.54, -2.19], ["c", 0.69, -0.75, 1.86, -0.54, 2.22, 0.39], ["c", 0.06, 0.15, 0.09, 0.27, 0.09, 0.48], ["c", -0, 0.24, -0.03, 0.27, -0.12, 0.42], ["c", -0.03, 0.09, -0.15, 0.18, -0.27, 0.27], ["c", -0.09, 0.06, -0.27, 0.21, -0.36, 0.27], ["c", -0.24, 0.18, -0.36, 0.36, -0.39, 0.6], ["c", -0.03, 0.33, 0.09, 0.39, 0.63, 0.42], ["c", 0.42, 0, 0.63, -0.03, 0.9, -0.15], ["c", 0.6, -0.3, 0.96, -0.96, 1.38, -2.64], ["c", 0.09, -0.42, 0.63, -2.55, 1.17, -4.77], ["l", 1.02, -4.08], ["c", -0, -0.03, -0.36, -0.03, -0.81, -0.03], ["c", -0.72, 0, -0.81, 0, -0.93, -0.06], ["c", -0.42, -0.18, -0.39, -0.75, 0.03, -0.9], ["c", 0.09, -0.06, 0.27, -0.06, 1.05, -0.06], ["l", 0.96, 0], ["l", 0, -0.09], ["c", 0.06, -0.18, 0.3, -0.72, 0.51, -1.17], ["c", 1.2, -2.46, 3.3, -4.23, 5.34, -4.5], ["z"]], w: 16.155, h: 19.445}
+        , 'm': {d: [["M", 2.79, -8.91], ["c", 0.09, 0, 0.3, -0.03, 0.45, -0.03], ["c", 0.24, 0.03, 0.3, 0.03, 0.45, 0.12], ["c", 0.36, 0.15, 0.63, 0.54, 0.75, 1.02], ["l", 0.03, 0.21], ["l", 0.33, -0.3], ["c", 0.69, -0.69, 1.38, -1.02, 2.07, -1.02], ["c", 0.27, 0, 0.33, 0, 0.48, 0.06], ["c", 0.21, 0.09, 0.48, 0.36, 0.63, 0.6], ["c", 0.03, 0.09, 0.12, 0.27, 0.18, 0.42], ["c", 0.03, 0.15, 0.09, 0.27, 0.12, 0.27], ["c", 0, 0, 0.09, -0.09, 0.18, -0.21], ["c", 0.33, -0.39, 0.87, -0.81, 1.29, -0.99], ["c", 0.78, -0.33, 1.47, -0.21, 2.01, 0.33], ["c", 0.3, 0.33, 0.48, 0.69, 0.6, 1.14], ["c", 0.09, 0.42, 0.06, 0.54, -0.54, 3.06], ["c", -0.33, 1.29, -0.57, 2.4, -0.57, 2.43], ["c", 0, 0.12, 0.09, 0.21, 0.21, 0.21], ["c", 0.24, -0, 0.75, -0.3, 1.2, -0.72], ["c", 0.45, -0.39, 0.6, -0.45, 0.78, -0.27], ["c", 0.18, 0.18, 0.09, 0.36, -0.45, 0.87], ["c", -1.05, 0.96, -1.83, 1.47, -2.58, 1.71], ["c", -0.93, 0.33, -1.53, 0.21, -1.8, -0.33], ["c", -0.06, -0.15, -0.06, -0.21, -0.06, -0.45], ["c", 0, -0.24, 0.03, -0.48, 0.6, -2.82], ["c", 0.42, -1.71, 0.6, -2.64, 0.63, -2.79], ["c", 0.03, -0.57, -0.3, -0.75, -0.84, -0.48], ["c", -0.24, 0.12, -0.54, 0.39, -0.66, 0.63], ["c", -0.03, 0.09, -0.42, 1.38, -0.9, 3], ["c", -0.9, 3.15, -0.84, 3, -1.14, 3.15], ["l", -0.15, 0.09], ["l", -0.78, 0], ["c", -0.6, 0, -0.78, 0, -0.84, -0.06], ["c", -0.09, -0.03, -0.18, -0.18, -0.18, -0.27], ["c", 0, -0.03, 0.36, -1.38, 0.84, -2.97], ["c", 0.57, -2.04, 0.81, -2.97, 0.84, -3.12], ["c", 0.03, -0.54, -0.3, -0.72, -0.84, -0.45], ["c", -0.24, 0.12, -0.57, 0.42, -0.66, 0.63], ["c", -0.06, 0.09, -0.51, 1.44, -1.05, 2.97], ["c", -0.51, 1.56, -0.99, 2.85, -0.99, 2.91], ["c", -0.06, 0.12, -0.21, 0.24, -0.36, 0.3], ["c", -0.12, 0.06, -0.21, 0.06, -0.9, 0.06], ["c", -0.6, 0, -0.78, 0, -0.84, -0.06], ["c", -0.09, -0.03, -0.18, -0.18, -0.18, -0.27], ["c", 0, -0.03, 0.45, -1.38, 0.99, -2.97], ["c", 1.05, -3.18, 1.05, -3.18, 0.93, -3.45], ["c", -0.12, -0.27, -0.39, -0.3, -0.72, -0.15], ["c", -0.54, 0.27, -1.14, 1.17, -1.56, 2.4], ["c", -0.06, 0.15, -0.15, 0.3, -0.18, 0.36], ["c", -0.21, 0.21, -0.57, 0.27, -0.72, 0.09], ["c", -0.09, -0.09, -0.06, -0.21, 0.06, -0.63], ["c", 0.48, -1.26, 1.26, -2.46, 2.01, -3.21], ["c", 0.57, -0.54, 1.2, -0.87, 1.83, -1.02], ["z"]], w: 14.687, h: 9.126}
+        , 'p': {d: [["M", 1.92, -8.7], ["c", 0.27, -0.09, 0.81, -0.06, 1.11, 0.03], ["c", 0.54, 0.18, 0.93, 0.51, 1.17, 0.99], ["c", 0.09, 0.15, 0.15, 0.33, 0.18, 0.36], ["l", -0, 0.12], ["l", 0.3, -0.27], ["c", 0.66, -0.6, 1.35, -1.02, 2.13, -1.2], ["c", 0.21, -0.06, 0.33, -0.06, 0.78, -0.06], ["c", 0.45, 0, 0.51, 0, 0.84, 0.09], ["c", 1.29, 0.33, 2.07, 1.32, 2.25, 2.79], ["c", 0.09, 0.81, -0.09, 2.01, -0.45, 2.79], ["c", -0.54, 1.26, -1.86, 2.55, -3.18, 3.03], ["c", -0.45, 0.18, -0.81, 0.24, -1.29, 0.24], ["c", -0.69, -0.03, -1.35, -0.18, -1.86, -0.45], ["c", -0.3, -0.15, -0.51, -0.18, -0.69, -0.09], ["c", -0.09, 0.03, -0.18, 0.09, -0.18, 0.12], ["c", -0.09, 0.12, -1.05, 2.94, -1.05, 3.06], ["c", 0, 0.24, 0.18, 0.48, 0.51, 0.63], ["c", 0.18, 0.06, 0.54, 0.15, 0.75, 0.15], ["c", 0.21, 0, 0.36, 0.06, 0.42, 0.18], ["c", 0.12, 0.18, 0.06, 0.42, -0.12, 0.54], ["c", -0.09, 0.03, -0.15, 0.03, -0.78, 0], ["c", -1.98, -0.15, -3.81, -0.15, -5.79, 0], ["c", -0.63, 0.03, -0.69, 0.03, -0.78, 0], ["c", -0.24, -0.15, -0.24, -0.57, 0.03, -0.66], ["c", 0.06, -0.03, 0.48, -0.09, 0.99, -0.12], ["c", 0.87, -0.06, 1.11, -0.09, 1.35, -0.21], ["c", 0.18, -0.06, 0.33, -0.18, 0.39, -0.3], ["c", 0.06, -0.12, 3.24, -9.42, 3.27, -9.6], ["c", 0.06, -0.33, 0.03, -0.57, -0.15, -0.69], ["c", -0.09, -0.06, -0.12, -0.06, -0.3, -0.06], ["c", -0.69, 0.06, -1.53, 1.02, -2.28, 2.61], ["c", -0.09, 0.21, -0.21, 0.45, -0.27, 0.51], ["c", -0.09, 0.12, -0.33, 0.24, -0.48, 0.24], ["c", -0.18, 0, -0.36, -0.15, -0.36, -0.3], ["c", 0, -0.24, 0.78, -1.83, 1.26, -2.55], ["c", 0.72, -1.11, 1.47, -1.74, 2.28, -1.92], ["z"], ["m", 5.37, 1.47], ["c", -0.27, -0.12, -0.75, -0.03, -1.14, 0.21], ["c", -0.75, 0.48, -1.47, 1.68, -1.89, 3.15], ["c", -0.45, 1.47, -0.42, 2.34, 0, 2.7], ["c", 0.45, 0.39, 1.26, 0.21, 1.83, -0.36], ["c", 0.51, -0.51, 0.99, -1.68, 1.38, -3.27], ["c", 0.3, -1.17, 0.33, -1.74, 0.15, -2.13], ["c", -0.09, -0.15, -0.15, -0.21, -0.33, -0.3], ["z"]], w: 14.689, h: 13.127}
+        , 'r': {d: [["M", 6.33, -9.12], ["c", 0.27, -0.03, 0.93, 0, 1.2, 0.06], ["c", 0.84, 0.21, 1.23, 0.81, 1.02, 1.53], ["c", -0.24, 0.75, -0.9, 1.17, -1.56, 0.96], ["c", -0.33, -0.09, -0.51, -0.3, -0.66, -0.75], ["c", -0.03, -0.12, -0.09, -0.24, -0.12, -0.3], ["c", -0.09, -0.15, -0.3, -0.24, -0.48, -0.24], ["c", -0.57, 0, -1.38, 0.54, -1.65, 1.08], ["c", -0.06, 0.15, -0.33, 1.17, -0.9, 3.27], ["c", -0.57, 2.31, -0.81, 3.12, -0.87, 3.21], ["c", -0.03, 0.06, -0.12, 0.15, -0.18, 0.21], ["l", -0.12, 0.06], ["l", -0.81, 0.03], ["c", -0.69, 0, -0.81, 0, -0.9, -0.03], ["c", -0.09, -0.06, -0.18, -0.21, -0.18, -0.3], ["c", 0, -0.06, 0.39, -1.62, 0.9, -3.51], ["c", 0.84, -3.24, 0.87, -3.45, 0.87, -3.72], ["c", 0, -0.21, 0, -0.27, -0.03, -0.36], ["c", -0.12, -0.15, -0.21, -0.24, -0.42, -0.24], ["c", -0.24, 0, -0.45, 0.15, -0.78, 0.42], ["c", -0.33, 0.36, -0.45, 0.54, -0.72, 1.14], ["c", -0.03, 0.12, -0.21, 0.24, -0.36, 0.27], ["c", -0.12, 0, -0.15, 0, -0.24, -0.06], ["c", -0.18, -0.12, -0.18, -0.21, -0.06, -0.54], ["c", 0.21, -0.57, 0.42, -0.93, 0.78, -1.32], ["c", 0.54, -0.51, 1.2, -0.81, 1.95, -0.87], ["c", 0.81, -0.03, 1.53, 0.3, 1.92, 0.87], ["l", 0.12, 0.18], ["l", 0.09, -0.09], ["c", 0.57, -0.45, 1.41, -0.84, 2.19, -0.96], ["z"]], w: 9.41, h: 9.132}
+        , 's': {d: [["M", 4.47, -8.73], ["c", 0.09, 0, 0.36, -0.03, 0.57, -0.03], ["c", 0.75, 0.03, 1.29, 0.24, 1.71, 0.63], ["c", 0.51, 0.54, 0.66, 1.26, 0.36, 1.83], ["c", -0.24, 0.42, -0.63, 0.57, -1.11, 0.42], ["c", -0.33, -0.09, -0.6, -0.36, -0.6, -0.57], ["c", 0, -0.03, 0.06, -0.21, 0.15, -0.39], ["c", 0.12, -0.21, 0.15, -0.33, 0.18, -0.48], ["c", 0, -0.24, -0.06, -0.48, -0.15, -0.6], ["c", -0.15, -0.21, -0.42, -0.24, -0.75, -0.15], ["c", -0.27, 0.06, -0.48, 0.18, -0.69, 0.36], ["c", -0.39, 0.39, -0.51, 0.96, -0.33, 1.38], ["c", 0.09, 0.21, 0.42, 0.51, 0.78, 0.72], ["c", 1.11, 0.69, 1.59, 1.11, 1.89, 1.68], ["c", 0.21, 0.39, 0.24, 0.78, 0.15, 1.29], ["c", -0.18, 1.2, -1.17, 2.16, -2.52, 2.52], ["c", -1.02, 0.24, -1.95, 0.12, -2.7, -0.42], ["c", -0.72, -0.51, -0.99, -1.47, -0.6, -2.19], ["c", 0.24, -0.48, 0.72, -0.63, 1.17, -0.42], ["c", 0.33, 0.18, 0.54, 0.45, 0.57, 0.81], ["c", 0, 0.21, -0.03, 0.3, -0.33, 0.51], ["c", -0.33, 0.24, -0.39, 0.42, -0.27, 0.69], ["c", 0.06, 0.15, 0.21, 0.27, 0.45, 0.33], ["c", 0.3, 0.09, 0.87, 0.09, 1.2, -0], ["c", 0.75, -0.21, 1.23, -0.72, 1.29, -1.35], ["c", 0.03, -0.42, -0.15, -0.81, -0.54, -1.2], ["c", -0.24, -0.24, -0.48, -0.42, -1.41, -1.02], ["c", -0.69, -0.42, -1.05, -0.93, -1.05, -1.47], ["c", 0, -0.39, 0.12, -0.87, 0.3, -1.23], ["c", 0.27, -0.57, 0.78, -1.05, 1.38, -1.35], ["c", 0.24, -0.12, 0.63, -0.27, 0.9, -0.3], ["z"]], w: 6.632, h: 8.758}
+        , 'z': {d: [["M", 2.64, -7.95], ["c", 0.36, -0.09, 0.81, -0.03, 1.71, 0.27], ["c", 0.78, 0.21, 0.96, 0.27, 1.74, 0.3], ["c", 0.87, 0.06, 1.02, 0.03, 1.38, -0.21], ["c", 0.21, -0.15, 0.33, -0.15, 0.48, -0.06], ["c", 0.15, 0.09, 0.21, 0.3, 0.15, 0.45], ["c", -0.03, 0.06, -1.26, 1.26, -2.76, 2.67], ["l", -2.73, 2.55], ["l", 0.54, 0.03], ["c", 0.54, 0.03, 0.72, 0.03, 2.01, 0.15], ["c", 0.36, 0.03, 0.9, 0.06, 1.2, 0.09], ["c", 0.66, 0, 0.81, -0.03, 1.02, -0.24], ["c", 0.3, -0.3, 0.39, -0.72, 0.27, -1.23], ["c", -0.06, -0.27, -0.06, -0.27, -0.03, -0.39], ["c", 0.15, -0.3, 0.54, -0.27, 0.69, 0.03], ["c", 0.15, 0.33, 0.27, 1.02, 0.27, 1.5], ["c", 0, 1.47, -1.11, 2.7, -2.52, 2.79], ["c", -0.57, 0.03, -1.02, -0.09, -2.01, -0.51], ["c", -1.02, -0.42, -1.23, -0.48, -2.13, -0.54], ["c", -0.81, -0.06, -0.96, -0.03, -1.26, 0.18], ["c", -0.12, 0.06, -0.24, 0.12, -0.27, 0.12], ["c", -0.27, 0, -0.45, -0.3, -0.36, -0.51], ["c", 0.03, -0.06, 1.32, -1.32, 2.91, -2.79], ["l", 2.88, -2.73], ["c", -0.03, 0, -0.21, 0.03, -0.42, 0.06], ["c", -0.21, 0.03, -0.78, 0.09, -1.23, 0.12], ["c", -1.11, 0.12, -1.23, 0.15, -1.95, 0.27], ["c", -0.72, 0.15, -1.17, 0.18, -1.29, 0.09], ["c", -0.27, -0.18, -0.21, -0.75, 0.12, -1.26], ["c", 0.39, -0.6, 0.93, -1.02, 1.59, -1.2], ["z"]], w: 8.573, h: 8.743}
+        , '+': {d: [["M", 3.48, -11.19], ["c", 0.18, -0.09, 0.36, -0.09, 0.54, 0], ["c", 0.18, 0.09, 0.24, 0.15, 0.33, 0.3], ["l", 0.06, 0.15], ["l", 0, 1.29], ["l", 0, 1.29], ["l", 1.29, 0], ["c", 1.23, 0, 1.29, 0, 1.41, 0.06], ["c", 0.06, 0.03, 0.15, 0.09, 0.18, 0.12], ["c", 0.12, 0.09, 0.21, 0.33, 0.21, 0.48], ["c", 0, 0.15, -0.09, 0.39, -0.21, 0.48], ["c", -0.03, 0.03, -0.12, 0.09, -0.18, 0.12], ["c", -0.12, 0.06, -0.18, 0.06, -1.41, 0.06], ["l", -1.29, 0], ["l", 0, 1.29], ["c", 0, 1.23, 0, 1.29, -0.06, 1.41], ["c", -0.09, 0.18, -0.15, 0.24, -0.3, 0.33], ["c", -0.21, 0.09, -0.39, 0.09, -0.57, 0], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["c", -0.06, -0.12, -0.06, -0.18, -0.06, -1.41], ["l", 0, -1.29], ["l", -1.29, 0], ["c", -1.23, 0, -1.29, 0, -1.41, -0.06], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["c", -0.09, -0.18, -0.09, -0.36, 0, -0.54], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["l", 0.15, -0.06], ["l", 1.26, 0], ["l", 1.29, 0], ["l", 0, -1.29], ["c", 0, -1.23, 0, -1.29, 0.06, -1.41], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["z"]], w: 7.507, h: 7.515}
+        , ',': {d: [["M", 1.32, -3.36], ["c", 0.57, -0.15, 1.17, 0.03, 1.59, 0.45], ["c", 0.45, 0.45, 0.6, 0.96, 0.51, 1.89], ["c", -0.09, 1.23, -0.42, 2.46, -0.99, 3.93], ["c", -0.3, 0.72, -0.72, 1.62, -0.78, 1.68], ["c", -0.18, 0.21, -0.51, 0.18, -0.66, -0.06], ["c", -0.03, -0.06, -0.06, -0.15, -0.06, -0.18], ["c", 0, -0.06, 0.12, -0.33, 0.24, -0.63], ["c", 0.84, -1.8, 1.02, -2.61, 0.69, -3.24], ["c", -0.12, -0.24, -0.27, -0.36, -0.75, -0.6], ["c", -0.36, -0.15, -0.42, -0.21, -0.6, -0.39], ["c", -0.69, -0.69, -0.69, -1.71, 0, -2.4], ["c", 0.21, -0.21, 0.51, -0.39, 0.81, -0.45], ["z"]], w: 3.452, h: 8.143}
+        , '-': {d: [["M", 0.18, -5.34], ["c", 0.09, -0.06, 0.15, -0.06, 2.31, -0.06], ["c", 2.46, 0, 2.37, 0, 2.46, 0.21], ["c", 0.12, 0.21, 0.03, 0.42, -0.15, 0.54], ["c", -0.09, 0.06, -0.15, 0.06, -2.28, 0.06], ["c", -2.16, 0, -2.22, 0, -2.31, -0.06], ["c", -0.27, -0.15, -0.27, -0.54, -0.03, -0.69], ["z"]], w: 5.001, h: 0.81}
+        , '.': {d: [["M", 1.32, -3.36], ["c", 1.05, -0.27, 2.1, 0.57, 2.1, 1.65], ["c", 0, 1.08, -1.05, 1.92, -2.1, 1.65], ["c", -0.9, -0.21, -1.5, -1.14, -1.26, -2.04], ["c", 0.12, -0.63, 0.63, -1.11, 1.26, -1.26], ["z"]], w: 3.413, h: 3.402}
+        , 'accidentals.nat': {d: [["M", 0.204, -11.4], ["c", 0.24, -0.06, 0.78, 0, 0.99, 0.15], ["c", 0.03, 0.03, 0.03, 0.48, 0, 2.61], ["c", -0.03, 1.44, -0.03, 2.61, -0.03, 2.61], ["c", 0, 0.03, 0.75, -0.09, 1.68, -0.24], ["c", 0.96, -0.18, 1.71, -0.27, 1.74, -0.27], ["c", 0.15, 0.03, 0.27, 0.15, 0.36, 0.3], ["l", 0.06, 0.12], ["l", 0.09, 8.67], ["c", 0.09, 6.96, 0.12, 8.67, 0.09, 8.67], ["c", -0.03, 0.03, -0.12, 0.06, -0.21, 0.09], ["c", -0.24, 0.09, -0.72, 0.09, -0.96, 0], ["c", -0.09, -0.03, -0.18, -0.06, -0.21, -0.09], ["c", -0.03, -0.03, -0.03, -0.48, 0, -2.61], ["c", 0.03, -1.44, 0.03, -2.61, 0.03, -2.61], ["c", 0, -0.03, -0.75, 0.09, -1.68, 0.24], ["c", -0.96, 0.18, -1.71, 0.27, -1.74, 0.27], ["c", -0.15, -0.03, -0.27, -0.15, -0.36, -0.3], ["l", -0.06, -0.15], ["l", -0.09, -7.53], ["c", -0.06, -4.14, -0.09, -8.04, -0.12, -8.67], ["l", 0, -1.11], ["l", 0.15, -0.06], ["c", 0.09, -0.03, 0.21, -0.06, 0.27, -0.09], ["z"], ["m", 3.75, 8.4], ["c", 0, -0.33, 0, -0.42, -0.03, -0.42], ["c", -0.12, 0, -2.79, 0.45, -2.79, 0.48], ["c", -0.03, 0, -0.09, 6.3, -0.09, 6.33], ["c", 0.03, 0, 2.79, -0.45, 2.82, -0.48], ["c", 0, 0, 0.09, -4.53, 0.09, -5.91], ["z"]], w: 5.411, h: 22.8}
+        , 'accidentals.sharp': {d: [["M", 5.73, -11.19], ["c", 0.21, -0.12, 0.54, -0.03, 0.66, 0.24], ["c", 0.06, 0.12, 0.06, 0.21, 0.06, 2.31], ["c", 0, 1.23, 0, 2.22, 0.03, 2.22], ["c", 0, -0, 0.27, -0.12, 0.6, -0.24], ["c", 0.69, -0.27, 0.78, -0.3, 0.96, -0.15], ["c", 0.21, 0.15, 0.21, 0.18, 0.21, 1.38], ["c", 0, 1.02, 0, 1.11, -0.06, 1.2], ["c", -0.03, 0.06, -0.09, 0.12, -0.12, 0.15], ["c", -0.06, 0.03, -0.42, 0.21, -0.84, 0.36], ["l", -0.75, 0.33], ["l", -0.03, 2.43], ["c", 0, 1.32, 0, 2.43, 0.03, 2.43], ["c", 0, -0, 0.27, -0.12, 0.6, -0.24], ["c", 0.69, -0.27, 0.78, -0.3, 0.96, -0.15], ["c", 0.21, 0.15, 0.21, 0.18, 0.21, 1.38], ["c", 0, 1.02, 0, 1.11, -0.06, 1.2], ["c", -0.03, 0.06, -0.09, 0.12, -0.12, 0.15], ["c", -0.06, 0.03, -0.42, 0.21, -0.84, 0.36], ["l", -0.75, 0.33], ["l", -0.03, 2.52], ["c", 0, 2.28, -0.03, 2.55, -0.06, 2.64], ["c", -0.21, 0.36, -0.72, 0.36, -0.93, -0], ["c", -0.03, -0.09, -0.06, -0.33, -0.06, -2.43], ["l", 0, -2.31], ["l", -1.29, 0.51], ["l", -1.26, 0.51], ["l", 0, 2.43], ["c", 0, 2.58, 0, 2.52, -0.15, 2.67], ["c", -0.06, 0.09, -0.27, 0.18, -0.36, 0.18], ["c", -0.12, -0, -0.33, -0.09, -0.39, -0.18], ["c", -0.15, -0.15, -0.15, -0.09, -0.15, -2.43], ["c", 0, -1.23, 0, -2.22, -0.03, -2.22], ["c", 0, -0, -0.27, 0.12, -0.6, 0.24], ["c", -0.69, 0.27, -0.78, 0.3, -0.96, 0.15], ["c", -0.21, -0.15, -0.21, -0.18, -0.21, -1.38], ["c", 0, -1.02, 0, -1.11, 0.06, -1.2], ["c", 0.03, -0.06, 0.09, -0.12, 0.12, -0.15], ["c", 0.06, -0.03, 0.42, -0.21, 0.84, -0.36], ["l", 0.78, -0.33], ["l", 0, -2.43], ["c", 0, -1.32, 0, -2.43, -0.03, -2.43], ["c", 0, -0, -0.27, 0.12, -0.6, 0.24], ["c", -0.69, 0.27, -0.78, 0.3, -0.96, 0.15], ["c", -0.21, -0.15, -0.21, -0.18, -0.21, -1.38], ["c", 0, -1.02, 0, -1.11, 0.06, -1.2], ["c", 0.03, -0.06, 0.09, -0.12, 0.12, -0.15], ["c", 0.06, -0.03, 0.42, -0.21, 0.84, -0.36], ["l", 0.78, -0.33], ["l", 0, -2.52], ["c", 0, -2.28, 0.03, -2.55, 0.06, -2.64], ["c", 0.21, -0.36, 0.72, -0.36, 0.93, 0], ["c", 0.03, 0.09, 0.06, 0.33, 0.06, 2.43], ["l", 0.03, 2.31], ["l", 1.26, -0.51], ["l", 1.26, -0.51], ["l", 0, -2.43], ["c", 0, -2.28, 0, -2.43, 0.06, -2.55], ["c", 0.06, -0.12, 0.12, -0.18, 0.27, -0.24], ["z"], ["m", -0.33, 10.65], ["l", 0, -2.43], ["l", -1.29, 0.51], ["l", -1.26, 0.51], ["l", 0, 2.46], ["l", 0, 2.43], ["l", 0.09, -0.03], ["c", 0.06, -0.03, 0.63, -0.27, 1.29, -0.51], ["l", 1.17, -0.48], ["l", 0, -2.46], ["z"]], w: 8.25, h: 22.462}
+        , 'accidentals.flat': {d: [["M", -0.36, -14.07], ["c", 0.33, -0.06, 0.87, 0, 1.08, 0.15], ["c", 0.06, 0.03, 0.06, 0.36, -0.03, 5.25], ["c", -0.06, 2.85, -0.09, 5.19, -0.09, 5.19], ["c", 0, 0.03, 0.12, -0.03, 0.24, -0.12], ["c", 0.63, -0.42, 1.41, -0.66, 2.19, -0.72], ["c", 0.81, -0.03, 1.47, 0.21, 2.04, 0.78], ["c", 0.57, 0.54, 0.87, 1.26, 0.93, 2.04], ["c", 0.03, 0.57, -0.09, 1.08, -0.36, 1.62], ["c", -0.42, 0.81, -1.02, 1.38, -2.82, 2.61], ["c", -1.14, 0.78, -1.44, 1.02, -1.8, 1.44], ["c", -0.18, 0.18, -0.39, 0.39, -0.45, 0.42], ["c", -0.27, 0.18, -0.57, 0.15, -0.81, -0.06], ["c", -0.06, -0.09, -0.12, -0.18, -0.15, -0.27], ["c", -0.03, -0.06, -0.09, -3.27, -0.18, -8.34], ["c", -0.09, -4.53, -0.15, -8.58, -0.18, -9.03], ["l", 0, -0.78], ["l", 0.12, -0.06], ["c", 0.06, -0.03, 0.18, -0.09, 0.27, -0.12], ["z"], ["m", 3.18, 11.01], ["c", -0.21, -0.12, -0.54, -0.15, -0.81, -0.06], ["c", -0.54, 0.15, -0.99, 0.63, -1.17, 1.26], ["c", -0.06, 0.3, -0.12, 2.88, -0.06, 3.87], ["c", 0.03, 0.42, 0.03, 0.81, 0.06, 0.9], ["l", 0.03, 0.12], ["l", 0.45, -0.39], ["c", 0.63, -0.54, 1.26, -1.17, 1.56, -1.59], ["c", 0.3, -0.42, 0.6, -0.99, 0.72, -1.41], ["c", 0.18, -0.69, 0.09, -1.47, -0.18, -2.07], ["c", -0.15, -0.3, -0.33, -0.51, -0.6, -0.63], ["z"]], w: 6.75, h: 18.801}
+        , 'accidentals.halfsharp': {d: [["M", 2.43, -10.05], ["c", 0.21, -0.12, 0.54, -0.03, 0.66, 0.24], ["c", 0.06, 0.12, 0.06, 0.21, 0.06, 2.01], ["c", 0, 1.05, 0, 1.89, 0.03, 1.89], ["l", 0.72, -0.48], ["c", 0.69, -0.48, 0.69, -0.51, 0.87, -0.51], ["c", 0.15, 0, 0.18, 0.03, 0.27, 0.09], ["c", 0.21, 0.15, 0.21, 0.18, 0.21, 1.41], ["c", 0, 1.11, -0.03, 1.14, -0.09, 1.23], ["c", -0.03, 0.03, -0.48, 0.39, -1.02, 0.75], ["l", -0.99, 0.66], ["l", 0, 2.37], ["c", 0, 1.32, 0, 2.37, 0.03, 2.37], ["l", 0.72, -0.48], ["c", 0.69, -0.48, 0.69, -0.51, 0.87, -0.51], ["c", 0.15, 0, 0.18, 0.03, 0.27, 0.09], ["c", 0.21, 0.15, 0.21, 0.18, 0.21, 1.41], ["c", 0, 1.11, -0.03, 1.14, -0.09, 1.23], ["c", -0.03, 0.03, -0.48, 0.39, -1.02, 0.75], ["l", -0.99, 0.66], ["l", 0, 2.25], ["c", 0, 1.95, 0, 2.28, -0.06, 2.37], ["c", -0.06, 0.12, -0.12, 0.21, -0.24, 0.27], ["c", -0.27, 0.12, -0.54, 0.03, -0.69, -0.24], ["c", -0.06, -0.12, -0.06, -0.21, -0.06, -2.01], ["c", 0, -1.05, 0, -1.89, -0.03, -1.89], ["l", -0.72, 0.48], ["c", -0.69, 0.48, -0.69, 0.48, -0.87, 0.48], ["c", -0.15, 0, -0.18, 0, -0.27, -0.06], ["c", -0.21, -0.15, -0.21, -0.18, -0.21, -1.41], ["c", 0, -1.11, 0.03, -1.14, 0.09, -1.23], ["c", 0.03, -0.03, 0.48, -0.39, 1.02, -0.75], ["l", 0.99, -0.66], ["l", 0, -2.37], ["c", 0, -1.32, 0, -2.37, -0.03, -2.37], ["l", -0.72, 0.48], ["c", -0.69, 0.48, -0.69, 0.48, -0.87, 0.48], ["c", -0.15, 0, -0.18, 0, -0.27, -0.06], ["c", -0.21, -0.15, -0.21, -0.18, -0.21, -1.41], ["c", 0, -1.11, 0.03, -1.14, 0.09, -1.23], ["c", 0.03, -0.03, 0.48, -0.39, 1.02, -0.75], ["l", 0.99, -0.66], ["l", 0, -2.25], ["c", 0, -2.13, 0, -2.28, 0.06, -2.4], ["c", 0.06, -0.12, 0.12, -0.18, 0.27, -0.24], ["z"]], w: 5.25, h: 20.174}
+        , 'accidentals.dblsharp': {d: [["M", -0.186, -3.96], ["c", 0.06, -0.03, 0.12, -0.06, 0.15, -0.06], ["c", 0.09, 0, 2.76, 0.27, 2.79, 0.3], ["c", 0.12, 0.03, 0.15, 0.12, 0.15, 0.51], ["c", 0.06, 0.96, 0.24, 1.59, 0.57, 2.1], ["c", 0.06, 0.09, 0.15, 0.21, 0.18, 0.24], ["l", 0.09, 0.06], ["l", 0.09, -0.06], ["c", 0.03, -0.03, 0.12, -0.15, 0.18, -0.24], ["c", 0.33, -0.51, 0.51, -1.14, 0.57, -2.1], ["c", 0, -0.39, 0.03, -0.45, 0.12, -0.51], ["c", 0.03, 0, 0.66, -0.09, 1.44, -0.15], ["c", 1.47, -0.15, 1.5, -0.15, 1.56, -0.03], ["c", 0.03, 0.06, 0, 0.42, -0.09, 1.44], ["c", -0.09, 0.72, -0.15, 1.35, -0.15, 1.38], ["c", 0, 0.03, -0.03, 0.09, -0.06, 0.12], ["c", -0.06, 0.06, -0.12, 0.09, -0.51, 0.09], ["c", -1.08, 0.06, -1.8, 0.3, -2.28, 0.75], ["l", -0.12, 0.09], ["l", 0.09, 0.09], ["c", 0.12, 0.15, 0.39, 0.33, 0.63, 0.45], ["c", 0.42, 0.18, 0.96, 0.27, 1.68, 0.33], ["c", 0.39, -0, 0.45, 0.03, 0.51, 0.09], ["c", 0.03, 0.03, 0.06, 0.09, 0.06, 0.12], ["c", 0, 0.03, 0.06, 0.66, 0.15, 1.38], ["c", 0.09, 1.02, 0.12, 1.38, 0.09, 1.44], ["c", -0.06, 0.12, -0.09, 0.12, -1.56, -0.03], ["c", -0.78, -0.06, -1.41, -0.15, -1.44, -0.15], ["c", -0.09, -0.06, -0.12, -0.12, -0.12, -0.54], ["c", -0.06, -0.93, -0.24, -1.56, -0.57, -2.07], ["c", -0.06, -0.09, -0.15, -0.21, -0.18, -0.24], ["l", -0.09, -0.06], ["l", -0.09, 0.06], ["c", -0.03, 0.03, -0.12, 0.15, -0.18, 0.24], ["c", -0.33, 0.51, -0.51, 1.14, -0.57, 2.07], ["c", 0, 0.42, -0.03, 0.48, -0.12, 0.54], ["c", -0.03, 0, -0.66, 0.09, -1.44, 0.15], ["c", -1.47, 0.15, -1.5, 0.15, -1.56, 0.03], ["c", -0.03, -0.06, 0, -0.42, 0.09, -1.44], ["c", 0.09, -0.72, 0.15, -1.35, 0.15, -1.38], ["c", 0, -0.03, 0.03, -0.09, 0.06, -0.12], ["c", 0.06, -0.06, 0.12, -0.09, 0.51, -0.09], ["c", 0.72, -0.06, 1.26, -0.15, 1.68, -0.33], ["c", 0.24, -0.12, 0.51, -0.3, 0.63, -0.45], ["l", 0.09, -0.09], ["l", -0.12, -0.09], ["c", -0.48, -0.45, -1.2, -0.69, -2.28, -0.75], ["c", -0.39, 0, -0.45, -0.03, -0.51, -0.09], ["c", -0.03, -0.03, -0.06, -0.09, -0.06, -0.12], ["c", 0, -0.03, -0.06, -0.63, -0.12, -1.38], ["c", -0.09, -0.72, -0.15, -1.35, -0.15, -1.38], ["z"]], w: 7.961, h: 7.977}
+        , 'accidentals.halfflat': {d: [["M", 4.83, -14.07], ["c", 0.33, -0.06, 0.87, 0, 1.08, 0.15], ["c", 0.06, 0.03, 0.06, 0.6, -0.12, 9.06], ["c", -0.09, 5.55, -0.15, 9.06, -0.18, 9.12], ["c", -0.03, 0.09, -0.09, 0.18, -0.15, 0.27], ["c", -0.24, 0.21, -0.54, 0.24, -0.81, 0.06], ["c", -0.06, -0.03, -0.27, -0.24, -0.45, -0.42], ["c", -0.36, -0.42, -0.66, -0.66, -1.8, -1.44], ["c", -1.23, -0.84, -1.83, -1.32, -2.25, -1.77], ["c", -0.66, -0.78, -0.96, -1.56, -0.93, -2.46], ["c", 0.09, -1.41, 1.11, -2.58, 2.4, -2.79], ["c", 0.3, -0.06, 0.84, -0.03, 1.23, 0.06], ["c", 0.54, 0.12, 1.08, 0.33, 1.53, 0.63], ["c", 0.12, 0.09, 0.24, 0.15, 0.24, 0.12], ["c", 0, 0, -0.12, -8.37, -0.18, -9.75], ["l", 0, -0.66], ["l", 0.12, -0.06], ["c", 0.06, -0.03, 0.18, -0.09, 0.27, -0.12], ["z"], ["m", -1.65, 10.95], ["c", -0.6, -0.18, -1.08, 0.09, -1.38, 0.69], ["c", -0.27, 0.6, -0.36, 1.38, -0.18, 2.07], ["c", 0.12, 0.42, 0.42, 0.99, 0.72, 1.41], ["c", 0.3, 0.42, 0.93, 1.05, 1.56, 1.59], ["l", 0.48, 0.39], ["l", 0, -0.12], ["c", 0.03, -0.09, 0.03, -0.48, 0.06, -0.9], ["c", 0.03, -0.57, 0.03, -1.08, 0, -2.22], ["c", -0.03, -1.62, -0.03, -1.62, -0.24, -2.07], ["c", -0.21, -0.42, -0.6, -0.75, -1.02, -0.84], ["z"]], w: 6.728, h: 18.801}
+        , 'accidentals.dblflat': {d: [["M", -0.36, -14.07], ["c", 0.33, -0.06, 0.87, 0, 1.08, 0.15], ["c", 0.06, 0.03, 0.06, 0.33, -0.03, 4.89], ["c", -0.06, 2.67, -0.09, 5.01, -0.09, 5.22], ["l", 0, 0.36], ["l", 0.15, -0.15], ["c", 0.36, -0.3, 0.75, -0.51, 1.2, -0.63], ["c", 0.33, -0.09, 0.96, -0.09, 1.26, -0.03], ["c", 0.27, 0.09, 0.63, 0.27, 0.87, 0.45], ["l", 0.21, 0.15], ["l", 0, -0.27], ["c", 0, -0.15, -0.03, -2.43, -0.09, -5.1], ["c", -0.09, -4.56, -0.09, -4.86, -0.03, -4.89], ["c", 0.15, -0.12, 0.39, -0.15, 0.72, -0.15], ["c", 0.3, 0, 0.54, 0.03, 0.69, 0.15], ["c", 0.06, 0.03, 0.06, 0.33, -0.03, 4.95], ["c", -0.06, 2.7, -0.09, 5.04, -0.09, 5.22], ["l", 0.03, 0.3], ["l", 0.21, -0.15], ["c", 0.69, -0.48, 1.44, -0.69, 2.28, -0.69], ["c", 0.51, 0, 0.78, 0.03, 1.2, 0.21], ["c", 1.32, 0.63, 2.01, 2.28, 1.53, 3.69], ["c", -0.21, 0.57, -0.51, 1.02, -1.05, 1.56], ["c", -0.42, 0.42, -0.81, 0.72, -1.92, 1.5], ["c", -1.26, 0.87, -1.5, 1.08, -1.86, 1.5], ["c", -0.39, 0.45, -0.54, 0.54, -0.81, 0.51], ["c", -0.18, 0, -0.21, 0, -0.33, -0.06], ["l", -0.21, -0.21], ["l", -0.06, -0.12], ["l", -0.03, -0.99], ["c", -0.03, -0.54, -0.03, -1.29, -0.06, -1.68], ["l", 0, -0.69], ["l", -0.21, 0.24], ["c", -0.36, 0.42, -0.75, 0.75, -1.8, 1.62], ["c", -1.02, 0.84, -1.2, 0.99, -1.44, 1.38], ["c", -0.36, 0.51, -0.54, 0.6, -0.9, 0.51], ["c", -0.15, -0.03, -0.39, -0.27, -0.42, -0.42], ["c", -0.03, -0.06, -0.09, -3.27, -0.18, -8.34], ["c", -0.09, -4.53, -0.15, -8.58, -0.18, -9.03], ["l", 0, -0.78], ["l", 0.12, -0.06], ["c", 0.06, -0.03, 0.18, -0.09, 0.27, -0.12], ["z"], ["m", 2.52, 10.98], ["c", -0.18, -0.09, -0.48, -0.12, -0.66, -0.06], ["c", -0.39, 0.15, -0.69, 0.54, -0.84, 1.14], ["c", -0.06, 0.24, -0.06, 0.39, -0.09, 1.74], ["c", -0.03, 1.44, 0, 2.73, 0.06, 3.18], ["l", 0.03, 0.15], ["l", 0.27, -0.27], ["c", 0.93, -0.96, 1.5, -1.95, 1.74, -3.06], ["c", 0.06, -0.27, 0.06, -0.39, 0.06, -0.96], ["c", 0, -0.54, 0, -0.69, -0.06, -0.93], ["c", -0.09, -0.51, -0.27, -0.81, -0.51, -0.93], ["z"], ["m", 5.43, 0], ["c", -0.18, -0.09, -0.51, -0.12, -0.72, -0.06], ["c", -0.54, 0.12, -0.96, 0.63, -1.17, 1.26], ["c", -0.06, 0.3, -0.12, 2.88, -0.06, 3.9], ["c", 0.03, 0.42, 0.03, 0.81, 0.06, 0.9], ["l", 0.03, 0.12], ["l", 0.36, -0.3], ["c", 0.42, -0.36, 1.02, -0.96, 1.29, -1.29], ["c", 0.36, -0.45, 0.66, -0.99, 0.81, -1.41], ["c", 0.42, -1.23, 0.15, -2.76, -0.6, -3.12], ["z"]], w: 11.613, h: 18.804}
+        , 'clefs.C': {d: [["M", 0.06, -14.94], ["l", 0.09, -0.06], ["l", 1.92, 0], ["l", 1.92, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 14.85], ["l", 0, 14.82], ["l", -0.06, 0.09], ["l", -0.09, 0.06], ["l", -1.92, 0], ["l", -1.92, 0], ["l", -0.09, -0.06], ["l", -0.06, -0.09], ["l", 0, -14.82], ["l", 0, -14.85], ["z"], ["m", 5.37, 0], ["c", 0.09, -0.06, 0.09, -0.06, 0.57, -0.06], ["c", 0.45, 0, 0.45, 0, 0.54, 0.06], ["l", 0.06, 0.09], ["l", 0, 7.14], ["l", 0, 7.11], ["l", 0.09, -0.06], ["c", 0.18, -0.18, 0.72, -0.84, 0.96, -1.2], ["c", 0.3, -0.45, 0.66, -1.17, 0.84, -1.65], ["c", 0.36, -0.9, 0.57, -1.83, 0.6, -2.79], ["c", 0.03, -0.48, 0.03, -0.54, 0.09, -0.63], ["c", 0.12, -0.18, 0.36, -0.21, 0.54, -0.12], ["c", 0.18, 0.09, 0.21, 0.15, 0.24, 0.66], ["c", 0.06, 0.87, 0.21, 1.56, 0.57, 2.22], ["c", 0.51, 1.02, 1.26, 1.68, 2.22, 1.92], ["c", 0.21, 0.06, 0.33, 0.06, 0.78, 0.06], ["c", 0.45, -0, 0.57, -0, 0.84, -0.06], ["c", 0.45, -0.12, 0.81, -0.33, 1.08, -0.6], ["c", 0.57, -0.57, 0.87, -1.41, 0.99, -2.88], ["c", 0.06, -0.54, 0.06, -3, 0, -3.57], ["c", -0.21, -2.58, -0.84, -3.87, -2.16, -4.5], ["c", -0.48, -0.21, -1.17, -0.36, -1.77, -0.36], ["c", -0.69, 0, -1.29, 0.27, -1.5, 0.72], ["c", -0.06, 0.15, -0.06, 0.21, -0.06, 0.42], ["c", 0, 0.24, 0, 0.3, 0.06, 0.45], ["c", 0.12, 0.24, 0.24, 0.39, 0.63, 0.66], ["c", 0.42, 0.3, 0.57, 0.48, 0.69, 0.72], ["c", 0.06, 0.15, 0.06, 0.21, 0.06, 0.48], ["c", 0, 0.39, -0.03, 0.63, -0.21, 0.96], ["c", -0.3, 0.6, -0.87, 1.08, -1.5, 1.26], ["c", -0.27, 0.06, -0.87, 0.06, -1.14, 0], ["c", -0.78, -0.24, -1.44, -0.87, -1.65, -1.68], ["c", -0.12, -0.42, -0.09, -1.17, 0.09, -1.71], ["c", 0.51, -1.65, 1.98, -2.82, 3.81, -3.09], ["c", 0.84, -0.09, 2.46, 0.03, 3.51, 0.27], ["c", 2.22, 0.57, 3.69, 1.8, 4.44, 3.75], ["c", 0.36, 0.93, 0.57, 2.13, 0.57, 3.36], ["c", -0, 1.44, -0.48, 2.73, -1.38, 3.81], ["c", -1.26, 1.5, -3.27, 2.43, -5.28, 2.43], ["c", -0.48, -0, -0.51, -0, -0.75, -0.09], ["c", -0.15, -0.03, -0.48, -0.21, -0.78, -0.36], ["c", -0.69, -0.36, -0.87, -0.42, -1.26, -0.42], ["c", -0.27, -0, -0.3, -0, -0.51, 0.09], ["c", -0.57, 0.3, -0.81, 0.9, -0.81, 2.1], ["c", -0, 1.23, 0.24, 1.83, 0.81, 2.13], ["c", 0.21, 0.09, 0.24, 0.09, 0.51, 0.09], ["c", 0.39, -0, 0.57, -0.06, 1.26, -0.42], ["c", 0.3, -0.15, 0.63, -0.33, 0.78, -0.36], ["c", 0.24, -0.09, 0.27, -0.09, 0.75, -0.09], ["c", 2.01, -0, 4.02, 0.93, 5.28, 2.4], ["c", 0.9, 1.11, 1.38, 2.4, 1.38, 3.84], ["c", -0, 1.5, -0.3, 2.88, -0.84, 3.96], ["c", -0.78, 1.59, -2.19, 2.64, -4.17, 3.15], ["c", -1.05, 0.24, -2.67, 0.36, -3.51, 0.27], ["c", -1.83, -0.27, -3.3, -1.44, -3.81, -3.09], ["c", -0.18, -0.54, -0.21, -1.29, -0.09, -1.74], ["c", 0.15, -0.6, 0.63, -1.2, 1.23, -1.47], ["c", 0.36, -0.18, 0.57, -0.21, 0.99, -0.21], ["c", 0.42, 0, 0.63, 0.03, 1.02, 0.21], ["c", 0.42, 0.21, 0.84, 0.63, 1.05, 1.05], ["c", 0.18, 0.36, 0.21, 0.6, 0.21, 0.96], ["c", -0, 0.3, -0, 0.36, -0.06, 0.51], ["c", -0.12, 0.24, -0.27, 0.42, -0.69, 0.72], ["c", -0.57, 0.42, -0.69, 0.63, -0.69, 1.08], ["c", -0, 0.24, -0, 0.3, 0.06, 0.45], ["c", 0.12, 0.21, 0.3, 0.39, 0.57, 0.54], ["c", 0.42, 0.18, 0.87, 0.21, 1.53, 0.15], ["c", 1.08, -0.15, 1.8, -0.57, 2.34, -1.32], ["c", 0.54, -0.75, 0.84, -1.83, 0.99, -3.51], ["c", 0.06, -0.57, 0.06, -3.03, -0, -3.57], ["c", -0.12, -1.47, -0.42, -2.31, -0.99, -2.88], ["c", -0.27, -0.27, -0.63, -0.48, -1.08, -0.6], ["c", -0.27, -0.06, -0.39, -0.06, -0.84, -0.06], ["c", -0.45, 0, -0.57, 0, -0.78, 0.06], ["c", -1.14, 0.27, -2.01, 1.17, -2.46, 2.49], ["c", -0.21, 0.57, -0.3, 0.99, -0.33, 1.65], ["c", -0.03, 0.51, -0.06, 0.57, -0.24, 0.66], ["c", -0.12, 0.06, -0.27, 0.06, -0.39, 0], ["c", -0.21, -0.09, -0.21, -0.15, -0.24, -0.75], ["c", -0.09, -1.92, -0.78, -3.72, -2.01, -5.19], ["c", -0.18, -0.21, -0.36, -0.42, -0.39, -0.45], ["l", -0.09, -0.06], ["l", -0, 7.11], ["l", -0, 7.14], ["l", -0.06, 0.09], ["c", -0.09, 0.06, -0.09, 0.06, -0.54, 0.06], ["c", -0.48, 0, -0.48, 0, -0.57, -0.06], ["l", -0.06, -0.09], ["l", -0, -14.82], ["l", -0, -14.85], ["z"]], w: 20.31, h: 29.97}
+        , 'clefs.F': {d: [["M", 6.3, -7.8], ["c", 0.36, -0.03, 1.65, 0, 2.13, 0.03], ["c", 3.6, 0.42, 6.03, 2.1, 6.93, 4.86], ["c", 0.27, 0.84, 0.36, 1.5, 0.36, 2.58], ["c", 0, 0.9, -0.03, 1.35, -0.18, 2.16], ["c", -0.78, 3.78, -3.54, 7.08, -8.37, 9.96], ["c", -1.74, 1.05, -3.87, 2.13, -6.18, 3.12], ["c", -0.39, 0.18, -0.75, 0.33, -0.81, 0.36], ["c", -0.06, 0.03, -0.15, 0.06, -0.18, 0.06], ["c", -0.15, 0, -0.33, -0.18, -0.33, -0.33], ["c", 0, -0.15, 0.06, -0.21, 0.51, -0.48], ["c", 3, -1.77, 5.13, -3.21, 6.84, -4.74], ["c", 0.51, -0.45, 1.59, -1.5, 1.95, -1.95], ["c", 1.89, -2.19, 2.88, -4.32, 3.15, -6.78], ["c", 0.06, -0.42, 0.06, -1.77, 0, -2.19], ["c", -0.24, -2.01, -0.93, -3.63, -2.04, -4.71], ["c", -0.63, -0.63, -1.29, -1.02, -2.07, -1.2], ["c", -1.62, -0.39, -3.36, 0.15, -4.56, 1.44], ["c", -0.54, 0.6, -1.05, 1.47, -1.32, 2.22], ["l", -0.09, 0.21], ["l", 0.24, -0.12], ["c", 0.39, -0.21, 0.63, -0.24, 1.11, -0.24], ["c", 0.3, 0, 0.45, 0, 0.66, 0.06], ["c", 1.92, 0.48, 2.85, 2.55, 1.95, 4.38], ["c", -0.45, 0.99, -1.41, 1.62, -2.46, 1.71], ["c", -1.47, 0.09, -2.91, -0.87, -3.39, -2.25], ["c", -0.18, -0.57, -0.21, -1.32, -0.03, -2.28], ["c", 0.39, -2.25, 1.83, -4.2, 3.81, -5.19], ["c", 0.69, -0.36, 1.59, -0.6, 2.37, -0.69], ["z"], ["m", 11.58, 2.52], ["c", 0.84, -0.21, 1.71, 0.3, 1.89, 1.14], ["c", 0.3, 1.17, -0.72, 2.19, -1.89, 1.89], ["c", -0.99, -0.21, -1.5, -1.32, -1.02, -2.25], ["c", 0.18, -0.39, 0.6, -0.69, 1.02, -0.78], ["z"], ["m", 0, 7.5], ["c", 0.84, -0.21, 1.71, 0.3, 1.89, 1.14], ["c", 0.21, 0.87, -0.3, 1.71, -1.14, 1.89], ["c", -0.87, 0.21, -1.71, -0.3, -1.89, -1.14], ["c", -0.21, -0.84, 0.3, -1.71, 1.14, -1.89], ["z"]], w: 20.153, h: 23.142}
+        , 'clefs.G': {d: [["M", 9.69, -37.41], ["c", 0.09, -0.09, 0.24, -0.06, 0.36, 0], ["c", 0.12, 0.09, 0.57, 0.6, 0.96, 1.11], ["c", 1.77, 2.34, 3.21, 5.85, 3.57, 8.73], ["c", 0.21, 1.56, 0.03, 3.27, -0.45, 4.86], ["c", -0.69, 2.31, -1.92, 4.47, -4.23, 7.44], ["c", -0.3, 0.39, -0.57, 0.72, -0.6, 0.75], ["c", -0.03, 0.06, 0, 0.15, 0.18, 0.78], ["c", 0.54, 1.68, 1.38, 4.44, 1.68, 5.49], ["l", 0.09, 0.42], ["l", 0.39, -0], ["c", 1.47, 0.09, 2.76, 0.51, 3.96, 1.29], ["c", 1.83, 1.23, 3.06, 3.21, 3.39, 5.52], ["c", 0.09, 0.45, 0.12, 1.29, 0.06, 1.74], ["c", -0.09, 1.02, -0.33, 1.83, -0.75, 2.73], ["c", -0.84, 1.71, -2.28, 3.06, -4.02, 3.72], ["l", -0.33, 0.12], ["l", 0.03, 1.26], ["c", 0, 1.74, -0.06, 3.63, -0.21, 4.62], ["c", -0.45, 3.06, -2.19, 5.49, -4.47, 6.21], ["c", -0.57, 0.18, -0.9, 0.21, -1.59, 0.21], ["c", -0.69, -0, -1.02, -0.03, -1.65, -0.21], ["c", -1.14, -0.27, -2.13, -0.84, -2.94, -1.65], ["c", -0.99, -0.99, -1.56, -2.16, -1.71, -3.54], ["c", -0.09, -0.81, 0.06, -1.53, 0.45, -2.13], ["c", 0.63, -0.99, 1.83, -1.56, 3, -1.53], ["c", 1.5, 0.09, 2.64, 1.32, 2.73, 2.94], ["c", 0.06, 1.47, -0.93, 2.7, -2.37, 2.97], ["c", -0.45, 0.06, -0.84, 0.03, -1.29, -0.09], ["l", -0.21, -0.09], ["l", 0.09, 0.12], ["c", 0.39, 0.54, 0.78, 0.93, 1.32, 1.26], ["c", 1.35, 0.87, 3.06, 1.02, 4.35, 0.36], ["c", 1.44, -0.72, 2.52, -2.28, 2.97, -4.35], ["c", 0.15, -0.66, 0.24, -1.5, 0.3, -3.03], ["c", 0.03, -0.84, 0.03, -2.94, -0, -3], ["c", -0.03, -0, -0.18, -0, -0.36, 0.03], ["c", -0.66, 0.12, -0.99, 0.12, -1.83, 0.12], ["c", -1.05, -0, -1.71, -0.06, -2.61, -0.3], ["c", -4.02, -0.99, -7.11, -4.35, -7.8, -8.46], ["c", -0.12, -0.66, -0.12, -0.99, -0.12, -1.83], ["c", -0, -0.84, -0, -1.14, 0.15, -1.92], ["c", 0.36, -2.28, 1.41, -4.62, 3.3, -7.29], ["l", 2.79, -3.6], ["c", 0.54, -0.66, 0.96, -1.2, 0.96, -1.23], ["c", -0, -0.03, -0.09, -0.33, -0.18, -0.69], ["c", -0.96, -3.21, -1.41, -5.28, -1.59, -7.68], ["c", -0.12, -1.38, -0.15, -3.09, -0.06, -3.96], ["c", 0.33, -2.67, 1.38, -5.07, 3.12, -7.08], ["c", 0.36, -0.42, 0.99, -1.05, 1.17, -1.14], ["z"], ["m", 2.01, 4.71], ["c", -0.15, -0.3, -0.3, -0.54, -0.3, -0.54], ["c", -0.03, 0, -0.18, 0.09, -0.3, 0.21], ["c", -2.4, 1.74, -3.87, 4.2, -4.26, 7.11], ["c", -0.06, 0.54, -0.06, 1.41, -0.03, 1.89], ["c", 0.09, 1.29, 0.48, 3.12, 1.08, 5.22], ["c", 0.15, 0.42, 0.24, 0.78, 0.24, 0.81], ["c", 0, 0.03, 0.84, -1.11, 1.23, -1.68], ["c", 1.89, -2.73, 2.88, -5.07, 3.15, -7.53], ["c", 0.09, -0.57, 0.12, -1.74, 0.06, -2.37], ["c", -0.09, -1.23, -0.27, -1.92, -0.87, -3.12], ["z"], ["m", -2.94, 20.7], ["c", -0.21, -0.72, -0.39, -1.32, -0.42, -1.32], ["c", 0, 0, -1.2, 1.47, -1.86, 2.37], ["c", -2.79, 3.63, -4.02, 6.3, -4.35, 9.3], ["c", -0.03, 0.21, -0.03, 0.69, -0.03, 1.08], ["c", 0, 0.69, 0, 0.75, 0.06, 1.11], ["c", 0.12, 0.54, 0.27, 0.99, 0.51, 1.47], ["c", 0.69, 1.38, 1.83, 2.55, 3.42, 3.42], ["c", 0.96, 0.54, 2.07, 0.9, 3.21, 1.08], ["c", 0.78, 0.12, 2.04, 0.12, 2.94, -0.03], ["c", 0.51, -0.06, 0.45, -0.03, 0.42, -0.3], ["c", -0.24, -3.33, -0.72, -6.33, -1.62, -10.08], ["c", -0.09, -0.39, -0.18, -0.75, -0.18, -0.78], ["c", -0.03, -0.03, -0.42, -0, -0.81, 0.09], ["c", -0.9, 0.18, -1.65, 0.57, -2.22, 1.14], ["c", -0.72, 0.72, -1.08, 1.65, -1.05, 2.64], ["c", 0.06, 0.96, 0.48, 1.83, 1.23, 2.58], ["c", 0.36, 0.36, 0.72, 0.63, 1.17, 0.9], ["c", 0.33, 0.18, 0.36, 0.21, 0.42, 0.33], ["c", 0.18, 0.42, -0.18, 0.9, -0.6, 0.87], ["c", -0.18, -0.03, -0.84, -0.36, -1.26, -0.63], ["c", -0.78, -0.51, -1.38, -1.11, -1.86, -1.83], ["c", -1.77, -2.7, -0.99, -6.42, 1.71, -8.19], ["c", 0.3, -0.21, 0.81, -0.48, 1.17, -0.63], ["c", 0.3, -0.09, 1.02, -0.3, 1.14, -0.3], ["c", 0.06, -0, 0.09, -0, 0.09, -0.03], ["c", 0.03, -0.03, -0.51, -1.92, -1.23, -4.26], ["z"], ["m", 3.78, 7.41], ["c", -0.18, -0.03, -0.36, -0.06, -0.39, -0.06], ["c", -0.03, 0, 0, 0.21, 0.18, 1.02], ["c", 0.75, 3.18, 1.26, 6.3, 1.5, 9.09], ["c", 0.06, 0.72, 0, 0.69, 0.51, 0.42], ["c", 0.78, -0.36, 1.44, -0.96, 1.98, -1.77], ["c", 1.08, -1.62, 1.2, -3.69, 0.3, -5.55], ["c", -0.81, -1.62, -2.31, -2.79, -4.08, -3.15], ["z"]], w: 19.051, h: 57.057}
+        , 'clefs.perc': {d: [["M", 5.07, -7.44], ["l", 0.09, -0.06], ["l", 1.53, 0], ["l", 1.53, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 7.35], ["l", 0, 7.32], ["l", -0.06, 0.09], ["l", -0.09, 0.06], ["l", -1.53, -0], ["l", -1.53, -0], ["l", -0.09, -0.06], ["l", -0.06, -0.09], ["l", 0, -7.32], ["l", 0, -7.35], ["z"], ["m", 6.63, 0], ["l", 0.09, -0.06], ["l", 1.53, 0], ["l", 1.53, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 7.35], ["l", 0, 7.32], ["l", -0.06, 0.09], ["l", -0.09, 0.06], ["l", -1.53, -0], ["l", -1.53, -0], ["l", -0.09, -0.06], ["l", -0.06, -0.09], ["l", 0, -7.32], ["l", 0, -7.35], ["z"]], w: 9.99, h: 14.97}
+        , 'clefs.tab': {d: [["M", 26.88, -28.88], ["c", 0.32, -0.12, 0.88, 0.12, 1.04, 0.48], ["c", 0.12, 0.28, 0.12, 0.32, -0.24, 0.72], ["c", -1.04, 1.08, -2.48, 1.92, -3.92, 2.28], ["c", -1.16, 0.32, -2.28, 0.32, -3.4, 0.04], ["l", -0.08, -0.04], ["l", -0.24, 1.32], ["c", -0.44, 2.64, -1, 5.68, -1.28, 6.72], ["c", -0.56, 2.2, -1.68, 4.24, -3.04, 5.52], ["c", -0.76, 0.76, -1.56, 1.2, -2.48, 1.44], ["c", -0.24, 0.08, -0.44, 0.08, -0.88, 0.08], ["c", -0.72, 0, -1.04, -0.04, -1.64, -0.36], ["c", -0.52, -0.24, -0.88, -0.52, -1.84, -1.32], ["c", -0.4, -0.32, -0.88, -0.68, -1, -0.76], ["c", -0.28, -0.2, -0.36, -0.32, -0.32, -0.6], ["c", 0.08, -0.36, 0.48, -0.8, 0.8, -0.88], ["c", 0.24, -0.04, 0.44, 0.08, 1.2, 0.76], ["c", 0.64, 0.56, 0.96, 0.76, 1.24, 0.92], ["c", 0.88, 0.44, 1.84, 0.28, 2.6, -0.48], ["c", 0.84, -0.8, 1.4, -2.16, 1.64, -4], ["c", 0.04, -0.24, 0.12, -0.88, 0.12, -1.48], ["c", 0.12, -2.08, 0.44, -5.08, 0.76, -7.32], ["c", 0.08, -0.44, 0.12, -0.84, 0.12, -0.84], ["c", -0.04, -0.04, -1.08, -0.16, -1.36, -0.16], ["c", -0.76, 0, -1.76, 0.16, -2.4, 0.44], ["c", -1.16, 0.4, -1.8, 1.04, -2, 1.88], ["c", -0.24, 0.84, 0.12, 1.68, 0.88, 2.2], ["c", 0.16, 0.08, 0.2, 0.16, 0.24, 0.32], ["c", 0.12, 0.36, 0.08, 0.76, -0.12, 1], ["c", -0.04, 0.08, -0.16, 0.12, -0.36, 0.2], ["c", -0.96, 0.28, -1.92, 0.2, -2.8, -0.24], ["c", -0.72, -0.36, -1.28, -0.88, -1.6, -1.52], ["c", -0.52, -1, -0.44, -2.32, 0.2, -3.36], ["c", 0.36, -0.56, 1.12, -1.24, 1.88, -1.64], ["c", 1.56, -0.76, 3.84, -1.2, 6.4, -1.2], ["c", 0.92, 0, 1.04, 0, 1.44, 0.08], ["c", 0.6, 0.12, 1.48, 0.4, 2.76, 0.8], ["c", 1.96, 0.64, 2.44, 0.76, 3.4, 0.72], ["c", 1.36, -0.08, 2.72, -0.6, 3.92, -1.48], ["c", 0.16, -0.12, 0.32, -0.24, 0.36, -0.24], ["z"], ["m", -7.84, 17.4], ["c", 0.28, -0.04, 1.08, 0, 1.44, 0.08], ["c", 0.64, 0.16, 1.2, 0.56, 1.32, 0.92], ["c", 0.04, 0.12, 0.04, 0.2, 0, 0.36], ["c", 0, 0.12, -0.04, 0.76, -0.08, 1.44], ["c", -0.12, 2.92, -0.32, 7.68, -0.52, 11.04], ["c", -0.08, 2.04, -0.08, 2.36, 0.04, 2.68], ["c", 0.12, 0.24, 0.2, 0.32, 0.4, 0.4], ["c", 0.32, 0.16, 0.72, 0.08, 1.64, -0.36], ["c", 0.76, -0.36, 0.88, -0.4, 1, -0.32], ["c", 0.12, 0.08, 0.24, 0.4, 0.24, 0.6], ["c", 0, 0.44, -0.2, 0.68, -0.6, 0.84], ["c", -0.16, 0.04, -0.52, 0.2, -0.8, 0.36], ["c", -1.56, 0.8, -1.84, 0.92, -2.4, 0.96], ["c", -0.6, 0.04, -1.04, -0.12, -1.44, -0.52], ["c", -0.52, -0.56, -0.88, -1.6, -1.36, -4.16], ["c", -0.32, -1.64, -0.48, -2.76, -0.72, -5], ["l", 0, -0.24], ["l", -0.48, 0.6], ["c", -0.8, 1, -1.76, 2.12, -2.6, 3], ["c", -0.2, 0.24, -0.36, 0.4, -0.36, 0.44], ["c", 0, 0, 0.08, 0.12, 0.2, 0.24], ["c", 0.32, 0.44, 0.8, 0.76, 1.4, 0.92], ["c", 0.24, 0.08, 0.4, 0.08, 0.92, 0.08], ["l", 0.64, 0.04], ["l", 0.08, 0.16], ["c", 0.2, 0.36, 0.04, 0.96, -0.28, 1.2], ["c", -0.24, 0.16, -1.24, 0.36, -1.88, 0.36], ["c", -1.12, 0, -2.12, -0.4, -2.64, -1.12], ["l", -0.16, -0.2], ["l", -0.6, 0.56], ["c", -1.32, 1.16, -2.04, 1.76, -2.88, 2.32], ["c", -1.04, 0.68, -2, 1.12, -2.8, 1.24], ["c", -0.92, 0.16, -1.6, 0.04, -2.6, -0.56], ["c", -0.28, -0.16, -0.68, -0.36, -0.88, -0.48], ["c", -0.32, -0.16, -0.4, -0.24, -0.44, -0.32], ["c", -0.16, -0.36, 0.2, -1.04, 0.6, -1.24], ["c", 0.32, -0.16, 0.44, -0.12, 1.2, 0.24], ["c", 0.8, 0.4, 1.12, 0.52, 1.6, 0.48], ["c", 1.16, -0.12, 2.36, -0.92, 4.32, -3.08], ["c", 3.56, -3.8, 6.12, -7.92, 7.6, -12.2], ["c", 0.2, -0.6, 0.32, -0.84, 0.56, -1.08], ["c", 0.28, -0.32, 0.8, -0.6, 1.32, -0.68], ["z"], ["m", -5.32, 21.4], ["c", 0.24, 0, 0.92, -0.04, 1.56, 0], ["c", 4.36, 0.04, 7.16, 1, 8, 2.76], ["c", 0.6, 1.32, 0.16, 3.2, -1.08, 4.56], ["c", -0.32, 0.36, -0.76, 0.76, -1.12, 1], ["c", -0.12, 0.08, -0.24, 0.12, -0.24, 0.16], ["c", 0, 0, 0.24, 0.04, 0.56, 0.12], ["c", 1.64, 0.4, 2.68, 1.08, 3.16, 2.12], ["c", 0.36, 0.72, 0.4, 1.76, 0.12, 2.8], ["c", -0.16, 0.48, -0.6, 1.4, -0.92, 1.8], ["c", -1.16, 1.56, -2.8, 2.56, -4.72, 3], ["c", -0.48, 0.08, -0.64, 0.08, -1.28, 0.08], ["c", -0.6, 0, -0.88, 0, -1.12, -0.04], ["c", -1.12, -0.24, -1.96, -0.68, -2.76, -1.48], ["c", -0.44, -0.44, -0.6, -0.68, -0.6, -0.84], ["c", 0, -0.08, 0.04, -0.2, 0.08, -0.32], ["c", 0.24, -0.44, 0.92, -0.8, 1.24, -0.64], ["c", 0.04, 0.04, 0.2, 0.16, 0.36, 0.32], ["c", 0.52, 0.56, 1.32, 0.76, 2.16, 0.6], ["c", 1.4, -0.28, 2.64, -1.36, 3.08, -2.68], ["c", 0.64, -2.04, -0.64, -3.4, -3.44, -3.56], ["c", -0.28, 0, -0.48, -0.04, -0.56, -0.08], ["c", -0.2, -0.12, -0.28, -0.68, -0.08, -1.04], ["c", 0.16, -0.36, 0.32, -0.44, 0.8, -0.48], ["c", 0.76, -0.08, 1.48, -0.56, 2, -1.32], ["c", 0.64, -0.96, 0.72, -2.12, 0.24, -3.08], ["c", -0.16, -0.28, -0.6, -0.72, -0.92, -0.92], ["c", -0.44, -0.28, -1.24, -0.6, -1.8, -0.68], ["l", -0.16, -0.04], ["l", -0.08, 0.64], ["c", -0.72, 3.92, -1.52, 8.32, -1.72, 9], ["c", -0.44, 1.8, -1.24, 3.48, -2.2, 4.8], ["c", -0.4, 0.48, -1.08, 1.2, -1.52, 1.52], ["c", -0.4, 0.32, -1.12, 0.64, -1.52, 0.76], ["c", -0.44, 0.12, -1.28, 0.12, -1.68, 0.04], ["c", -0.6, -0.16, -1.16, -0.52, -2.04, -1.28], ["c", -0.32, -0.2, -0.68, -0.52, -0.84, -0.64], ["c", -0.4, -0.28, -0.44, -0.44, -0.28, -0.84], ["c", 0.16, -0.24, 0.36, -0.48, 0.56, -0.6], ["c", 0.36, -0.16, 0.48, -0.12, 1.16, 0.44], ["c", 1.04, 0.8, 1.44, 1, 2.2, 0.96], ["c", 0.6, -0.04, 1.08, -0.28, 1.56, -0.72], ["c", 1.16, -1.2, 1.84, -3.8, 1.84, -7.16], ["c", 0, -0.8, 0.04, -1.48, 0.16, -2.72], ["c", 0.08, -0.92, 0.32, -2.68, 0.44, -3.44], ["c", 0.08, -0.32, 0.08, -0.56, 0.08, -0.56], ["c", 0, 0, -0.16, 0.04, -0.28, 0.12], ["c", -1.92, 0.76, -2.88, 2.2, -2.32, 3.4], ["c", 0.12, 0.2, 0.24, 0.32, 0.36, 0.44], ["c", 0.32, 0.28, 0.4, 0.36, 0.44, 0.52], ["c", 0.08, 0.32, 0, 0.84, -0.2, 1.04], ["c", -0.12, 0.16, -0.72, 0.28, -1.28, 0.32], ["c", -1.36, 0.04, -2.68, -0.64, -3.24, -1.76], ["c", -0.28, -0.6, -0.36, -1.2, -0.2, -1.92], ["c", 0.08, -0.36, 0.28, -0.88, 0.52, -1.24], ["c", 1.16, -1.72, 4, -2.96, 7.52, -3.24], ["z"]], w: 26.191, h: 57.767}
+        , 'dots.dot': {d: [["M", 1.32, -1.68], ["c", 0.09, -0.03, 0.27, -0.06, 0.39, -0.06], ["c", 0.96, 0, 1.74, 0.78, 1.74, 1.71], ["c", 0, 0.96, -0.78, 1.74, -1.71, 1.74], ["c", -0.96, 0, -1.74, -0.78, -1.74, -1.71], ["c", 0, -0.78, 0.54, -1.5, 1.32, -1.68], ["z"]], w: 3.45, h: 3.45}
+        , 'flags.d8th': {d: [["M", 5.67, -21.63], ["c", 0.24, -0.12, 0.54, -0.06, 0.69, 0.15], ["c", 0.06, 0.06, 0.21, 0.36, 0.39, 0.66], ["c", 0.84, 1.77, 1.26, 3.36, 1.32, 5.1], ["c", 0.03, 1.29, -0.21, 2.37, -0.81, 3.63], ["c", -0.6, 1.23, -1.26, 2.13, -3.21, 4.38], ["c", -1.35, 1.53, -1.86, 2.19, -2.4, 2.97], ["c", -0.63, 0.93, -1.11, 1.92, -1.38, 2.79], ["c", -0.15, 0.54, -0.27, 1.35, -0.27, 1.8], ["l", 0, 0.15], ["l", -0.21, -0], ["l", -0.21, -0], ["l", 0, -3.75], ["l", 0, -3.75], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0.48, -0.3], ["c", 1.83, -1.11, 3.12, -2.1, 4.17, -3.12], ["c", 0.78, -0.81, 1.32, -1.53, 1.71, -2.31], ["c", 0.45, -0.93, 0.6, -1.74, 0.51, -2.88], ["c", -0.12, -1.56, -0.63, -3.18, -1.47, -4.68], ["c", -0.12, -0.21, -0.15, -0.33, -0.06, -0.51], ["c", 0.06, -0.15, 0.15, -0.24, 0.33, -0.33], ["z"]], w: 8.492, h: 21.691}
+        , 'flags.d16th': {d: [["M", 6.84, -22.53], ["c", 0.27, -0.12, 0.57, -0.06, 0.72, 0.15], ["c", 0.15, 0.15, 0.33, 0.87, 0.45, 1.56], ["c", 0.06, 0.33, 0.06, 1.35, 0, 1.65], ["c", -0.06, 0.33, -0.15, 0.78, -0.27, 1.11], ["c", -0.12, 0.33, -0.45, 0.96, -0.66, 1.32], ["l", -0.18, 0.27], ["l", 0.09, 0.18], ["c", 0.48, 1.02, 0.72, 2.25, 0.69, 3.3], ["c", -0.06, 1.23, -0.42, 2.28, -1.26, 3.45], ["c", -0.57, 0.87, -0.99, 1.32, -3, 3.39], ["c", -1.56, 1.56, -2.22, 2.4, -2.76, 3.45], ["c", -0.42, 0.84, -0.66, 1.8, -0.66, 2.55], ["l", 0, 0.15], ["l", -0.21, -0], ["l", -0.21, -0], ["l", 0, -7.5], ["l", 0, -7.5], ["l", 0.21, -0], ["l", 0.21, -0], ["l", 0, 1.14], ["l", 0, 1.11], ["l", 0.27, -0.15], ["c", 1.11, -0.57, 1.77, -0.99, 2.52, -1.47], ["c", 2.37, -1.56, 3.69, -3.15, 4.05, -4.83], ["c", 0.03, -0.18, 0.03, -0.39, 0.03, -0.78], ["c", 0, -0.6, -0.03, -0.93, -0.24, -1.5], ["c", -0.06, -0.18, -0.12, -0.39, -0.15, -0.45], ["c", -0.03, -0.24, 0.12, -0.48, 0.36, -0.6], ["z"], ["m", -0.63, 7.5], ["c", -0.06, -0.18, -0.15, -0.36, -0.15, -0.36], ["c", -0.03, 0, -0.03, 0.03, -0.06, 0.06], ["c", -0.06, 0.12, -0.96, 1.02, -1.95, 1.98], ["c", -0.63, 0.57, -1.26, 1.17, -1.44, 1.35], ["c", -1.53, 1.62, -2.28, 2.85, -2.55, 4.32], ["c", -0.03, 0.18, -0.03, 0.54, -0.06, 0.99], ["l", 0, 0.69], ["l", 0.18, -0.09], ["c", 0.93, -0.54, 2.1, -1.29, 2.82, -1.83], ["c", 0.69, -0.51, 1.02, -0.81, 1.53, -1.29], ["c", 1.86, -1.89, 2.37, -3.66, 1.68, -5.82], ["z"]], w: 8.475, h: 22.591}
+        , 'flags.d32nd': {d: [["M", 6.794, -29.13], ["c", 0.27, -0.12, 0.57, -0.06, 0.72, 0.15], ["c", 0.12, 0.12, 0.27, 0.63, 0.36, 1.11], ["c", 0.33, 1.59, 0.06, 3.06, -0.81, 4.47], ["l", -0.18, 0.27], ["l", 0.09, 0.15], ["c", 0.12, 0.24, 0.33, 0.69, 0.45, 1.05], ["c", 0.63, 1.83, 0.45, 3.57, -0.57, 5.22], ["l", -0.18, 0.3], ["l", 0.15, 0.27], ["c", 0.42, 0.87, 0.6, 1.71, 0.57, 2.61], ["c", -0.06, 1.29, -0.48, 2.46, -1.35, 3.78], ["c", -0.54, 0.81, -0.93, 1.29, -2.46, 3], ["c", -0.51, 0.54, -1.05, 1.17, -1.26, 1.41], ["c", -1.56, 1.86, -2.25, 3.36, -2.37, 5.01], ["l", 0, 0.33], ["l", -0.21, -0], ["l", -0.21, -0], ["l", 0, -11.25], ["l", 0, -11.25], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0, 1.35], ["l", 0.03, 1.35], ["l", 0.78, -0.39], ["c", 1.38, -0.69, 2.34, -1.26, 3.24, -1.92], ["c", 1.38, -1.02, 2.28, -2.13, 2.64, -3.21], ["c", 0.15, -0.48, 0.18, -0.72, 0.18, -1.29], ["c", 0, -0.57, -0.06, -0.9, -0.24, -1.47], ["c", -0.06, -0.18, -0.12, -0.39, -0.15, -0.45], ["c", -0.03, -0.24, 0.12, -0.48, 0.36, -0.6], ["z"], ["m", -0.63, 7.2], ["c", -0.09, -0.18, -0.12, -0.21, -0.12, -0.15], ["c", -0.03, 0.09, -1.02, 1.08, -2.04, 2.04], ["c", -1.17, 1.08, -1.65, 1.56, -2.07, 2.04], ["c", -0.84, 0.96, -1.38, 1.86, -1.68, 2.76], ["c", -0.21, 0.57, -0.27, 0.99, -0.3, 1.65], ["l", 0, 0.54], ["l", 0.66, -0.33], ["c", 3.57, -1.86, 5.49, -3.69, 5.94, -5.7], ["c", 0.06, -0.39, 0.06, -1.2, -0.03, -1.65], ["c", -0.06, -0.39, -0.24, -0.9, -0.36, -1.2], ["z"], ["m", -0.06, 7.2], ["c", -0.06, -0.15, -0.12, -0.33, -0.15, -0.45], ["l", -0.06, -0.18], ["l", -0.18, 0.21], ["l", -1.83, 1.83], ["c", -0.87, 0.9, -1.77, 1.8, -1.95, 2.01], ["c", -1.08, 1.29, -1.62, 2.31, -1.89, 3.51], ["c", -0.06, 0.3, -0.06, 0.51, -0.09, 0.93], ["l", 0, 0.57], ["l", 0.09, -0.06], ["c", 0.75, -0.45, 1.89, -1.26, 2.52, -1.74], ["c", 0.81, -0.66, 1.74, -1.53, 2.22, -2.16], ["c", 1.26, -1.53, 1.68, -3.06, 1.32, -4.47], ["z"]], w: 8.475, h: 29.191}
+        , 'flags.d64th': {d: [["M", 7.08, -32.88], ["c", 0.3, -0.12, 0.66, -0.03, 0.78, 0.24], ["c", 0.18, 0.33, 0.27, 2.1, 0.15, 2.64], ["c", -0.09, 0.39, -0.21, 0.78, -0.39, 1.08], ["l", -0.15, 0.3], ["l", 0.09, 0.27], ["c", 0.03, 0.12, 0.09, 0.45, 0.12, 0.69], ["c", 0.27, 1.44, 0.18, 2.55, -0.3, 3.6], ["l", -0.12, 0.33], ["l", 0.06, 0.42], ["c", 0.27, 1.35, 0.33, 2.82, 0.21, 3.63], ["c", -0.12, 0.6, -0.3, 1.23, -0.57, 1.8], ["l", -0.15, 0.27], ["l", 0.03, 0.42], ["c", 0.06, 1.02, 0.06, 2.7, 0.03, 3.06], ["c", -0.15, 1.47, -0.66, 2.76, -1.74, 4.41], ["c", -0.45, 0.69, -0.75, 1.11, -1.74, 2.37], ["c", -1.05, 1.38, -1.5, 1.98, -1.95, 2.73], ["c", -0.93, 1.5, -1.38, 2.82, -1.44, 4.2], ["l", 0, 0.42], ["l", -0.21, -0], ["l", -0.21, -0], ["l", 0, -15], ["l", 0, -15], ["l", 0.21, -0], ["l", 0.21, -0], ["l", 0, 1.86], ["l", 0, 1.89], ["c", 0, -0, 0.21, -0.03, 0.45, -0.09], ["c", 2.22, -0.39, 4.08, -1.11, 5.19, -2.01], ["c", 0.63, -0.54, 1.02, -1.14, 1.2, -1.8], ["c", 0.06, -0.3, 0.06, -1.14, -0.03, -1.65], ["c", -0.03, -0.18, -0.06, -0.39, -0.09, -0.48], ["c", -0.03, -0.24, 0.12, -0.48, 0.36, -0.6], ["z"], ["m", -0.45, 6.15], ["c", -0.03, -0.18, -0.06, -0.42, -0.06, -0.54], ["l", -0.03, -0.18], ["l", -0.33, 0.3], ["c", -0.42, 0.36, -0.87, 0.72, -1.68, 1.29], ["c", -1.98, 1.38, -2.25, 1.59, -2.85, 2.16], ["c", -0.75, 0.69, -1.23, 1.44, -1.47, 2.19], ["c", -0.15, 0.45, -0.18, 0.63, -0.21, 1.35], ["l", 0, 0.66], ["l", 0.39, -0.18], ["c", 1.83, -0.9, 3.45, -1.95, 4.47, -2.91], ["c", 0.93, -0.9, 1.53, -1.83, 1.74, -2.82], ["c", 0.06, -0.33, 0.06, -0.87, 0.03, -1.32], ["z"], ["m", -0.27, 4.86], ["c", -0.03, -0.21, -0.06, -0.36, -0.06, -0.36], ["c", 0, -0.03, -0.12, 0.09, -0.24, 0.24], ["c", -0.39, 0.48, -0.99, 1.08, -2.16, 2.19], ["c", -1.47, 1.38, -1.92, 1.83, -2.46, 2.49], ["c", -0.66, 0.87, -1.08, 1.74, -1.29, 2.58], ["c", -0.09, 0.42, -0.15, 0.87, -0.15, 1.44], ["l", 0, 0.54], ["l", 0.48, -0.33], ["c", 1.5, -1.02, 2.58, -1.89, 3.51, -2.82], ["c", 1.47, -1.47, 2.25, -2.85, 2.4, -4.26], ["c", 0.03, -0.39, 0.03, -1.17, -0.03, -1.71], ["z"], ["m", -0.66, 7.68], ["c", 0.03, -0.15, 0.03, -0.6, 0.03, -0.99], ["l", 0, -0.72], ["l", -0.27, 0.33], ["l", -1.74, 1.98], ["c", -1.77, 1.92, -2.43, 2.76, -2.97, 3.9], ["c", -0.51, 1.02, -0.72, 1.77, -0.75, 2.91], ["c", 0, 0.63, 0, 0.63, 0.06, 0.6], ["c", 0.03, -0.03, 0.3, -0.27, 0.63, -0.54], ["c", 0.66, -0.6, 1.86, -1.8, 2.31, -2.31], ["c", 1.65, -1.89, 2.52, -3.54, 2.7, -5.16], ["z"]], w: 8.485, h: 32.932}
+        , 'flags.dgrace': {d: [["M", -6.06, -15.93], ["c", 0.18, -0.09, 0.33, -0.12, 0.48, -0.06], ["c", 0.18, 0.09, 14.01, 8.04, 14.1, 8.1], ["c", 0.12, 0.12, 0.18, 0.33, 0.18, 0.51], ["c", -0.03, 0.21, -0.15, 0.39, -0.36, 0.48], ["c", -0.18, 0.09, -0.33, 0.12, -0.48, 0.06], ["c", -0.18, -0.09, -14.01, -8.04, -14.1, -8.1], ["c", -0.12, -0.12, -0.18, -0.33, -0.18, -0.51], ["c", 0.03, -0.21, 0.15, -0.39, 0.36, -0.48], ["z"]], w: 15.12, h: 9.212}
+        , 'flags.u8th': {d: [["M", -0.42, 3.75], ["l", 0, -3.75], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0, 0.18], ["c", 0, 0.3, 0.06, 0.84, 0.12, 1.23], ["c", 0.24, 1.53, 0.9, 3.12, 2.13, 5.16], ["l", 0.99, 1.59], ["c", 0.87, 1.44, 1.38, 2.34, 1.77, 3.09], ["c", 0.81, 1.68, 1.2, 3.06, 1.26, 4.53], ["c", 0.03, 1.53, -0.21, 3.27, -0.75, 5.01], ["c", -0.21, 0.69, -0.51, 1.5, -0.6, 1.59], ["c", -0.09, 0.12, -0.27, 0.21, -0.42, 0.21], ["c", -0.15, 0, -0.42, -0.12, -0.51, -0.21], ["c", -0.15, -0.18, -0.18, -0.42, -0.09, -0.66], ["c", 0.15, -0.33, 0.45, -1.2, 0.57, -1.62], ["c", 0.42, -1.38, 0.6, -2.58, 0.6, -3.9], ["c", 0, -0.66, 0, -0.81, -0.06, -1.11], ["c", -0.39, -2.07, -1.8, -4.26, -4.59, -7.14], ["l", -0.42, -0.45], ["l", -0.21, 0], ["l", -0.21, 0], ["l", 0, -3.75], ["z"]], w: 6.692, h: 22.59}
+        , 'flags.u16th': {d: [["M", -0.42, 7.5], ["l", 0, -7.5], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0, 0.39], ["c", 0.06, 1.08, 0.39, 2.19, 0.99, 3.39], ["c", 0.45, 0.9, 0.87, 1.59, 1.95, 3.12], ["c", 1.29, 1.86, 1.77, 2.64, 2.22, 3.57], ["c", 0.45, 0.93, 0.72, 1.8, 0.87, 2.64], ["c", 0.06, 0.51, 0.06, 1.5, 0, 1.92], ["c", -0.12, 0.6, -0.3, 1.2, -0.54, 1.71], ["l", -0.09, 0.24], ["l", 0.18, 0.45], ["c", 0.51, 1.2, 0.72, 2.22, 0.69, 3.42], ["c", -0.06, 1.53, -0.39, 3.03, -0.99, 4.53], ["c", -0.3, 0.75, -0.36, 0.81, -0.57, 0.9], ["c", -0.15, 0.09, -0.33, 0.06, -0.48, -0], ["c", -0.18, -0.09, -0.27, -0.18, -0.33, -0.33], ["c", -0.09, -0.18, -0.06, -0.3, 0.12, -0.75], ["c", 0.66, -1.41, 1.02, -2.88, 1.08, -4.32], ["c", 0, -0.6, -0.03, -1.05, -0.18, -1.59], ["c", -0.3, -1.2, -0.99, -2.4, -2.25, -3.87], ["c", -0.42, -0.48, -1.53, -1.62, -2.19, -2.22], ["l", -0.45, -0.42], ["l", -0.03, 1.11], ["l", 0, 1.11], ["l", -0.21, -0], ["l", -0.21, -0], ["l", 0, -7.5], ["z"], ["m", 1.65, 0.09], ["c", -0.3, -0.3, -0.69, -0.72, -0.9, -0.87], ["l", -0.33, -0.33], ["l", 0, 0.15], ["c", 0, 0.3, 0.06, 0.81, 0.15, 1.26], ["c", 0.27, 1.29, 0.87, 2.61, 2.04, 4.29], ["c", 0.15, 0.24, 0.6, 0.87, 0.96, 1.38], ["l", 1.08, 1.53], ["l", 0.42, 0.63], ["c", 0.03, 0, 0.12, -0.36, 0.21, -0.72], ["c", 0.06, -0.33, 0.06, -1.2, 0, -1.62], ["c", -0.33, -1.71, -1.44, -3.48, -3.63, -5.7], ["z"]], w: 6.693, h: 26.337}
+        , 'flags.u32nd': {d: [["M", -0.42, 11.247], ["l", 0, -11.25], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0, 0.36], ["c", 0.09, 1.68, 0.69, 3.27, 2.07, 5.46], ["l", 0.87, 1.35], ["c", 1.02, 1.62, 1.47, 2.37, 1.86, 3.18], ["c", 0.48, 1.02, 0.78, 1.92, 0.93, 2.88], ["c", 0.06, 0.48, 0.06, 1.5, 0, 1.89], ["c", -0.09, 0.42, -0.21, 0.87, -0.36, 1.26], ["l", -0.12, 0.3], ["l", 0.15, 0.39], ["c", 0.69, 1.56, 0.84, 2.88, 0.54, 4.38], ["c", -0.09, 0.45, -0.27, 1.08, -0.45, 1.47], ["l", -0.12, 0.24], ["l", 0.18, 0.36], ["c", 0.33, 0.72, 0.57, 1.56, 0.69, 2.34], ["c", 0.12, 1.02, -0.06, 2.52, -0.42, 3.84], ["c", -0.27, 0.93, -0.75, 2.13, -0.93, 2.31], ["c", -0.18, 0.15, -0.45, 0.18, -0.66, 0.09], ["c", -0.18, -0.09, -0.27, -0.18, -0.33, -0.33], ["c", -0.09, -0.18, -0.06, -0.3, 0.06, -0.6], ["c", 0.21, -0.36, 0.42, -0.9, 0.57, -1.38], ["c", 0.51, -1.41, 0.69, -3.06, 0.48, -4.08], ["c", -0.15, -0.81, -0.57, -1.68, -1.2, -2.55], ["c", -0.72, -0.99, -1.83, -2.13, -3.3, -3.33], ["l", -0.48, -0.42], ["l", -0.03, 1.53], ["l", 0, 1.56], ["l", -0.21, 0], ["l", -0.21, 0], ["l", 0, -11.25], ["z"], ["m", 1.26, -3.96], ["c", -0.27, -0.3, -0.54, -0.6, -0.66, -0.72], ["l", -0.18, -0.21], ["l", 0, 0.42], ["c", 0.06, 0.87, 0.24, 1.74, 0.66, 2.67], ["c", 0.36, 0.87, 0.96, 1.86, 1.92, 3.18], ["c", 0.21, 0.33, 0.63, 0.87, 0.87, 1.23], ["c", 0.27, 0.39, 0.6, 0.84, 0.75, 1.08], ["l", 0.27, 0.39], ["l", 0.03, -0.12], ["c", 0.12, -0.45, 0.15, -1.05, 0.09, -1.59], ["c", -0.27, -1.86, -1.38, -3.78, -3.75, -6.33], ["z"], ["m", -0.27, 6.09], ["c", -0.27, -0.21, -0.48, -0.42, -0.51, -0.45], ["c", -0.06, -0.03, -0.06, -0.03, -0.06, 0.21], ["c", 0, 0.9, 0.3, 2.04, 0.81, 3.09], ["c", 0.48, 1.02, 0.96, 1.77, 2.37, 3.63], ["c", 0.6, 0.78, 1.05, 1.44, 1.29, 1.77], ["c", 0.06, 0.12, 0.15, 0.21, 0.15, 0.18], ["c", 0.03, -0.03, 0.18, -0.57, 0.24, -0.87], ["c", 0.06, -0.45, 0.06, -1.32, -0.03, -1.74], ["c", -0.09, -0.48, -0.24, -0.9, -0.51, -1.44], ["c", -0.66, -1.35, -1.83, -2.7, -3.75, -4.38], ["z"]], w: 6.697, h: 32.145}
+        , 'flags.u64th': {d: [["M", -0.42, 15], ["l", 0, -15], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0, 0.36], ["c", 0.06, 1.2, 0.39, 2.37, 1.02, 3.66], ["c", 0.39, 0.81, 0.84, 1.56, 1.8, 3.09], ["c", 0.81, 1.26, 1.05, 1.68, 1.35, 2.22], ["c", 0.87, 1.5, 1.35, 2.79, 1.56, 4.08], ["c", 0.06, 0.54, 0.06, 1.56, -0.03, 2.04], ["c", -0.09, 0.48, -0.21, 0.99, -0.36, 1.35], ["l", -0.12, 0.27], ["l", 0.12, 0.27], ["c", 0.09, 0.15, 0.21, 0.45, 0.27, 0.66], ["c", 0.69, 1.89, 0.63, 3.66, -0.18, 5.46], ["l", -0.18, 0.39], ["l", 0.15, 0.33], ["c", 0.3, 0.66, 0.51, 1.44, 0.63, 2.1], ["c", 0.06, 0.48, 0.06, 1.35, 0, 1.71], ["c", -0.15, 0.57, -0.42, 1.2, -0.78, 1.68], ["l", -0.21, 0.27], ["l", 0.18, 0.33], ["c", 0.57, 1.05, 0.93, 2.13, 1.02, 3.18], ["c", 0.06, 0.72, 0, 1.83, -0.21, 2.79], ["c", -0.18, 1.02, -0.63, 2.34, -1.02, 3.09], ["c", -0.15, 0.33, -0.48, 0.45, -0.78, 0.3], ["c", -0.18, -0.09, -0.27, -0.18, -0.33, -0.33], ["c", -0.09, -0.18, -0.06, -0.3, 0.03, -0.54], ["c", 0.75, -1.5, 1.23, -3.45, 1.17, -4.89], ["c", -0.06, -1.02, -0.42, -2.01, -1.17, -3.15], ["c", -0.48, -0.72, -1.02, -1.35, -1.89, -2.22], ["c", -0.57, -0.57, -1.56, -1.5, -1.92, -1.77], ["l", -0.12, -0.09], ["l", 0, 1.68], ["l", 0, 1.68], ["l", -0.21, 0], ["l", -0.21, 0], ["l", 0, -15], ["z"], ["m", 0.93, -8.07], ["c", -0.27, -0.3, -0.48, -0.54, -0.51, -0.54], ["c", -0, 0, -0, 0.69, 0.03, 1.02], ["c", 0.15, 1.47, 0.75, 2.94, 2.04, 4.83], ["l", 1.08, 1.53], ["c", 0.39, 0.57, 0.84, 1.2, 0.99, 1.44], ["c", 0.15, 0.24, 0.3, 0.45, 0.3, 0.45], ["c", -0, 0, 0.03, -0.09, 0.06, -0.21], ["c", 0.36, -1.59, -0.15, -3.33, -1.47, -5.4], ["c", -0.63, -0.93, -1.35, -1.83, -2.52, -3.12], ["z"], ["m", 0.06, 6.72], ["c", -0.24, -0.21, -0.48, -0.42, -0.51, -0.45], ["l", -0.06, -0.06], ["l", 0, 0.33], ["c", 0, 1.2, 0.3, 2.34, 0.93, 3.6], ["c", 0.45, 0.9, 0.96, 1.68, 2.25, 3.51], ["c", 0.39, 0.54, 0.84, 1.17, 1.02, 1.44], ["c", 0.21, 0.33, 0.33, 0.51, 0.33, 0.48], ["c", 0.06, -0.09, 0.21, -0.63, 0.3, -0.99], ["c", 0.06, -0.33, 0.06, -0.45, 0.06, -0.96], ["c", -0, -0.6, -0.03, -0.84, -0.18, -1.35], ["c", -0.3, -1.08, -1.02, -2.28, -2.13, -3.57], ["c", -0.39, -0.45, -1.44, -1.47, -2.01, -1.98], ["z"], ["m", 0, 6.72], ["c", -0.24, -0.21, -0.48, -0.39, -0.51, -0.42], ["l", -0.06, -0.06], ["l", 0, 0.33], ["c", 0, 1.41, 0.45, 2.82, 1.38, 4.35], ["c", 0.42, 0.72, 0.72, 1.14, 1.86, 2.73], ["c", 0.36, 0.45, 0.75, 0.99, 0.87, 1.2], ["c", 0.15, 0.21, 0.3, 0.36, 0.3, 0.36], ["c", 0.06, 0, 0.3, -0.48, 0.39, -0.75], ["c", 0.09, -0.36, 0.12, -0.63, 0.12, -1.05], ["c", -0.06, -1.05, -0.45, -2.04, -1.2, -3.18], ["c", -0.57, -0.87, -1.11, -1.53, -2.07, -2.49], ["c", -0.36, -0.33, -0.84, -0.78, -1.08, -1.02], ["z"]], w: 6.682, h: 39.694}
+        , 'flags.ugrace': {d: [["M", 6.03, 6.93], ["c", 0.15, -0.09, 0.33, -0.06, 0.51, 0], ["c", 0.15, 0.09, 0.21, 0.15, 0.3, 0.33], ["c", 0.09, 0.18, 0.06, 0.39, -0.03, 0.54], ["c", -0.06, 0.15, -10.89, 8.88, -11.07, 8.97], ["c", -0.15, 0.09, -0.33, 0.06, -0.48, 0], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["c", -0.09, -0.18, -0.06, -0.39, 0.03, -0.54], ["c", 0.06, -0.15, 10.89, -8.88, 11.07, -8.97], ["z"]], w: 12.019, h: 9.954}
+        , 'noteheads.dbl': {d: [["M", -0.69, -4.02], ["c", 0.18, -0.09, 0.36, -0.09, 0.54, 0], ["c", 0.18, 0.09, 0.24, 0.15, 0.33, 0.3], ["c", 0.06, 0.15, 0.06, 0.18, 0.06, 1.41], ["l", -0, 1.23], ["l", 0.12, -0.18], ["c", 0.72, -1.26, 2.64, -2.31, 4.86, -2.64], ["c", 0.81, -0.15, 1.11, -0.15, 2.13, -0.15], ["c", 0.99, 0, 1.29, 0, 2.1, 0.15], ["c", 0.75, 0.12, 1.38, 0.27, 2.04, 0.54], ["c", 1.35, 0.51, 2.34, 1.26, 2.82, 2.1], ["l", 0.12, 0.18], ["l", 0, -1.23], ["c", 0, -1.2, 0, -1.26, 0.06, -1.38], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["c", 0.18, -0.09, 0.36, -0.09, 0.54, 0], ["c", 0.18, 0.09, 0.24, 0.15, 0.33, 0.3], ["l", 0.06, 0.15], ["l", 0, 3.54], ["l", 0, 3.54], ["l", -0.06, 0.15], ["c", -0.09, 0.18, -0.15, 0.24, -0.33, 0.33], ["c", -0.18, 0.09, -0.36, 0.09, -0.54, 0], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["c", -0.06, -0.12, -0.06, -0.18, -0.06, -1.38], ["l", 0, -1.23], ["l", -0.12, 0.18], ["c", -0.48, 0.84, -1.47, 1.59, -2.82, 2.1], ["c", -0.84, 0.33, -1.71, 0.54, -2.85, 0.66], ["c", -0.45, 0.06, -2.16, 0.06, -2.61, 0], ["c", -1.14, -0.12, -2.01, -0.33, -2.85, -0.66], ["c", -1.35, -0.51, -2.34, -1.26, -2.82, -2.1], ["l", -0.12, -0.18], ["l", 0, 1.23], ["c", 0, 1.23, 0, 1.26, -0.06, 1.38], ["c", -0.09, 0.18, -0.15, 0.24, -0.33, 0.33], ["c", -0.18, 0.09, -0.36, 0.09, -0.54, 0], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["l", -0.06, -0.15], ["l", 0, -3.54], ["c", 0, -3.48, 0, -3.54, 0.06, -3.66], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["z"], ["m", 7.71, 0.63], ["c", -0.36, -0.06, -0.9, -0.06, -1.14, 0], ["c", -0.3, 0.03, -0.66, 0.24, -0.87, 0.42], ["c", -0.6, 0.54, -0.9, 1.62, -0.75, 2.82], ["c", 0.12, 0.93, 0.51, 1.68, 1.11, 2.31], ["c", 0.75, 0.72, 1.83, 1.2, 2.85, 1.26], ["c", 1.05, 0.06, 1.83, -0.54, 2.1, -1.65], ["c", 0.21, -0.9, 0.12, -1.95, -0.24, -2.82], ["c", -0.36, -0.81, -1.08, -1.53, -1.95, -1.95], ["c", -0.3, -0.15, -0.78, -0.3, -1.11, -0.39], ["z"]], w: 16.83, h: 8.145}
+        , 'noteheads.whole': {d: [["M", 6.51, -4.05], ["c", 0.51, -0.03, 2.01, 0, 2.52, 0.03], ["c", 1.41, 0.18, 2.64, 0.51, 3.72, 1.08], ["c", 1.2, 0.63, 1.95, 1.41, 2.19, 2.31], ["c", 0.09, 0.33, 0.09, 0.9, -0, 1.23], ["c", -0.24, 0.9, -0.99, 1.68, -2.19, 2.31], ["c", -1.08, 0.57, -2.28, 0.9, -3.75, 1.08], ["c", -0.66, 0.06, -2.31, 0.06, -2.97, 0], ["c", -1.47, -0.18, -2.67, -0.51, -3.75, -1.08], ["c", -1.2, -0.63, -1.95, -1.41, -2.19, -2.31], ["c", -0.09, -0.33, -0.09, -0.9, -0, -1.23], ["c", 0.24, -0.9, 0.99, -1.68, 2.19, -2.31], ["c", 1.2, -0.63, 2.61, -0.99, 4.23, -1.11], ["z"], ["m", 0.57, 0.66], ["c", -0.87, -0.15, -1.53, 0, -2.04, 0.51], ["c", -0.15, 0.15, -0.24, 0.27, -0.33, 0.48], ["c", -0.24, 0.51, -0.36, 1.08, -0.33, 1.77], ["c", 0.03, 0.69, 0.18, 1.26, 0.42, 1.77], ["c", 0.6, 1.17, 1.74, 1.98, 3.18, 2.22], ["c", 1.11, 0.21, 1.95, -0.15, 2.34, -0.99], ["c", 0.24, -0.51, 0.36, -1.08, 0.33, -1.8], ["c", -0.06, -1.11, -0.45, -2.04, -1.17, -2.76], ["c", -0.63, -0.63, -1.47, -1.05, -2.4, -1.2], ["z"]], w: 14.985, h: 8.097}
+        , 'noteheads.half': {d: [["M", 7.44, -4.05], ["c", 0.06, -0.03, 0.27, -0.03, 0.48, -0.03], ["c", 1.05, 0, 1.71, 0.24, 2.1, 0.81], ["c", 0.42, 0.6, 0.45, 1.35, 0.18, 2.4], ["c", -0.42, 1.59, -1.14, 2.73, -2.16, 3.39], ["c", -1.41, 0.93, -3.18, 1.44, -5.4, 1.53], ["c", -1.17, 0.03, -1.89, -0.21, -2.28, -0.81], ["c", -0.42, -0.6, -0.45, -1.35, -0.18, -2.4], ["c", 0.42, -1.59, 1.14, -2.73, 2.16, -3.39], ["c", 0.63, -0.42, 1.23, -0.72, 1.98, -0.96], ["c", 0.9, -0.3, 1.65, -0.42, 3.12, -0.54], ["z"], ["m", 1.29, 0.87], ["c", -0.27, -0.09, -0.63, -0.12, -0.9, -0.03], ["c", -0.72, 0.24, -1.53, 0.69, -3.27, 1.8], ["c", -2.34, 1.5, -3.3, 2.25, -3.57, 2.79], ["c", -0.36, 0.72, -0.06, 1.5, 0.66, 1.77], ["c", 0.24, 0.12, 0.69, 0.09, 0.99, 0], ["c", 0.84, -0.3, 1.92, -0.93, 4.14, -2.37], ["c", 1.62, -1.08, 2.37, -1.71, 2.61, -2.19], ["c", 0.36, -0.72, 0.06, -1.5, -0.66, -1.77], ["z"]], w: 10.37, h: 8.132}
+        , 'noteheads.quarter': {d: [["M", 6.09, -4.05], ["c", 0.36, -0.03, 1.2, 0, 1.53, 0.06], ["c", 1.17, 0.24, 1.89, 0.84, 2.16, 1.83], ["c", 0.06, 0.18, 0.06, 0.3, 0.06, 0.66], ["c", 0, 0.45, 0, 0.63, -0.15, 1.08], ["c", -0.66, 2.04, -3.06, 3.93, -5.52, 4.38], ["c", -0.54, 0.09, -1.44, 0.09, -1.83, 0.03], ["c", -1.23, -0.27, -1.98, -0.87, -2.25, -1.86], ["c", -0.06, -0.18, -0.06, -0.3, -0.06, -0.66], ["c", 0, -0.45, 0, -0.63, 0.15, -1.08], ["c", 0.24, -0.78, 0.75, -1.53, 1.44, -2.22], ["c", 1.2, -1.2, 2.85, -2.01, 4.47, -2.22], ["z"]], w: 9.81, h: 8.094}
+        , 'rests.whole': {d: [["M", 0.06, 0.03], ["l", 0.09, -0.06], ["l", 5.46, 0], ["l", 5.49, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 2.19], ["l", 0, 2.19], ["l", -0.06, 0.09], ["l", -0.09, 0.06], ["l", -5.49, 0], ["l", -5.46, 0], ["l", -0.09, -0.06], ["l", -0.06, -0.09], ["l", 0, -2.19], ["l", 0, -2.19], ["z"]], w: 11.25, h: 4.68}
+        , 'rests.half': {d: [["M", 0.06, -4.62], ["l", 0.09, -0.06], ["l", 5.46, 0], ["l", 5.49, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 2.19], ["l", 0, 2.19], ["l", -0.06, 0.09], ["l", -0.09, 0.06], ["l", -5.49, 0], ["l", -5.46, 0], ["l", -0.09, -0.06], ["l", -0.06, -0.09], ["l", 0, -2.19], ["l", 0, -2.19], ["z"]], w: 11.25, h: 4.68}
+        , 'rests.quarter': {d: [["M", 1.89, -11.82], ["c", 0.12, -0.06, 0.24, -0.06, 0.36, -0.03], ["c", 0.09, 0.06, 4.74, 5.58, 4.86, 5.82], ["c", 0.21, 0.39, 0.15, 0.78, -0.15, 1.26], ["c", -0.24, 0.33, -0.72, 0.81, -1.62, 1.56], ["c", -0.45, 0.36, -0.87, 0.75, -0.96, 0.84], ["c", -0.93, 0.99, -1.14, 2.49, -0.6, 3.63], ["c", 0.18, 0.39, 0.27, 0.48, 1.32, 1.68], ["c", 1.92, 2.25, 1.83, 2.16, 1.83, 2.34], ["c", -0, 0.18, -0.18, 0.36, -0.36, 0.39], ["c", -0.15, -0, -0.27, -0.06, -0.48, -0.27], ["c", -0.75, -0.75, -2.46, -1.29, -3.39, -1.08], ["c", -0.45, 0.09, -0.69, 0.27, -0.9, 0.69], ["c", -0.12, 0.3, -0.21, 0.66, -0.24, 1.14], ["c", -0.03, 0.66, 0.09, 1.35, 0.3, 2.01], ["c", 0.15, 0.42, 0.24, 0.66, 0.45, 0.96], ["c", 0.18, 0.24, 0.18, 0.33, 0.03, 0.42], ["c", -0.12, 0.06, -0.18, 0.03, -0.45, -0.3], ["c", -1.08, -1.38, -2.07, -3.36, -2.4, -4.83], ["c", -0.27, -1.05, -0.15, -1.77, 0.27, -2.07], ["c", 0.21, -0.12, 0.42, -0.15, 0.87, -0.15], ["c", 0.87, 0.06, 2.1, 0.39, 3.3, 0.9], ["l", 0.39, 0.18], ["l", -1.65, -1.95], ["c", -2.52, -2.97, -2.61, -3.09, -2.7, -3.27], ["c", -0.09, -0.24, -0.12, -0.48, -0.03, -0.75], ["c", 0.15, -0.48, 0.57, -0.96, 1.83, -2.01], ["c", 0.45, -0.36, 0.84, -0.72, 0.93, -0.78], ["c", 0.69, -0.75, 1.02, -1.8, 0.9, -2.79], ["c", -0.06, -0.33, -0.21, -0.84, -0.39, -1.11], ["c", -0.09, -0.15, -0.45, -0.6, -0.81, -1.05], ["c", -0.36, -0.42, -0.69, -0.81, -0.72, -0.87], ["c", -0.09, -0.18, -0, -0.42, 0.21, -0.51], ["z"]], w: 7.888, h: 21.435}
+        , 'rests.8th': {d: [["M", 1.68, -6.12], ["c", 0.66, -0.09, 1.23, 0.09, 1.68, 0.51], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.12, 0.27, 0.33, 0.45, 0.6, 0.48], ["c", 0.12, 0, 0.18, 0, 0.33, -0.09], ["c", 0.39, -0.18, 1.32, -1.29, 1.68, -1.98], ["c", 0.09, -0.21, 0.24, -0.3, 0.39, -0.3], ["c", 0.12, 0, 0.27, 0.09, 0.33, 0.18], ["c", 0.03, 0.06, -0.27, 1.11, -1.86, 6.42], ["c", -1.02, 3.48, -1.89, 6.39, -1.92, 6.42], ["c", 0, 0.03, -0.12, 0.12, -0.24, 0.15], ["c", -0.18, 0.09, -0.21, 0.09, -0.45, 0.09], ["c", -0.24, 0, -0.3, 0, -0.48, -0.06], ["c", -0.09, -0.06, -0.21, -0.12, -0.21, -0.15], ["c", -0.06, -0.03, 0.15, -0.57, 1.68, -4.92], ["c", 0.96, -2.67, 1.74, -4.89, 1.71, -4.89], ["l", -0.51, 0.15], ["c", -1.08, 0.36, -1.74, 0.48, -2.55, 0.48], ["c", -0.66, 0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.33, -0.45, 0.84, -0.81, 1.38, -0.9], ["z"]], w: 7.534, h: 13.883}
+        , 'rests.16th': {d: [["M", 3.33, -6.12], ["c", 0.66, -0.09, 1.23, 0.09, 1.68, 0.51], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.15, 0.39, 0.57, 0.57, 0.87, 0.42], ["c", 0.39, -0.18, 1.2, -1.23, 1.62, -2.07], ["c", 0.06, -0.15, 0.24, -0.24, 0.36, -0.24], ["c", 0.12, 0, 0.27, 0.09, 0.33, 0.18], ["c", 0.03, 0.06, -0.45, 1.86, -2.67, 10.17], ["c", -1.5, 5.55, -2.73, 10.14, -2.76, 10.17], ["c", -0.03, 0.03, -0.12, 0.12, -0.24, 0.15], ["c", -0.18, 0.09, -0.21, 0.09, -0.45, 0.09], ["c", -0.24, 0, -0.3, 0, -0.48, -0.06], ["c", -0.09, -0.06, -0.21, -0.12, -0.21, -0.15], ["c", -0.06, -0.03, 0.12, -0.57, 1.44, -4.92], ["c", 0.81, -2.67, 1.47, -4.86, 1.47, -4.89], ["c", -0.03, 0, -0.27, 0.06, -0.54, 0.15], ["c", -1.08, 0.36, -1.77, 0.48, -2.58, 0.48], ["c", -0.66, 0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.72, -1.05, 2.22, -1.23, 3.06, -0.42], ["c", 0.3, 0.33, 0.42, 0.6, 0.6, 1.38], ["c", 0.09, 0.45, 0.21, 0.78, 0.33, 0.9], ["c", 0.09, 0.09, 0.27, 0.18, 0.45, 0.21], ["c", 0.12, 0, 0.18, 0, 0.33, -0.09], ["c", 0.33, -0.15, 1.02, -0.93, 1.41, -1.59], ["c", 0.12, -0.21, 0.18, -0.39, 0.39, -1.08], ["c", 0.66, -2.1, 1.17, -3.84, 1.17, -3.87], ["c", 0, 0, -0.21, 0.06, -0.42, 0.15], ["c", -0.51, 0.15, -1.2, 0.33, -1.68, 0.42], ["c", -0.33, 0.06, -0.51, 0.06, -0.96, 0.06], ["c", -0.66, 0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.33, -0.45, 0.84, -0.81, 1.38, -0.9], ["z"]], w: 9.724, h: 21.383}
+        , 'rests.32nd': {d: [["M", 4.23, -13.62], ["c", 0.66, -0.09, 1.23, 0.09, 1.68, 0.51], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.12, 0.27, 0.33, 0.45, 0.6, 0.48], ["c", 0.12, 0, 0.18, 0, 0.27, -0.06], ["c", 0.33, -0.21, 0.99, -1.11, 1.44, -1.98], ["c", 0.09, -0.24, 0.21, -0.33, 0.39, -0.33], ["c", 0.12, 0, 0.27, 0.09, 0.33, 0.18], ["c", 0.03, 0.06, -0.57, 2.67, -3.21, 13.89], ["c", -1.8, 7.62, -3.3, 13.89, -3.3, 13.92], ["c", -0.03, 0.06, -0.12, 0.12, -0.24, 0.18], ["c", -0.21, 0.09, -0.24, 0.09, -0.48, 0.09], ["c", -0.24, -0, -0.3, -0, -0.48, -0.06], ["c", -0.09, -0.06, -0.21, -0.12, -0.21, -0.15], ["c", -0.06, -0.03, 0.09, -0.57, 1.23, -4.92], ["c", 0.69, -2.67, 1.26, -4.86, 1.29, -4.89], ["c", 0, -0.03, -0.12, -0.03, -0.48, 0.12], ["c", -1.17, 0.39, -2.22, 0.57, -3, 0.54], ["c", -0.42, -0.03, -0.75, -0.12, -1.11, -0.3], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.72, -1.05, 2.22, -1.23, 3.06, -0.42], ["c", 0.3, 0.33, 0.42, 0.6, 0.6, 1.38], ["c", 0.09, 0.45, 0.21, 0.78, 0.33, 0.9], ["c", 0.12, 0.09, 0.3, 0.18, 0.48, 0.21], ["c", 0.12, -0, 0.18, -0, 0.3, -0.09], ["c", 0.42, -0.21, 1.29, -1.29, 1.56, -1.89], ["c", 0.03, -0.12, 1.23, -4.59, 1.23, -4.65], ["c", 0, -0.03, -0.18, 0.03, -0.39, 0.12], ["c", -0.63, 0.18, -1.2, 0.36, -1.74, 0.45], ["c", -0.39, 0.06, -0.54, 0.06, -1.02, 0.06], ["c", -0.66, -0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.72, -1.05, 2.22, -1.23, 3.06, -0.42], ["c", 0.3, 0.33, 0.42, 0.6, 0.6, 1.38], ["c", 0.09, 0.45, 0.21, 0.78, 0.33, 0.9], ["c", 0.18, 0.18, 0.51, 0.27, 0.72, 0.15], ["c", 0.3, -0.12, 0.69, -0.57, 1.08, -1.17], ["c", 0.42, -0.6, 0.39, -0.51, 1.05, -3.03], ["c", 0.33, -1.26, 0.6, -2.31, 0.6, -2.34], ["c", 0, -0, -0.21, 0.03, -0.45, 0.12], ["c", -0.57, 0.18, -1.14, 0.33, -1.62, 0.42], ["c", -0.33, 0.06, -0.51, 0.06, -0.96, 0.06], ["c", -0.66, -0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.33, -0.45, 0.84, -0.81, 1.38, -0.9], ["z"]], w: 11.373, h: 28.883}
+        , 'rests.64th': {d: [["M", 5.13, -13.62], ["c", 0.66, -0.09, 1.23, 0.09, 1.68, 0.51], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.15, 0.63, 0.21, 0.81, 0.33, 0.96], ["c", 0.18, 0.21, 0.54, 0.3, 0.75, 0.18], ["c", 0.24, -0.12, 0.63, -0.66, 1.08, -1.56], ["c", 0.33, -0.66, 0.39, -0.72, 0.6, -0.72], ["c", 0.12, 0, 0.27, 0.09, 0.33, 0.18], ["c", 0.03, 0.06, -0.69, 3.66, -3.54, 17.64], ["c", -1.95, 9.66, -3.57, 17.61, -3.57, 17.64], ["c", -0.03, 0.06, -0.12, 0.12, -0.24, 0.18], ["c", -0.21, 0.09, -0.24, 0.09, -0.48, 0.09], ["c", -0.24, 0, -0.3, 0, -0.48, -0.06], ["c", -0.09, -0.06, -0.21, -0.12, -0.21, -0.15], ["c", -0.06, -0.03, 0.06, -0.57, 1.05, -4.95], ["c", 0.6, -2.7, 1.08, -4.89, 1.08, -4.92], ["c", 0, 0, -0.24, 0.06, -0.51, 0.15], ["c", -0.66, 0.24, -1.2, 0.36, -1.77, 0.48], ["c", -0.42, 0.06, -0.57, 0.06, -1.05, 0.06], ["c", -0.69, 0, -0.87, -0.03, -1.35, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.72, -1.05, 2.22, -1.23, 3.06, -0.42], ["c", 0.3, 0.33, 0.42, 0.6, 0.6, 1.38], ["c", 0.09, 0.45, 0.21, 0.78, 0.33, 0.9], ["c", 0.09, 0.09, 0.27, 0.18, 0.45, 0.21], ["c", 0.21, 0.03, 0.39, -0.09, 0.72, -0.42], ["c", 0.45, -0.45, 1.02, -1.26, 1.17, -1.65], ["c", 0.03, -0.09, 0.27, -1.14, 0.54, -2.34], ["c", 0.27, -1.2, 0.48, -2.19, 0.51, -2.22], ["c", 0, -0.03, -0.09, -0.03, -0.48, 0.12], ["c", -1.17, 0.39, -2.22, 0.57, -3, 0.54], ["c", -0.42, -0.03, -0.75, -0.12, -1.11, -0.3], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.15, 0.39, 0.57, 0.57, 0.9, 0.42], ["c", 0.36, -0.18, 1.2, -1.26, 1.47, -1.89], ["c", 0.03, -0.09, 0.3, -1.2, 0.57, -2.43], ["l", 0.51, -2.28], ["l", -0.54, 0.18], ["c", -1.11, 0.36, -1.8, 0.48, -2.61, 0.48], ["c", -0.66, 0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.15, 0.63, 0.21, 0.81, 0.33, 0.96], ["c", 0.21, 0.21, 0.54, 0.3, 0.75, 0.18], ["c", 0.36, -0.18, 0.93, -0.93, 1.29, -1.68], ["c", 0.12, -0.24, 0.18, -0.48, 0.63, -2.55], ["l", 0.51, -2.31], ["c", 0, -0.03, -0.18, 0.03, -0.39, 0.12], ["c", -1.14, 0.36, -2.1, 0.54, -2.82, 0.51], ["c", -0.42, -0.03, -0.75, -0.12, -1.11, -0.3], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.33, -0.45, 0.84, -0.81, 1.38, -0.9], ["z"]], w: 12.453, h: 36.383}
+        , 'rests.128th': {d: [["M", 6.03, -21.12], ["c", 0.66, -0.09, 1.23, 0.09, 1.68, 0.51], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.12, 0.27, 0.33, 0.45, 0.6, 0.48], ["c", 0.21, 0, 0.33, -0.06, 0.54, -0.36], ["c", 0.15, -0.21, 0.54, -0.93, 0.78, -1.47], ["c", 0.15, -0.33, 0.18, -0.39, 0.3, -0.48], ["c", 0.18, -0.09, 0.45, 0, 0.51, 0.15], ["c", 0.03, 0.09, -7.11, 42.75, -7.17, 42.84], ["c", -0.03, 0.03, -0.15, 0.09, -0.24, 0.15], ["c", -0.18, 0.06, -0.24, 0.06, -0.45, 0.06], ["c", -0.24, -0, -0.3, -0, -0.48, -0.06], ["c", -0.09, -0.06, -0.21, -0.12, -0.21, -0.15], ["c", -0.06, -0.03, 0.03, -0.57, 0.84, -4.98], ["c", 0.51, -2.7, 0.93, -4.92, 0.9, -4.92], ["c", 0, -0, -0.15, 0.06, -0.36, 0.12], ["c", -0.78, 0.27, -1.62, 0.48, -2.31, 0.57], ["c", -0.15, 0.03, -0.54, 0.03, -0.81, 0.03], ["c", -0.66, -0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.12, 0.27, 0.33, 0.45, 0.63, 0.48], ["c", 0.12, -0, 0.18, -0, 0.3, -0.09], ["c", 0.42, -0.21, 1.14, -1.11, 1.5, -1.83], ["c", 0.12, -0.27, 0.12, -0.27, 0.54, -2.52], ["c", 0.24, -1.23, 0.42, -2.25, 0.39, -2.25], ["c", 0, -0, -0.24, 0.06, -0.51, 0.18], ["c", -1.26, 0.39, -2.25, 0.57, -3.06, 0.54], ["c", -0.42, -0.03, -0.75, -0.12, -1.11, -0.3], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.15, 0.63, 0.21, 0.81, 0.33, 0.96], ["c", 0.18, 0.21, 0.51, 0.3, 0.75, 0.18], ["c", 0.36, -0.15, 1.05, -0.99, 1.41, -1.77], ["l", 0.15, -0.3], ["l", 0.42, -2.25], ["c", 0.21, -1.26, 0.42, -2.28, 0.39, -2.28], ["l", -0.51, 0.15], ["c", -1.11, 0.39, -1.89, 0.51, -2.7, 0.51], ["c", -0.66, -0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.15, 0.63, 0.21, 0.81, 0.33, 0.96], ["c", 0.18, 0.18, 0.48, 0.27, 0.72, 0.21], ["c", 0.33, -0.12, 1.14, -1.26, 1.41, -1.95], ["c", 0, -0.09, 0.21, -1.11, 0.45, -2.34], ["c", 0.21, -1.2, 0.39, -2.22, 0.39, -2.28], ["c", 0.03, -0.03, 0, -0.03, -0.45, 0.12], ["c", -0.57, 0.18, -1.2, 0.33, -1.71, 0.42], ["c", -0.3, 0.06, -0.51, 0.06, -0.93, 0.06], ["c", -0.66, -0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.12, 0.27, 0.33, 0.45, 0.6, 0.48], ["c", 0.18, -0, 0.36, -0.09, 0.57, -0.33], ["c", 0.33, -0.36, 0.78, -1.14, 0.93, -1.56], ["c", 0.03, -0.12, 0.24, -1.2, 0.45, -2.4], ["c", 0.24, -1.2, 0.42, -2.22, 0.42, -2.28], ["c", 0.03, -0.03, 0, -0.03, -0.39, 0.09], ["c", -1.05, 0.36, -1.8, 0.48, -2.58, 0.48], ["c", -0.63, -0, -0.84, -0.03, -1.29, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.33, -0.45, 0.84, -0.81, 1.38, -0.9], ["z"]], w: 12.992, h: 43.883}
+        , 'scripts.lbrace': {d:[["M", -20, -515], ["v", -2],["c", 35, -16, 53, -48, 53, -91],["c", 0, -34, -11, -84, -35, -150],["c", -13, -41, -18, -76, -18, -109], ["c", 0, -69, 29, -121, 87, -160], ["c", -44, 35, -63, 77, -63, 125], ["c", 0, 26, 8, 56, 21, 91], ["c", 27, 71, 37, 130, 37, 174], ["c", 0, 62, -26, 105, -77, 121], ["c", 52, 16, 77, 63, 77, 126], ["c", 0, 46, -10, 102, -37, 172], ["c", -13, 35, -21, 68, -21, 94], ["c", 0, 48, 19, 89, 63, 124], ["c", -58, -39, -87, -91, -87, -160], ["c", 0, -33, 5, -68, 18, -109], ["c", 24, -66, 35, -116, 35, -150], ["c", 0, -44, -18, -80, -53, -96], ["z"]], w:40, h:1027 }
+        , 'scripts.ufermata': {d: [["M", -0.75, -10.77], ["c", 0.12, 0, 0.45, -0.03, 0.69, -0.03], ["c", 2.91, -0.03, 5.55, 1.53, 7.41, 4.35], ["c", 1.17, 1.71, 1.95, 3.72, 2.43, 6.03], ["c", 0.12, 0.51, 0.12, 0.57, 0.03, 0.69], ["c", -0.12, 0.21, -0.48, 0.27, -0.69, 0.12], ["c", -0.12, -0.09, -0.18, -0.24, -0.27, -0.69], ["c", -0.78, -3.63, -3.42, -6.54, -6.78, -7.38], ["c", -0.78, -0.21, -1.2, -0.24, -2.07, -0.24], ["c", -0.63, -0, -0.84, -0, -1.2, 0.06], ["c", -1.83, 0.27, -3.42, 1.08, -4.8, 2.37], ["c", -1.41, 1.35, -2.4, 3.21, -2.85, 5.19], ["c", -0.09, 0.45, -0.15, 0.6, -0.27, 0.69], ["c", -0.21, 0.15, -0.57, 0.09, -0.69, -0.12], ["c", -0.09, -0.12, -0.09, -0.18, 0.03, -0.69], ["c", 0.33, -1.62, 0.78, -3, 1.47, -4.38], ["c", 1.77, -3.54, 4.44, -5.67, 7.56, -5.97], ["z"], ["m", 0.33, 7.47], ["c", 1.38, -0.3, 2.58, 0.9, 2.31, 2.25], ["c", -0.15, 0.72, -0.78, 1.35, -1.47, 1.5], ["c", -1.38, 0.27, -2.58, -0.93, -2.31, -2.31], ["c", 0.15, -0.69, 0.78, -1.29, 1.47, -1.44], ["z"]], w: 19.748, h: 11.289}
+        , 'scripts.dfermata': {d: [["M", -9.63, -0.42], ["c", 0.15, -0.09, 0.36, -0.06, 0.51, 0.03], ["c", 0.12, 0.09, 0.18, 0.24, 0.27, 0.66], ["c", 0.78, 3.66, 3.42, 6.57, 6.78, 7.41], ["c", 0.78, 0.21, 1.2, 0.24, 2.07, 0.24], ["c", 0.63, -0, 0.84, -0, 1.2, -0.06], ["c", 1.83, -0.27, 3.42, -1.08, 4.8, -2.37], ["c", 1.41, -1.35, 2.4, -3.21, 2.85, -5.22], ["c", 0.09, -0.42, 0.15, -0.57, 0.27, -0.66], ["c", 0.21, -0.15, 0.57, -0.09, 0.69, 0.12], ["c", 0.09, 0.12, 0.09, 0.18, -0.03, 0.69], ["c", -0.33, 1.62, -0.78, 3, -1.47, 4.38], ["c", -1.92, 3.84, -4.89, 6, -8.31, 6], ["c", -3.42, 0, -6.39, -2.16, -8.31, -6], ["c", -0.48, -0.96, -0.84, -1.92, -1.14, -2.97], ["c", -0.18, -0.69, -0.42, -1.74, -0.42, -1.92], ["c", 0, -0.12, 0.09, -0.27, 0.24, -0.33], ["z"], ["m", 9.21, 0], ["c", 1.2, -0.27, 2.34, 0.63, 2.34, 1.86], ["c", -0, 0.9, -0.66, 1.68, -1.5, 1.89], ["c", -1.38, 0.27, -2.58, -0.93, -2.31, -2.31], ["c", 0.15, -0.69, 0.78, -1.29, 1.47, -1.44], ["z"]], w: 19.744, h: 11.274}
+        , 'scripts.sforzato': {d: [["M", -6.45, -3.69], ["c", 0.06, -0.03, 0.15, -0.06, 0.18, -0.06], ["c", 0.06, 0, 2.85, 0.72, 6.24, 1.59], ["l", 6.33, 1.65], ["c", 0.33, 0.06, 0.45, 0.21, 0.45, 0.51], ["c", 0, 0.3, -0.12, 0.45, -0.45, 0.51], ["l", -6.33, 1.65], ["c", -3.39, 0.87, -6.18, 1.59, -6.21, 1.59], ["c", -0.21, -0, -0.48, -0.24, -0.51, -0.45], ["c", 0, -0.15, 0.06, -0.36, 0.18, -0.45], ["c", 0.09, -0.06, 0.87, -0.27, 3.84, -1.05], ["c", 2.04, -0.54, 3.84, -0.99, 4.02, -1.02], ["c", 0.15, -0.06, 1.14, -0.24, 2.22, -0.42], ["c", 1.05, -0.18, 1.92, -0.36, 1.92, -0.36], ["c", 0, -0, -0.87, -0.18, -1.92, -0.36], ["c", -1.08, -0.18, -2.07, -0.36, -2.22, -0.42], ["c", -0.18, -0.03, -1.98, -0.48, -4.02, -1.02], ["c", -2.97, -0.78, -3.75, -0.99, -3.84, -1.05], ["c", -0.12, -0.09, -0.18, -0.3, -0.18, -0.45], ["c", 0.03, -0.15, 0.15, -0.3, 0.3, -0.39], ["z"]], w: 13.5, h: 7.5}
+        , 'scripts.staccato': {d: [["M", -0.36, -1.47], ["c", 0.93, -0.21, 1.86, 0.51, 1.86, 1.47], ["c", -0, 0.93, -0.87, 1.65, -1.8, 1.47], ["c", -0.54, -0.12, -1.02, -0.57, -1.14, -1.08], ["c", -0.21, -0.81, 0.27, -1.65, 1.08, -1.86], ["z"]], w: 2.989, h: 3.004}
+        , 'scripts.tenuto': {d: [["M", -4.2, -0.48], ["l", 0.12, -0.06], ["l", 4.08, 0], ["l", 4.08, 0], ["l", 0.12, 0.06], ["c", 0.39, 0.21, 0.39, 0.75, 0, 0.96], ["l", -0.12, 0.06], ["l", -4.08, 0], ["l", -4.08, 0], ["l", -0.12, -0.06], ["c", -0.39, -0.21, -0.39, -0.75, 0, -0.96], ["z"]], w: 8.985, h: 1.08}
+        , 'scripts.umarcato': {d: [["M", -0.15, -8.19], ["c", 0.15, -0.12, 0.36, -0.03, 0.45, 0.15], ["c", 0.21, 0.42, 3.45, 7.65, 3.45, 7.71], ["c", -0, 0.12, -0.12, 0.27, -0.21, 0.3], ["c", -0.03, 0.03, -0.51, 0.03, -1.14, 0.03], ["c", -1.05, 0, -1.08, 0, -1.17, -0.06], ["c", -0.09, -0.06, -0.24, -0.36, -1.17, -2.4], ["c", -0.57, -1.29, -1.05, -2.34, -1.08, -2.34], ["c", -0, -0.03, -0.51, 1.02, -1.08, 2.34], ["c", -0.93, 2.07, -1.08, 2.34, -1.14, 2.4], ["c", -0.06, 0.03, -0.15, 0.06, -0.18, 0.06], ["c", -0.15, 0, -0.33, -0.18, -0.33, -0.33], ["c", -0, -0.06, 3.24, -7.32, 3.45, -7.71], ["c", 0.03, -0.06, 0.09, -0.15, 0.15, -0.15], ["z"]], w: 7.5, h: 8.245}
+        , 'scripts.dmarcato': {d: [["M", -3.57, 0.03], ["c", 0.03, 0, 0.57, -0.03, 1.17, -0.03], ["c", 1.05, 0, 1.08, 0, 1.17, 0.06], ["c", 0.09, 0.06, 0.24, 0.36, 1.17, 2.4], ["c", 0.57, 1.29, 1.05, 2.34, 1.08, 2.34], ["c", 0, 0.03, 0.51, -1.02, 1.08, -2.34], ["c", 0.93, -2.07, 1.08, -2.34, 1.14, -2.4], ["c", 0.06, -0.03, 0.15, -0.06, 0.18, -0.06], ["c", 0.15, 0, 0.33, 0.18, 0.33, 0.33], ["c", 0, 0.09, -3.45, 7.74, -3.54, 7.83], ["c", -0.12, 0.12, -0.3, 0.12, -0.42, 0], ["c", -0.09, -0.09, -3.54, -7.74, -3.54, -7.83], ["c", 0, -0.09, 0.12, -0.27, 0.18, -0.3], ["z"]], w: 7.5, h: 8.25}
+        , 'scripts.stopped': {d: [["M", -0.27, -4.08], ["c", 0.18, -0.09, 0.36, -0.09, 0.54, 0], ["c", 0.18, 0.09, 0.24, 0.15, 0.33, 0.3], ["l", 0.06, 0.15], ["l", -0, 1.5], ["l", -0, 1.47], ["l", 1.47, 0], ["l", 1.5, 0], ["l", 0.15, 0.06], ["c", 0.15, 0.09, 0.21, 0.15, 0.3, 0.33], ["c", 0.09, 0.18, 0.09, 0.36, -0, 0.54], ["c", -0.09, 0.18, -0.15, 0.24, -0.33, 0.33], ["c", -0.12, 0.06, -0.18, 0.06, -1.62, 0.06], ["l", -1.47, 0], ["l", -0, 1.47], ["l", -0, 1.47], ["l", -0.06, 0.15], ["c", -0.09, 0.18, -0.15, 0.24, -0.33, 0.33], ["c", -0.18, 0.09, -0.36, 0.09, -0.54, 0], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["l", -0.06, -0.15], ["l", -0, -1.47], ["l", -0, -1.47], ["l", -1.47, 0], ["c", -1.44, 0, -1.5, 0, -1.62, -0.06], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["c", -0.09, -0.18, -0.09, -0.36, -0, -0.54], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["l", 0.15, -0.06], ["l", 1.47, 0], ["l", 1.47, 0], ["l", -0, -1.47], ["c", -0, -1.44, -0, -1.5, 0.06, -1.62], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["z"]], w: 8.295, h: 8.295}
+        , 'scripts.upbow': {d: [["M", -4.65, -15.54], ["c", 0.12, -0.09, 0.36, -0.06, 0.48, 0.03], ["c", 0.03, 0.03, 0.09, 0.09, 0.12, 0.15], ["c", 0.03, 0.06, 0.66, 2.13, 1.41, 4.62], ["c", 1.35, 4.41, 1.38, 4.56, 2.01, 6.96], ["l", 0.63, 2.46], ["l", 0.63, -2.46], ["c", 0.63, -2.4, 0.66, -2.55, 2.01, -6.96], ["c", 0.75, -2.49, 1.38, -4.56, 1.41, -4.62], ["c", 0.06, -0.15, 0.18, -0.21, 0.36, -0.24], ["c", 0.15, 0, 0.3, 0.06, 0.39, 0.18], ["c", 0.15, 0.21, 0.24, -0.18, -2.1, 7.56], ["c", -1.2, 3.96, -2.22, 7.32, -2.25, 7.41], ["c", 0, 0.12, -0.06, 0.27, -0.09, 0.3], ["c", -0.12, 0.21, -0.6, 0.21, -0.72, 0], ["c", -0.03, -0.03, -0.09, -0.18, -0.09, -0.3], ["c", -0.03, -0.09, -1.05, -3.45, -2.25, -7.41], ["c", -2.34, -7.74, -2.25, -7.35, -2.1, -7.56], ["c", 0.03, -0.03, 0.09, -0.09, 0.15, -0.12], ["z"]], w: 9.73, h: 15.608}
+        , 'scripts.downbow': {d: [["M", -5.55, -9.93], ["l", 0.09, -0.06], ["l", 5.46, 0], ["l", 5.46, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 4.77], ["c", 0, 5.28, 0, 4.89, -0.18, 5.01], ["c", -0.18, 0.12, -0.42, 0.06, -0.54, -0.12], ["c", -0.06, -0.09, -0.06, -0.18, -0.06, -2.97], ["l", 0, -2.85], ["l", -4.83, 0], ["l", -4.83, 0], ["l", 0, 2.85], ["c", 0, 2.79, 0, 2.88, -0.06, 2.97], ["c", -0.15, 0.24, -0.51, 0.24, -0.66, 0], ["c", -0.06, -0.09, -0.06, -0.21, -0.06, -4.89], ["l", 0, -4.77], ["z"]], w: 11.22, h: 9.992}
+        , 'scripts.turn': {d: [["M", -4.77, -3.9], ["c", 0.36, -0.06, 1.05, -0.06, 1.44, 0.03], ["c", 0.78, 0.15, 1.5, 0.51, 2.34, 1.14], ["c", 0.6, 0.45, 1.05, 0.87, 2.22, 2.01], ["c", 1.11, 1.08, 1.62, 1.5, 2.22, 1.86], ["c", 0.6, 0.36, 1.32, 0.57, 1.92, 0.57], ["c", 0.9, -0, 1.71, -0.57, 1.89, -1.35], ["c", 0.24, -0.93, -0.39, -1.89, -1.35, -2.1], ["l", -0.15, -0.06], ["l", -0.09, 0.15], ["c", -0.03, 0.09, -0.15, 0.24, -0.24, 0.33], ["c", -0.72, 0.72, -2.04, 0.54, -2.49, -0.36], ["c", -0.48, -0.93, 0.03, -1.86, 1.17, -2.19], ["c", 0.3, -0.09, 1.02, -0.09, 1.35, -0], ["c", 0.99, 0.27, 1.74, 0.87, 2.25, 1.83], ["c", 0.69, 1.41, 0.63, 3, -0.21, 4.26], ["c", -0.21, 0.3, -0.69, 0.81, -0.99, 1.02], ["c", -0.3, 0.21, -0.84, 0.45, -1.17, 0.54], ["c", -1.23, 0.36, -2.49, 0.15, -3.72, -0.6], ["c", -0.75, -0.48, -1.41, -1.02, -2.85, -2.46], ["c", -1.11, -1.08, -1.62, -1.5, -2.22, -1.86], ["c", -0.6, -0.36, -1.32, -0.57, -1.92, -0.57], ["c", -0.9, 0, -1.71, 0.57, -1.89, 1.35], ["c", -0.24, 0.93, 0.39, 1.89, 1.35, 2.1], ["l", 0.15, 0.06], ["l", 0.09, -0.15], ["c", 0.03, -0.09, 0.15, -0.24, 0.24, -0.33], ["c", 0.72, -0.72, 2.04, -0.54, 2.49, 0.36], ["c", 0.48, 0.93, -0.03, 1.86, -1.17, 2.19], ["c", -0.3, 0.09, -1.02, 0.09, -1.35, 0], ["c", -0.99, -0.27, -1.74, -0.87, -2.25, -1.83], ["c", -0.69, -1.41, -0.63, -3, 0.21, -4.26], ["c", 0.21, -0.3, 0.69, -0.81, 0.99, -1.02], ["c", 0.48, -0.33, 1.11, -0.57, 1.74, -0.66], ["z"]], w: 16.366, h: 7.893}
+        , 'scripts.trill': {d: [["M", -0.51, -16.02], ["c", 0.12, -0.09, 0.21, -0.18, 0.21, -0.18], ["l", -0.81, 4.02], ["l", -0.81, 4.02], ["c", 0.03, 0, 0.51, -0.27, 1.08, -0.6], ["c", 0.6, -0.3, 1.14, -0.63, 1.26, -0.66], ["c", 1.14, -0.54, 2.31, -0.6, 3.09, -0.18], ["c", 0.27, 0.15, 0.54, 0.36, 0.6, 0.51], ["l", 0.06, 0.12], ["l", 0.21, -0.21], ["c", 0.9, -0.81, 2.22, -0.99, 3.12, -0.42], ["c", 0.6, 0.42, 0.9, 1.14, 0.78, 2.07], ["c", -0.15, 1.29, -1.05, 2.31, -1.95, 2.25], ["c", -0.48, -0.03, -0.78, -0.3, -0.96, -0.81], ["c", -0.09, -0.27, -0.09, -0.9, -0.03, -1.2], ["c", 0.21, -0.75, 0.81, -1.23, 1.59, -1.32], ["l", 0.24, -0.03], ["l", -0.09, -0.12], ["c", -0.51, -0.66, -1.62, -0.63, -2.31, 0.03], ["c", -0.39, 0.42, -0.3, 0.09, -1.23, 4.77], ["l", -0.81, 4.14], ["c", -0.03, 0, -0.12, -0.03, -0.21, -0.09], ["c", -0.33, -0.15, -0.54, -0.18, -0.99, -0.18], ["c", -0.42, 0, -0.66, 0.03, -1.05, 0.18], ["c", -0.12, 0.06, -0.21, 0.09, -0.21, 0.09], ["c", 0, -0.03, 0.36, -1.86, 0.81, -4.11], ["c", 0.9, -4.47, 0.87, -4.26, 0.69, -4.53], ["c", -0.21, -0.36, -0.66, -0.51, -1.17, -0.36], ["c", -0.15, 0.06, -2.22, 1.14, -2.58, 1.38], ["c", -0.12, 0.09, -0.12, 0.09, -0.21, 0.6], ["l", -0.09, 0.51], ["l", 0.21, 0.24], ["c", 0.63, 0.75, 1.02, 1.47, 1.2, 2.19], ["c", 0.06, 0.27, 0.06, 0.36, 0.06, 0.81], ["c", 0, 0.42, 0, 0.54, -0.06, 0.78], ["c", -0.15, 0.54, -0.33, 0.93, -0.63, 1.35], ["c", -0.18, 0.24, -0.57, 0.63, -0.81, 0.78], ["c", -0.24, 0.15, -0.63, 0.36, -0.84, 0.42], ["c", -0.27, 0.06, -0.66, 0.06, -0.87, 0.03], ["c", -0.81, -0.18, -1.32, -1.05, -1.38, -2.46], ["c", -0.03, -0.6, 0.03, -0.99, 0.33, -2.46], ["c", 0.21, -1.08, 0.24, -1.32, 0.21, -1.29], ["c", -1.2, 0.48, -2.4, 0.75, -3.21, 0.72], ["c", -0.69, -0.06, -1.17, -0.3, -1.41, -0.72], ["c", -0.39, -0.75, -0.12, -1.8, 0.66, -2.46], ["c", 0.24, -0.18, 0.69, -0.42, 1.02, -0.51], ["c", 0.69, -0.18, 1.53, -0.15, 2.31, 0.09], ["c", 0.3, 0.09, 0.75, 0.3, 0.99, 0.45], ["c", 0.12, 0.09, 0.15, 0.09, 0.15, 0.03], ["c", 0.03, -0.03, 0.33, -1.59, 0.72, -3.45], ["c", 0.36, -1.86, 0.66, -3.42, 0.69, -3.45], ["c", 0, -0.03, 0.03, -0.03, 0.21, 0.03], ["c", 0.21, 0.06, 0.27, 0.06, 0.48, 0.06], ["c", 0.42, -0.03, 0.78, -0.18, 1.26, -0.48], ["c", 0.15, -0.12, 0.36, -0.27, 0.48, -0.39], ["z"], ["m", -5.73, 7.68], ["c", -0.27, -0.03, -0.96, -0.06, -1.2, -0.03], ["c", -0.81, 0.12, -1.35, 0.57, -1.5, 1.2], ["c", -0.18, 0.66, 0.12, 1.14, 0.75, 1.29], ["c", 0.66, 0.12, 1.92, -0.12, 3.18, -0.66], ["l", 0.33, -0.15], ["l", 0.09, -0.39], ["c", 0.06, -0.21, 0.09, -0.42, 0.09, -0.45], ["c", 0, -0.03, -0.45, -0.3, -0.75, -0.45], ["c", -0.27, -0.15, -0.66, -0.27, -0.99, -0.36], ["z"], ["m", 4.29, 3.63], ["c", -0.24, -0.39, -0.51, -0.75, -0.51, -0.69], ["c", -0.06, 0.12, -0.39, 1.92, -0.45, 2.28], ["c", -0.09, 0.54, -0.12, 1.14, -0.06, 1.38], ["c", 0.06, 0.42, 0.21, 0.6, 0.51, 0.57], ["c", 0.39, -0.06, 0.75, -0.48, 0.93, -1.14], ["c", 0.09, -0.33, 0.09, -1.05, -0, -1.38], ["c", -0.09, -0.39, -0.24, -0.69, -0.42, -1.02], ["z"]], w: 17.963, h: 16.49}
+        , 'scripts.segno': {d: [["M", -1, -11.22], ["c", 0.78, -0.09, 1.59, 0.03, 2.31, 0.42], ["c", 1.2, 0.6, 2.01, 1.71, 2.31, 3.09], ["c", 0.09, 0.42, 0.09, 1.2, 0.03, 1.5], ["c", -0.15, 0.45, -0.39, 0.81, -0.66, 0.93], ["c", -0.33, 0.18, -0.84, 0.21, -1.23, 0.15], ["c", -0.81, -0.18, -1.32, -0.93, -1.26, -1.89], ["c", 0.03, -0.36, 0.09, -0.57, 0.24, -0.9], ["c", 0.15, -0.33, 0.45, -0.6, 0.72, -0.75], ["c", 0.12, -0.06, 0.18, -0.09, 0.18, -0.12], ["c", 0, -0.03, -0.03, -0.15, -0.09, -0.24], ["c", -0.18, -0.45, -0.54, -0.87, -0.96, -1.08], ["c", -1.11, -0.57, -2.34, -0.18, -2.88, 0.9], ["c", -0.24, 0.51, -0.33, 1.11, -0.24, 1.83], ["c", 0.27, 1.92, 1.5, 3.54, 3.93, 5.13], ["c", 0.48, 0.33, 1.26, 0.78, 1.29, 0.78], ["c", 0.03, 0, 1.35, -2.19, 2.94, -4.89], ["l", 2.88, -4.89], ["l", 0.84, 0], ["l", 0.87, 0], ["l", -0.03, 0.06], ["c", -0.15, 0.21, -6.15, 10.41, -6.15, 10.44], ["c", 0, 0, 0.21, 0.15, 0.48, 0.27], ["c", 2.61, 1.47, 4.35, 3.03, 5.13, 4.65], ["c", 1.14, 2.34, 0.51, 5.07, -1.44, 6.39], ["c", -0.66, 0.42, -1.32, 0.63, -2.13, 0.69], ["c", -2.01, 0.09, -3.81, -1.41, -4.26, -3.54], ["c", -0.09, -0.42, -0.09, -1.2, -0.03, -1.5], ["c", 0.15, -0.45, 0.39, -0.81, 0.66, -0.93], ["c", 0.33, -0.18, 0.84, -0.21, 1.23, -0.15], ["c", 0.81, 0.18, 1.32, 0.93, 1.26, 1.89], ["c", -0.03, 0.36, -0.09, 0.57, -0.24, 0.9], ["c", -0.15, 0.33, -0.45, 0.6, -0.72, 0.75], ["c", -0.12, 0.06, -0.18, 0.09, -0.18, 0.12], ["c", 0, 0.03, 0.03, 0.15, 0.09, 0.24], ["c", 0.18, 0.45, 0.54, 0.87, 0.96, 1.08], ["c", 1.11, 0.57, 2.34, 0.18, 2.88, -0.9], ["c", 0.24, -0.51, 0.33, -1.11, 0.24, -1.83], ["c", -0.27, -1.92, -1.5, -3.54, -3.93, -5.13], ["c", -0.48, -0.33, -1.26, -0.78, -1.29, -0.78], ["c", -0.03, 0, -1.35, 2.19, -2.91, 4.89], ["l", -2.88, 4.89], ["l", -0.87, 0], ["l", -0.87, 0], ["l", 0.03, -0.06], ["c", 0.15, -0.21, 6.15, -10.41, 6.15, -10.44], ["c", 0, 0, -0.21, -0.15, -0.48, -0.3], ["c", -2.61, -1.44, -4.35, -3, -5.13, -4.62], ["c", -0.9, -1.89, -0.72, -4.02, 0.48, -5.52], ["c", 0.69, -0.84, 1.68, -1.41, 2.73, -1.53], ["z"], ["m", 8.76, 9.09], ["c", 0.03, -0.03, 0.15, -0.03, 0.27, -0.03], ["c", 0.33, 0.03, 0.57, 0.18, 0.72, 0.48], ["c", 0.09, 0.18, 0.09, 0.57, 0, 0.75], ["c", -0.09, 0.18, -0.21, 0.3, -0.36, 0.39], ["c", -0.15, 0.06, -0.21, 0.06, -0.39, 0.06], ["c", -0.21, 0, -0.27, 0, -0.39, -0.06], ["c", -0.3, -0.15, -0.48, -0.45, -0.48, -0.75], ["c", 0, -0.39, 0.24, -0.72, 0.63, -0.84], ["z"], ["m", -10.53, 2.61], ["c", 0.03, -0.03, 0.15, -0.03, 0.27, -0.03], ["c", 0.33, 0.03, 0.57, 0.18, 0.72, 0.48], ["c", 0.09, 0.18, 0.09, 0.57, 0, 0.75], ["c", -0.09, 0.18, -0.21, 0.3, -0.36, 0.39], ["c", -0.15, 0.06, -0.21, 0.06, -0.39, 0.06], ["c", -0.21, 0, -0.27, 0, -0.39, -0.06], ["c", -0.3, -0.15, -0.48, -0.45, -0.48, -0.75], ["c", 0, -0.39, 0.24, -0.72, 0.63, -0.84], ["z"]], w: 15, h: 22.504}
+        , 'scripts.coda': {d: [["M", -0.21, -13], ["c", 0.18, -0.12, 0.42, -0.06, 0.54, 0.12], ["c", 0.06, 0.09, 0.06, 0.18, 0.06, 1.5], ["l", 0, 1.38], ["l", 0.18, 0], ["c", 0.39, 0.06, 0.96, 0.24, 1.38, 0.48], ["c", 1.68, 0.93, 2.82, 3.24, 3.03, 6.12], ["c", 0.03, 0.24, 0.03, 0.45, 0.03, 0.45], ["c", 0, 0.03, 0.6, 0.03, 1.35, 0.03], ["c", 1.5, 0, 1.47, 0, 1.59, 0.18], ["c", 0.09, 0.12, 0.09, 0.3, -0, 0.42], ["c", -0.12, 0.18, -0.09, 0.18, -1.59, 0.18], ["c", -0.75, 0, -1.35, 0, -1.35, 0.03], ["c", -0, 0, -0, 0.21, -0.03, 0.42], ["c", -0.24, 3.15, -1.53, 5.58, -3.45, 6.36], ["c", -0.27, 0.12, -0.72, 0.24, -0.96, 0.27], ["l", -0.18, -0], ["l", -0, 1.38], ["c", -0, 1.32, -0, 1.41, -0.06, 1.5], ["c", -0.15, 0.24, -0.51, 0.24, -0.66, -0], ["c", -0.06, -0.09, -0.06, -0.18, -0.06, -1.5], ["l", -0, -1.38], ["l", -0.18, -0], ["c", -0.39, -0.06, -0.96, -0.24, -1.38, -0.48], ["c", -1.68, -0.93, -2.82, -3.24, -3.03, -6.15], ["c", -0.03, -0.21, -0.03, -0.42, -0.03, -0.42], ["c", 0, -0.03, -0.6, -0.03, -1.35, -0.03], ["c", -1.5, -0, -1.47, -0, -1.59, -0.18], ["c", -0.09, -0.12, -0.09, -0.3, 0, -0.42], ["c", 0.12, -0.18, 0.09, -0.18, 1.59, -0.18], ["c", 0.75, -0, 1.35, -0, 1.35, -0.03], ["c", 0, -0, 0, -0.21, 0.03, -0.45], ["c", 0.24, -3.12, 1.53, -5.55, 3.45, -6.33], ["c", 0.27, -0.12, 0.72, -0.24, 0.96, -0.27], ["l", 0.18, -0], ["l", 0, -1.38], ["c", 0, -1.53, 0, -1.5, 0.18, -1.62], ["z"], ["m", -0.18, 6.93], ["c", 0, -2.97, 0, -3.15, -0.06, -3.15], ["c", -0.09, 0, -0.51, 0.15, -0.66, 0.21], ["c", -0.87, 0.51, -1.38, 1.62, -1.56, 3.51], ["c", -0.06, 0.54, -0.12, 1.59, -0.12, 2.16], ["l", 0, 0.42], ["l", 1.2, 0], ["l", 1.2, 0], ["l", 0, -3.15], ["z"], ["m", 1.17, -3.06], ["c", -0.09, -0.03, -0.21, -0.06, -0.27, -0.09], ["l", -0.12, 0], ["l", 0, 3.15], ["l", 0, 3.15], ["l", 1.2, 0], ["l", 1.2, 0], ["l", 0, -0.81], ["c", -0.06, -2.4, -0.33, -3.69, -0.93, -4.59], ["c", -0.27, -0.39, -0.66, -0.69, -1.08, -0.81], ["z"], ["m", -1.17, 10.14], ["l", 0, -3.15], ["l", -1.2, -0], ["l", -1.2, -0], ["l", 0, 0.81], ["c", 0.03, 0.96, 0.06, 1.47, 0.15, 2.13], ["c", 0.24, 2.04, 0.96, 3.12, 2.13, 3.36], ["l", 0.12, -0], ["l", 0, -3.15], ["z"], ["m", 3.18, -2.34], ["l", 0, -0.81], ["l", -1.2, 0], ["l", -1.2, 0], ["l", 0, 3.15], ["l", 0, 3.15], ["l", 0.12, 0], ["c", 1.17, -0.24, 1.89, -1.32, 2.13, -3.36], ["c", 0.09, -0.66, 0.12, -1.17, 0.15, -2.13], ["z"]], w: 16.035, h: 21.062}
+        , 'scripts.comma': {d: [["M", 1.14, -4.62], ["c", 0.3, -0.12, 0.69, -0.03, 0.93, 0.15], ["c", 0.12, 0.12, 0.36, 0.45, 0.51, 0.78], ["c", 0.9, 1.77, 0.54, 4.05, -1.08, 6.75], ["c", -0.36, 0.63, -0.87, 1.38, -0.96, 1.44], ["c", -0.18, 0.12, -0.42, 0.06, -0.54, -0.12], ["c", -0.09, -0.18, -0.09, -0.3, 0.12, -0.6], ["c", 0.96, -1.44, 1.44, -2.97, 1.38, -4.35], ["c", -0.06, -0.93, -0.3, -1.68, -0.78, -2.46], ["c", -0.27, -0.39, -0.33, -0.63, -0.24, -0.96], ["c", 0.09, -0.27, 0.36, -0.54, 0.66, -0.63], ["z"]], w: 3.042, h: 9.237}
+        , 'scripts.roll': {d: [["M", 1.95, -6], ["c", 0.21, -0.09, 0.36, -0.09, 0.57, 0], ["c", 0.39, 0.15, 0.63, 0.39, 1.47, 1.35], ["c", 0.66, 0.75, 0.78, 0.87, 1.08, 1.05], ["c", 0.75, 0.45, 1.65, 0.42, 2.4, -0.06], ["c", 0.12, -0.09, 0.27, -0.27, 0.54, -0.6], ["c", 0.42, -0.54, 0.51, -0.63, 0.69, -0.63], ["c", 0.09, 0, 0.3, 0.12, 0.36, 0.21], ["c", 0.09, 0.12, 0.12, 0.3, 0.03, 0.42], ["c", -0.06, 0.12, -3.15, 3.9, -3.3, 4.08], ["c", -0.06, 0.06, -0.18, 0.12, -0.27, 0.18], ["c", -0.27, 0.12, -0.6, 0.06, -0.99, -0.27], ["c", -0.27, -0.21, -0.42, -0.39, -1.08, -1.14], ["c", -0.63, -0.72, -0.81, -0.9, -1.17, -1.08], ["c", -0.36, -0.18, -0.57, -0.21, -0.99, -0.21], ["c", -0.39, 0, -0.63, 0.03, -0.93, 0.18], ["c", -0.36, 0.15, -0.51, 0.27, -0.9, 0.81], ["c", -0.24, 0.27, -0.45, 0.51, -0.48, 0.54], ["c", -0.12, 0.09, -0.27, 0.06, -0.39, 0], ["c", -0.24, -0.15, -0.33, -0.39, -0.21, -0.6], ["c", 0.09, -0.12, 3.18, -3.87, 3.33, -4.02], ["c", 0.06, -0.06, 0.18, -0.15, 0.24, -0.21], ["z"]], w: 10.817, h: 6.125}
+        , 'scripts.prall': {d: [["M", -4.38, -3.69], ["c", 0.06, -0.03, 0.18, -0.06, 0.24, -0.06], ["c", 0.3, 0, 0.27, -0.03, 1.89, 1.95], ["l", 1.53, 1.83], ["c", 0.03, -0, 0.57, -0.84, 1.23, -1.83], ["c", 1.14, -1.68, 1.23, -1.83, 1.35, -1.89], ["c", 0.06, -0.03, 0.18, -0.06, 0.24, -0.06], ["c", 0.3, 0, 0.27, -0.03, 1.89, 1.95], ["l", 1.53, 1.83], ["l", 0.48, -0.69], ["c", 0.51, -0.78, 0.54, -0.84, 0.69, -0.9], ["c", 0.42, -0.18, 0.87, 0.15, 0.81, 0.6], ["c", -0.03, 0.12, -0.3, 0.51, -1.5, 2.37], ["c", -1.38, 2.07, -1.5, 2.22, -1.62, 2.28], ["c", -0.06, 0.03, -0.18, 0.06, -0.24, 0.06], ["c", -0.3, 0, -0.27, 0.03, -1.89, -1.95], ["l", -1.53, -1.83], ["c", -0.03, 0, -0.57, 0.84, -1.23, 1.83], ["c", -1.14, 1.68, -1.23, 1.83, -1.35, 1.89], ["c", -0.06, 0.03, -0.18, 0.06, -0.24, 0.06], ["c", -0.3, 0, -0.27, 0.03, -1.89, -1.95], ["l", -1.53, -1.83], ["l", -0.48, 0.69], ["c", -0.51, 0.78, -0.54, 0.84, -0.69, 0.9], ["c", -0.42, 0.18, -0.87, -0.15, -0.81, -0.6], ["c", 0.03, -0.12, 0.3, -0.51, 1.5, -2.37], ["c", 1.38, -2.07, 1.5, -2.22, 1.62, -2.28], ["z"]], w: 15.011, h: 7.5}
+        , 'scripts.mordent': {d: [["M", -0.21, -4.95], ["c", 0.27, -0.15, 0.63, 0, 0.75, 0.27], ["c", 0.06, 0.12, 0.06, 0.24, 0.06, 1.44], ["l", 0, 1.29], ["l", 0.57, -0.84], ["c", 0.51, -0.75, 0.57, -0.84, 0.69, -0.9], ["c", 0.06, -0.03, 0.18, -0.06, 0.24, -0.06], ["c", 0.3, 0, 0.27, -0.03, 1.89, 1.95], ["l", 1.53, 1.83], ["l", 0.48, -0.69], ["c", 0.51, -0.78, 0.54, -0.84, 0.69, -0.9], ["c", 0.42, -0.18, 0.87, 0.15, 0.81, 0.6], ["c", -0.03, 0.12, -0.3, 0.51, -1.5, 2.37], ["c", -1.38, 2.07, -1.5, 2.22, -1.62, 2.28], ["c", -0.06, 0.03, -0.18, 0.06, -0.24, 0.06], ["c", -0.3, 0, -0.27, 0.03, -1.83, -1.89], ["c", -0.81, -0.99, -1.5, -1.8, -1.53, -1.86], ["c", -0.06, -0.03, -0.06, -0.03, -0.12, 0.03], ["c", -0.06, 0.06, -0.06, 0.15, -0.06, 2.28], ["c", -0, 1.95, -0, 2.25, -0.06, 2.34], ["c", -0.18, 0.45, -0.81, 0.48, -1.05, 0.03], ["c", -0.03, -0.06, -0.06, -0.24, -0.06, -1.41], ["l", -0, -1.35], ["l", -0.57, 0.84], ["c", -0.54, 0.78, -0.6, 0.87, -0.72, 0.93], ["c", -0.06, 0.03, -0.18, 0.06, -0.24, 0.06], ["c", -0.3, 0, -0.27, 0.03, -1.89, -1.95], ["l", -1.53, -1.83], ["l", -0.48, 0.69], ["c", -0.51, 0.78, -0.54, 0.84, -0.69, 0.9], ["c", -0.42, 0.18, -0.87, -0.15, -0.81, -0.6], ["c", 0.03, -0.12, 0.3, -0.51, 1.5, -2.37], ["c", 1.38, -2.07, 1.5, -2.22, 1.62, -2.28], ["c", 0.06, -0.03, 0.18, -0.06, 0.24, -0.06], ["c", 0.3, 0, 0.27, -0.03, 1.89, 1.95], ["l", 1.53, 1.83], ["c", 0.03, -0, 0.06, -0.06, 0.09, -0.09], ["c", 0.06, -0.12, 0.06, -0.15, 0.06, -2.28], ["c", -0, -1.92, -0, -2.22, 0.06, -2.31], ["c", 0.06, -0.15, 0.15, -0.24, 0.3, -0.3], ["z"]], w: 15.011, h: 10.012}
+        , 'timesig.common': {d: [["M", 6.66, -7.826], ["c", 0.72, -0.06, 1.41, -0.03, 1.98, 0.09], ["c", 1.2, 0.27, 2.34, 0.96, 3.09, 1.92], ["c", 0.63, 0.81, 1.08, 1.86, 1.14, 2.73], ["c", 0.06, 1.02, -0.51, 1.92, -1.44, 2.22], ["c", -0.24, 0.09, -0.3, 0.09, -0.63, 0.09], ["c", -0.33, -0, -0.42, -0, -0.63, -0.06], ["c", -0.66, -0.24, -1.14, -0.63, -1.41, -1.2], ["c", -0.15, -0.3, -0.21, -0.51, -0.24, -0.9], ["c", -0.06, -1.08, 0.57, -2.04, 1.56, -2.37], ["c", 0.18, -0.06, 0.27, -0.06, 0.63, -0.06], ["l", 0.45, 0], ["c", 0.06, 0.03, 0.09, 0.03, 0.09, 0], ["c", 0, 0, -0.09, -0.12, -0.24, -0.27], ["c", -1.02, -1.11, -2.55, -1.68, -4.08, -1.5], ["c", -1.29, 0.15, -2.04, 0.69, -2.4, 1.74], ["c", -0.36, 0.93, -0.42, 1.89, -0.42, 5.37], ["c", 0, 2.97, 0.06, 3.96, 0.24, 4.77], ["c", 0.24, 1.08, 0.63, 1.68, 1.41, 2.07], ["c", 0.81, 0.39, 2.16, 0.45, 3.18, 0.09], ["c", 1.29, -0.45, 2.37, -1.53, 3.03, -2.97], ["c", 0.15, -0.33, 0.33, -0.87, 0.39, -1.17], ["c", 0.09, -0.24, 0.15, -0.36, 0.3, -0.39], ["c", 0.21, -0.03, 0.42, 0.15, 0.39, 0.36], ["c", -0.06, 0.39, -0.42, 1.38, -0.69, 1.89], ["c", -0.96, 1.8, -2.49, 2.94, -4.23, 3.18], ["c", -0.99, 0.12, -2.58, -0.06, -3.63, -0.45], ["c", -0.96, -0.36, -1.71, -0.84, -2.4, -1.5], ["c", -1.11, -1.11, -1.8, -2.61, -2.04, -4.56], ["c", -0.06, -0.6, -0.06, -2.01, 0, -2.61], ["c", 0.24, -1.95, 0.9, -3.45, 2.01, -4.56], ["c", 0.69, -0.66, 1.44, -1.11, 2.37, -1.47], ["c", 0.63, -0.24, 1.47, -0.42, 2.22, -0.48], ["z"]], w: 13.038, h: 15.697}
+        , 'timesig.cut': {d: [["M", 6.24, -10.44], ["c", 0.09, -0.06, 0.09, -0.06, 0.48, -0.06], ["c", 0.36, 0, 0.36, 0, 0.45, 0.06], ["l", 0.06, 0.09], ["l", 0, 1.23], ["l", 0, 1.26], ["l", 0.27, 0], ["c", 1.26, 0, 2.49, 0.45, 3.48, 1.29], ["c", 1.05, 0.87, 1.8, 2.28, 1.89, 3.48], ["c", 0.06, 1.02, -0.51, 1.92, -1.44, 2.22], ["c", -0.24, 0.09, -0.3, 0.09, -0.63, 0.09], ["c", -0.33, -0, -0.42, -0, -0.63, -0.06], ["c", -0.66, -0.24, -1.14, -0.63, -1.41, -1.2], ["c", -0.15, -0.3, -0.21, -0.51, -0.24, -0.9], ["c", -0.06, -1.08, 0.57, -2.04, 1.56, -2.37], ["c", 0.18, -0.06, 0.27, -0.06, 0.63, -0.06], ["l", 0.45, -0], ["c", 0.06, 0.03, 0.09, 0.03, 0.09, -0], ["c", 0, -0.03, -0.45, -0.51, -0.66, -0.69], ["c", -0.87, -0.69, -1.83, -1.05, -2.94, -1.11], ["l", -0.42, 0], ["l", 0, 7.17], ["l", 0, 7.14], ["l", 0.42, 0], ["c", 0.69, -0.03, 1.23, -0.18, 1.86, -0.51], ["c", 1.05, -0.51, 1.89, -1.47, 2.46, -2.7], ["c", 0.15, -0.33, 0.33, -0.87, 0.39, -1.17], ["c", 0.09, -0.24, 0.15, -0.36, 0.3, -0.39], ["c", 0.21, -0.03, 0.42, 0.15, 0.39, 0.36], ["c", -0.03, 0.24, -0.21, 0.78, -0.39, 1.2], ["c", -0.96, 2.37, -2.94, 3.9, -5.13, 3.9], ["l", -0.3, 0], ["l", 0, 1.26], ["l", 0, 1.23], ["l", -0.06, 0.09], ["c", -0.09, 0.06, -0.09, 0.06, -0.45, 0.06], ["c", -0.39, 0, -0.39, 0, -0.48, -0.06], ["l", -0.06, -0.09], ["l", 0, -1.29], ["l", 0, -1.29], ["l", -0.21, -0.03], ["c", -1.23, -0.21, -2.31, -0.63, -3.21, -1.29], ["c", -0.15, -0.09, -0.45, -0.36, -0.66, -0.57], ["c", -1.11, -1.11, -1.8, -2.61, -2.04, -4.56], ["c", -0.06, -0.6, -0.06, -2.01, 0, -2.61], ["c", 0.24, -1.95, 0.93, -3.45, 2.04, -4.59], ["c", 0.42, -0.39, 0.78, -0.66, 1.26, -0.93], ["c", 0.75, -0.45, 1.65, -0.75, 2.61, -0.9], ["l", 0.21, -0.03], ["l", 0, -1.29], ["l", 0, -1.29], ["z"], ["m", -0.06, 10.44], ["c", 0, -5.58, 0, -6.99, -0.03, -6.99], ["c", -0.15, 0, -0.63, 0.27, -0.87, 0.45], ["c", -0.45, 0.36, -0.75, 0.93, -0.93, 1.77], ["c", -0.18, 0.81, -0.24, 1.8, -0.24, 4.74], ["c", 0, 2.97, 0.06, 3.96, 0.24, 4.77], ["c", 0.24, 1.08, 0.66, 1.68, 1.41, 2.07], ["c", 0.12, 0.06, 0.3, 0.12, 0.33, 0.15], ["l", 0.09, 0], ["l", 0, -6.96], ["z"]], w: 13.038, h: 20.97}
+	, 'it.l':{d:[["M", 3.889, -4.778], ["c", -0.167, 1.167, -1.111, 2.833, -0.167, 3.5], ["c", 1, -0.278, 1.556, -0.833, 2.445, -1.278], ["l", -0, 0.389], ["c", -1.611, 1, -2.111, 1.945, -3.778, 2.445], ["c", -0.444, -0.112, -0.778, -0.945, -0.611, -1.612], ["l", 2.667, -10.111], ["c", 1.055, -1, 2.166, -2.5, 4.222, -2], ["l", -0.834, 1.056], ["c", -3.055, -0.778, -2.555, 3.111, -3.388, 5.389], ["c", -0.389, 1.111, -0.389, 1.166, -0.556, 2.222], ["z"]],w:6.933,h:13.822}
+	, 'it.f':{d:[["M", 4.333, -6.833], ["c", 0.722, -3.778, 2.222, -7, 6.5, -6.667], ["l", -0.944, 1.111], ["c", -3.5, -1.111, -3.167, 3.167, -4.112, 5.556], ["c", 0.834, -0, 1.723, -0.111, 2.445, -0], ["c", -0.5, 0.611, -1.389, 0.722, -2.611, 0.611], ["c", -1.278, 4.056, -1.722, 8.945, -5.111, 10.889], ["c", -0.556, 0.333, -1.667, 0.333, -2.5, 0.167], ["c", 0.5, -0.667, 0.722, -1.5, 2, -1.167], ["c", 3.722, -0.778, 2.611, -6.389, 4.166, -9.889], ["l", -2.666, 0], ["c", 0.666, -0.444, 1.666, -0.833, 2.833, -0.611], ["z"]],w:12.833,h:18.467}
+	, 'it.F':{d:[["M", 14.667, -12.389], ["c", -0.167, 0.778, -1.056, 1.111, -1.444, 1.444], ["l", -3.223, -0.055], ["l", -1.277, 5.167], ["l", 3.166, -0], ["c", -0.611, 0.777, -2, 0.777, -3.389, 0.777], ["c", -0.777, 4, -2.444, 7.556, -7.277, 7.278], ["c", 0.444, -0.667, 0.555, -1.444, 2.055, -1.278], ["c", 3.333, 0.334, 2.833, -3.444, 3.778, -5.889], ["l", -0.5, 0], ["c", 1.333, -1.388, 1.333, -4.055, 2, -6.055], ["c", -3.167, -0.667, -4.833, 2.055, -3.611, 4.833], ["l", -1.667, 0.778], ["c", -1.111, -3.944, 1.778, -6.333, 5.945, -6.333], ["c", 2, -0, 4.222, 0.333, 5.444, -0.667], ["z"]],w:13.444,h:14.626}
+	, 'it.i':{d:[["M", 5.444, -12.333], ["l", 0.722, 1.389], ["c", -0.444, 0.333, -0.944, 0.611, -1.333, 1.055], ["c", -0.167, -0.444, -1.167, -1.277, -0.445, -1.555], ["z"], ["m", -0.389, 4.333], ["l", -1.389, 6.167], ["c", 0.334, 1.389, 1.778, -0.278, 2.556, -0.5], ["c", -0.056, 1.111, -1.278, 1, -1.778, 1.667], ["c", -0.833, 0.444, -1.222, 0.833, -1.944, 0.944], ["c", -0.445, -0.055, -0.556, -0.722, -0.445, -1.167], ["c", 0.167, -1.777, 1, -3.333, 1.278, -5.333], ["c", -0.278, -0.778, -1.167, 0.111, -1.722, 0.333], ["l", 0.055, -0.555], ["c", 1.167, -0.722, 2.111, -1.556, 3.167, -1.778], ["c", 0.167, 0, 0.222, 0.111, 0.222, 0.222], ["z"]],w:4.611,h:12.611}
+	, 'it.n':{d:[["M", 6.556, 0.333], ["c", -0.889, -2.222, 1, -4.389, 0.944, -6.778], ["c", -0.388, -0.611, -1, 0.278, -1.555, 0.445], ["c", -0.5, 0.333, -0.556, 0.333, -1.5, 0.944], ["l", -1.167, 4.667], ["l", -1.5, 0.611], ["c", 0.5, -2.111, 1.334, -4.389, 1.611, -6.611], ["c", -0.333, -0.667, -1.166, 0.166, -1.777, 0.333], ["c", 0.5, -1.444, 2.166, -1.5, 3.277, -2.167], ["c", 0.667, 0.334, -0.222, 1.612, -0.222, 2.334], ["c", 1, -0.611, 2.667, -1.889, 4.222, -2.334], ["c", 0.334, 0, 0.445, 0.278, 0.334, 0.5], ["c", -0.278, 1.612, -1.167, 3.945, -1.445, 5.834], ["c", 0.111, 1, 1, 0.222, 1.445, -0], ["c", 0.444, -0.222, 0.444, -0.222, 1.166, -0.667], ["c", -0.555, 1.611, -2.722, 2.056, -3.833, 2.889], ["z"]],w:8.778,h:8.556}
+	, 'it.e':{d:[["M", 4.389, -0.889], ["c", 1.389, 0, 2.056, -0.889, 3.222, -1.833], ["l", 0, 0.555], ["c", -1.611, 1.611, -3, 2.445, -4.222, 2.445], ["c", -1.111, -0, -1.722, -0.778, -1.667, -1.945], ["c", 0.167, -3.444, 1.389, -6.555, 4.556, -6.555], ["c", 0.667, -0, 1.167, 0.389, 1.111, 1.111], ["c", -0.222, 2.389, -2.722, 3, -4.167, 4.278], ["c", -0.055, 1.055, 0.223, 1.944, 1.167, 1.944], ["z"], ["m", 1.556, -5.667], ["c", 0.111, -0.833, -0.667, -1.055, -1.167, -0.555], ["c", -0.778, 0.833, -1.333, 2.111, -1.5, 3.555], ["c", 1.222, -0.889, 2.5, -1.222, 2.667, -3], ["z"]],w:5.892,h:8.5}
+	, 'it.D':{d:[["M", 15.167, -8.056], ["c", -0.278, 6.778, -5.611, 8.667, -13.444, 8.056], ["l", 0.944, -0.945], ["c", 2.722, -0.055, 2.944, -1.833, 3.5, -4.111], ["l", 1.5, -5.944], ["c", -2.944, 0.222, -4.889, 2, -4.167, 5.166], ["l", -1.666, 0.778], ["c", -0.778, -3.778, 2.333, -6.111, 6.166, -6.611], ["l", 1.445, -0.611], ["l", -0.167, 0.555], ["c", 2.945, 0.056, 6, 0.945, 5.889, 3.667], ["z"], ["m", -7.833, 7.167], ["c", 4.5, 0.222, 6.111, -2.778, 6.111, -6.778], ["c", -0, -2.5, -1.611, -3.5, -4.334, -3.445], ["l", -2.166, 7.778], ["c", -0.611, 0.945, -1.222, 1.556, -2.167, 2.334], ["z"]],w:13.456,h:12.386}
+	, 'it.d':{d:[["M", 2.222, 0.111], ["c", -1.389, -3.444, 1.167, -8.611, 5.056, -8.222], ["c", 0.444, -1.5, 0.666, -3, 1.833, -3.834], ["c", 1.167, -0.833, 1.833, -1.833, 3.444, -1.5], ["c", -0.333, 0.612, -0.611, 1.389, -1.611, 0.945], ["c", -2.666, 0.889, -2.111, 5.778, -3.222, 8.444], ["c", -0.056, 0.889, -0.778, 2.278, -0.167, 2.889], ["c", 0.723, -0.222, 1.556, -1, 2.389, -1.444], ["c", -0.555, 1.666, -2.555, 2, -3.778, 2.889], ["c", -0.722, -0.111, -0.444, -1.223, -0.333, -2.056], ["c", -1, 0.611, -2.278, 1.722, -3.333, 2.056], ["c", -0.111, -0, -0.167, -0.056, -0.278, -0.167], ["z"], ["m", 3.722, -7.389], ["c", -1.5, -0.278, -2.778, 3.333, -2.778, 5.333], ["c", 0, 1.667, 1.223, 0.5, 1.834, 0.112], ["l", 1, -0.723], ["l", 0.944, -4.166], ["c", -0.333, -0.389, -0.5, -0.445, -1, -0.556], ["z"]],w:10.716,h:13.788}
+	, 'it.a':{d:[["M", 7.833, -1.444], ["c", 0.889, -0.167, 1.278, -0.833, 2, -1.167], ["c", -0.5, 1.778, -2.444, 2.056, -3.667, 2.889], ["c", -0.722, -0.333, -0.055, -1.333, 0, -2.222], ["c", -1.222, 0.722, -2.222, 1.667, -3.611, 2.222], ["c", -2.166, -3, 0.5, -9.5, 5.5, -8.444], ["c", 0.389, 0.055, 0.834, 0.111, 1.334, 0.222], ["c", -1.223, 1.389, -1.334, 4, -1.778, 6.111], ["c", -0, 0.278, 0.055, 0.389, 0.222, 0.389], ["z"], ["m", -0.444, -5.611], ["c", -3.223, -1.222, -3.889, 2.167, -4.112, 4.778], ["c", 0.389, 2.222, 2, -0, 3.056, -0.445], ["z"]],w:8.037,h:8.559}
+	, 'it.C':{d:[["M", 3.389, -2.556], ["c", -0.167, 4.167, 5, 3.389, 7.167, 1.278], ["l", -0.111, 0.611], ["c", -2.167, 2, -8.889, 3.889, -8.667, -1.167], ["c", 0.222, -5.333, 3.5, -10, 8.555, -10], ["c", 1.5, 0, 2.167, 0.667, 2.389, 2], ["l", -1.5, 1.278], ["c", -0.111, -1.389, -0.555, -2.333, -1.944, -2.333], ["c", -3.833, -0, -5.722, 4.166, -5.889, 8.333], ["z"]],w:10.95,h:13.236}
+	, 'it.c':{d:[["M", 3.278, -2.389], ["c", -0.056, 0.889, 0.389, 1.5, 1.167, 1.5], ["c", 0.611, 0, 1.666, -0.556, 3.222, -1.667], ["l", -0.056, 0.667], ["c", -1.389, 0.944, -2.722, 2, -4.444, 2.167], ["c", -2.945, -0.778, -0.833, -6.5, 0.833, -7.278], ["c", 0.778, -0.389, 1.278, -1.111, 2.278, -1.222], ["c", 0.778, -0.111, 1.333, 0.889, 1.111, 1.611], ["l", -1.167, 0.666], ["c", -0.111, -0.666, -0.222, -1.222, -0.833, -1.222], ["c", -1.389, 0.056, -2.055, 3, -2.111, 4.778], ["z"]],w:5.971,h:8.509}
+	, 'it.p':{d:[["M", 9.667, -6.667], ["c", 0, 3.778, -2, 7.111, -6.167, 6.722], ["l", -0.944, 4.278], ["l", 2.222, 0.111], ["c", -0.778, 0.945, -3.222, 0.333, -4.944, 0.445], ["c", 0.333, -0.334, 0.611, -0.723, 1.333, -0.667], ["l", 2.333, -10.167], ["c", -0.111, -1.166, -1.333, -0.166, -1.833, 0], ["c", 0.5, -1.333, 2.278, -1.611, 3.389, -2.278], ["c", 0.667, 0.223, -0.111, 1.334, -0.111, 2.056], ["c", 1.278, -0.944, 4.722, -3.722, 4.722, -0.5], ["z"], ["m", -1.444, 0.889], ["c", -0, -2.333, -2.612, -0.167, -3.445, 0.444], ["l", -0.944, 4], ["c", 2.722, 1.723, 4.389, -1.833, 4.389, -4.444], ["z"]],w:9.833,h:13.204}
+	, 'it.o':{d:[["M", 1.722, -1.722], ["c", 0.111, -3.722, 2.278, -6.056, 5.444, -6.5], ["c", 1.112, -0.167, 1.834, 0.722, 1.834, 1.833], ["c", -0.222, 3.778, -2.056, 6, -5.556, 6.667], ["c", -1, -0.056, -1.722, -0.833, -1.722, -2], ["z"], ["m", 2.889, 1.056], ["c", 2.222, -0, 3.333, -3.834, 2.5, -6.112], ["c", -0.222, -0.333, -0.556, -0.5, -1, -0.5], ["c", -1.945, 0, -2.833, 2.556, -2.833, 4.723], ["c", -0, 1, 0.444, 1.889, 1.333, 1.889], ["z"]],w:7.278,h:8.52}
+	, 'it.S':{d:[["M", 9, -3.611], ["c", 0, 4, -6.111, 6.722, -9, 3.667], ["c", 0.444, -0.778, 0.5, -1.834, 1.222, -2.334], ["c", 0.167, 1.778, 1.278, 2.778, 3, 2.778], ["c", 1.778, 0, 3.222, -1.055, 3.222, -2.944], ["c", 0, -2.611, -3.277, -2.389, -3.277, -5], ["c", -0, -2.389, 2, -4.278, 4.389, -4.278], ["c", 1.055, -0, 1.666, 0.555, 1.777, 1.667], ["l", -1.333, 0.888], ["c", -0.222, -1.111, -0.278, -1.611, -1.333, -1.611], ["c", -1.334, 0, -2.167, 1.056, -2.167, 2.445], ["c", 0, 2.5, 3.5, 2.222, 3.5, 4.722], ["z"]],w:10.333,h:13.089}
+	, 'it.s':{d:[["M", 2.278, 0.278], ["c", -1, 0, -1.556, -0.778, -1.444, -1.944], ["l", 1.388, -0.889], ["c", 0, 1.111, 0.278, 2, 1.167, 2], ["c", 0.945, -0.167, 1.722, -0.723, 1.667, -1.889], ["c", -0.445, -1.056, -2.222, -1.278, -2.222, -2.722], ["c", -0, -2, 3.055, -4.056, 4.722, -2.389], ["l", -0.945, 1.055], ["c", -0.555, -1.166, -2.555, -0.889, -2.5, 0.5], ["c", 0, 1.611, 2.334, 1.278, 2.223, 2.945], ["c", -0.167, 1.944, -1.889, 3.333, -4.056, 3.333], ["z"]],w:6.736,h:8.445}
+	, 'it.punto':{d:[["M", 3.056, 0.167], ["c", -0.333, -0.611, -1.389, -1.556, -0.333, -1.944], ["l", 0.889, -0.778], ["c", 0.388, 0.722, 1.444, 1.611, 0.277, 2.111], ["c", -0.277, 0.167, -0.5, 0.444, -0.833, 0.611], ["z"]],w:2.157,h:2.722}   };
+
+
+    this.getSymbolPathTxt = function (symb) {
+        if (!glyphs[symb])
+            return null;
+        return this.stringify(glyphs[symb].d);
+    };
+
+    this.printSymbol = function (x, y, symb, paper) {
+        if (!glyphs[symb])
+            return null;
+        var pathArray = this.pathClone(glyphs[symb].d);
+        pathArray[0][1] += x;
+        pathArray[0][2] += y;
+        var path = paper.path().attr({path: pathArray, stroke: "none", fill: "#000000"});
+
+        return path;//.translate(x,y);
+    };
+
+    this.getSymbolWidth = function (symbol) {
+        var s = symbol.replace('graceheads','noteheads').replace('graceflags','flags'); // fixme:corrigir isso
+        
+        if (glyphs[s])
+            return glyphs[s].w;
+        return 0;
+    };
+
+    this.getSymbolHeight = function (symbol) {
+        if (glyphs[symbol])
+            return glyphs[symbol].h;
+        return 0;
+    };
+
+    this.getSymbolAlign = function (symbol) {
+        if (symbol.substring(0, 7) === "scripts" &&
+                symbol !== "scripts.roll") {
+            return "center";
+        }
+        return "left";
+    };
+
+    this.pathClone = function (pathArray) {
+        var res = [];
+        for (var i = 0, ii = pathArray.length; i < ii; i++) {
+            res[i] = [];
+            for (var j = 0, jj = pathArray[i].length; j < jj; j++) {
+                res[i][j] = pathArray[i][j];
+            }
+        }
+        return res;
+    };
+
+    this.stringify = function (pathArray) {
+        var res = "";
+        for (var i = 0, ii = pathArray.length; i < ii; i++) {
+            if (i > 0 && (i%3===0) && !(pathArray[i].length === 1 && pathArray[i][0] === "z")) {
+                res += '\n';
+            }
+            res += pathArray[i][0] + pathArray[i].slice(1).join(' ');
+        }
+        return res;
+    };
+
+
+    this.pathScale = function (pathArray, kx, ky) {
+        for (var i = 0, ii = pathArray.length; i < ii; i++) {
+            var p = pathArray[i];
+            var j, jj;
+            for (j = 1, jj = p.length; j < jj; j++) {
+                p[j] *= (j % 2) ? kx : ky;
+            }
+        }
+    };
+
+    this.getYCorr = function (symbol) {
+        switch (symbol) {
+            case "0":
+            case "1":
+            case "2":
+            case "3":
+            case "4":
+            case "5":
+            case "6":
+            case "7":
+            case "8":
+            case "9":
+            case "+":
+                return -3;
+            case "timesig.common":
+            case "timesig.cut":
+                return -1;
+            case "flags.d32nd":
+                return -1;
+            case "flags.d64th":
+                return -2;
+            case "flags.u32nd":
+                return 1;
+            case "flags.u64th":
+                return 3;
+            case "rests.whole":
+                return 1;
+            case "rests.half":
+                return -1;
+            case "rests.8th":
+                return -1;
+            case "rests.quarter":
+                return -2;
+            case "rests.16th":
+                return -1;
+            case "rests.32nd":
+                return -1;
+            case "rests.64th":
+                return -1;
+            default:
+                return 0;
+        }
+    };
+};
+//    abc_graphelements.js: All the drawable and layoutable datastructures to be printed by ABCXJS.write.Printer
+//    Copyright (C) 2010 Gregory Dyke (gregdyke at gmail dot com)
+//
+//    This program is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+//
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+//
+//    You should have received a copy of the GNU General Public License
+//    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+/*global window, ABCXJS */
+
+if (!window.ABCXJS)
+    window.ABCXJS = {};
+
+if (!window.ABCXJS.write)
+    window.ABCXJS.write = {};
+
+ABCXJS.write.StaffGroupElement = function() {
+    this.voices = [];
+};
+
+ABCXJS.write.StaffGroupElement.prototype.addVoice = function( voice ) {
+    this.voices[this.voices.length] = voice;
+};
+
+ABCXJS.write.StaffGroupElement.prototype.finished = function() {
+    for (var i = 0; i < this.voices.length; i++) {
+        if (!this.voices[i].layoutEnded())
+            return false;
+    }
+    return true;
+};
+
+ABCXJS.write.StaffGroupElement.prototype.layout = function(spacing, printer, debug) {
+    this.spacingunits = 0; // number of times we will have ended up using the spacing distance (as opposed to fixed width distances)
+    this.minspace = 1000; // a big number to start off with - used to find out what the smallest space between two notes is -- GD 2014.1.7
+    var x = printer.paddingleft;
+
+    // find out how much space will be taken up by voice headers
+    var voiceheaderw = 0;
+    for (var i = 0; i < this.voices.length; i++) {
+        if (this.voices[i].header) {
+            //FLAVIO fixme: obter a largura real do texto - text.getBBox().width
+            voiceheaderw = Math.max(voiceheaderw, this.voices[i].header.length *5+10);
+        }
+    }
+    x += voiceheaderw + (voiceheaderw? printer.paddingleft:0); // 10% of 0 is 0
+    this.startx = x;
+
+    var currentduration = 0;
+    if (debug)
+        waterbug.log("init layout");
+    for (i = 0; i < this.voices.length; i++) {
+        this.voices[i].beginLayout(x);
+        for (b = 0; b < this.voices[i].beams.length; b++) {
+            for (be = 0; be < this.voices[i].beams[b].elems.length; be++) {
+                var elem = this.voices[i].beams[b].elems[be];
+                this.voices[i].stave.highest = Math.max(elem.top, this.voices[i].stave.highest);
+                this.voices[i].stave.lowest = Math.min(elem.bottom-2, this.voices[i].stave.lowest);
+            }
+        }
+    }
+
+    var c = 0;
+    while (!this.finished()) {
+        
+        if( c++ > 1000 ) {
+            alert( 'não termina!' );
+        }
+        
+        // find first duration level to be laid out among candidates across voices
+
+        currentduration = null; // candidate smallest duration level
+        for (i = 0; i < this.voices.length; i++) {
+            if (!this.voices[i].layoutEnded() && (!currentduration || this.voices[i].getDurationIndex() < currentduration))
+                currentduration = this.voices[i].getDurationIndex();
+        }
+        if (debug)
+            waterbug.log("currentduration: ", currentduration);
+
+
+        // isolate voices at current duration level
+        var currentvoices = [];
+        var othervoices = [];
+        for (i = 0; i < this.voices.length; i++) {
+            if (this.voices[i].getDurationIndex() !== currentduration) {
+                othervoices.push(this.voices[i]);
+                //waterbug.log("out: voice ",i);
+            } else {
+                currentvoices.push(this.voices[i]);
+                if (debug)
+                    waterbug.log("in: voice ", i);
+            }
+        }
+
+        // among the current duration level find the one which needs starting furthest right
+        var spacingunit = 0; // number of spacingunits coming from the previously laid out element to this one
+        var spacingduration = 0;
+        for (i = 0; i < currentvoices.length; i++) {
+            if (currentvoices[i].getNextX() > x) {
+                x = currentvoices[i].getNextX();
+                var sd = currentvoices[i].spacingduration;
+                spacingunit = currentvoices[i].getSpacingUnits();
+                // arredonda para zero os numeros muito pequenos - evita erros de NaN em operações posteriores
+                spacingduration = Math.abs(sd) < 0.001 ? Math.round(sd) : sd;
+            }
+        }
+        this.spacingunits += spacingunit;
+        this.minspace = Math.min(this.minspace, spacingunit);
+
+        for (i = 0; i < currentvoices.length; i++) {
+            var voicechildx = currentvoices[i].layoutOneItem(x, spacing );
+            var dx = voicechildx - x;
+            if (dx > 0) {
+                x = voicechildx; //update x
+                for (var j = 0; j < i; j++) { // shift over all previously laid out elements
+                    currentvoices[j].shiftRight(dx);
+                }
+            }
+        }
+
+        // remove the value of already counted spacing units in other voices (e.g. if a voice had planned to use up 5 spacing units but is not in line to be laid out at this duration level - where we've used 2 spacing units - then we must use up 3 spacing units, not 5)
+        for (i = 0; i < othervoices.length; i++) {
+            othervoices[i].spacingduration -= spacingduration;
+            othervoices[i].updateNextX(x, spacing); // adjust other voices expectations
+        }
+
+        // update indexes of currently laid out elems
+        for (i = 0; i < currentvoices.length; i++) {
+            var voice = currentvoices[i];
+            voice.updateIndices();
+        }
+    } // finished laying out
+
+
+    // find the greatest remaining x as a base for the width
+    for (i = 0; i < this.voices.length; i++) {
+        if (this.voices[i].getNextX() > x) {
+            x = this.voices[i].getNextX();
+            spacingunit = this.voices[i].getSpacingUnits();
+        }
+    }
+    this.spacingunits += spacingunit;
+    this.w = x;
+
+    for (i = 0; i < this.voices.length; i++) {
+        this.voices[i].w = this.w;
+    }
+};
+
+ABCXJS.write.StaffGroupElement.prototype.calcShiftAbove = function(voz) {
+  var abv = Math.max( voz.stave.highest, ABCXJS.write.spacing.TOPNOTE) - ABCXJS.write.spacing.TOPNOTE;
+  return (abv+2) * ABCXJS.write.spacing.STEP;
+};
+
+ABCXJS.write.StaffGroupElement.prototype.calcHeight = function(voz, hideLyrics) {
+    // calculo da altura da pauta + uma pequena folga
+    var h = (3+voz.stave.highest-voz.stave.lowest) * ABCXJS.write.spacing.STEP;
+
+    // inclui espaço para as linhas de texto - se existirem e estiverem visiveis
+    if( ! hideLyrics )
+        h += 15 * voz.stave.lyricsRows;
+
+    return h;
+};
+
+ABCXJS.write.StaffGroupElement.prototype.draw = function(printer, groupNumber) {
+    
+    var height = 0;
+    var shiftabove = 0;
+    var y =  printer.y;
+    var yi = printer.y;
+    
+    // posiciona cada pauta do grupo e determina a altura final da impressão
+    for (var i = 0; i < this.voices.length; i++) {
+
+        var h = 0;
+        
+        if( this.voices[i].stave.lyricsRows === 0 )
+            this.voices[i].stave.lowest -=2;
+        
+        shiftabove = this.calcShiftAbove( this.voices[i] );
+        
+        if( this.voices[i].duplicate ) {
+            
+            var above = this.voices[i-1].stave.y - this.voices[i-1].stave.top;
+            var lastH = this.voices[i-1].stave.bottom - this.voices[i-1].stave.top;
+
+            this.voices[i].stave.top = this.voices[i-1].stave.top;
+            
+            if( shiftabove > above ) {
+                this.voices[i-1].stave.y += (shiftabove-above);
+            }
+
+            this.voices[i].stave.y = this.voices[i-1].stave.y;
+            
+            var x = Math.min(this.voices[i].stave.lowest,this.voices[i-1].stave.lowest);
+            this.voices[i].stave.lowest = x;
+            this.voices[i-1].stave.lowest = x;
+
+            var x = Math.max(this.voices[i].stave.highest,this.voices[i-1].stave.highest);
+            this.voices[i].stave.highest = x;
+            this.voices[i-1].stave.highest = x;
+            
+            h = this.calcHeight(this.voices[i]);
+
+            if( h > lastH ) {
+                height += (h-lastH);
+                y += (h-lastH);
+            }
+            
+            this.voices[i-1].stave.bottom = y;
+            this.voices[i].stave.bottom = y;
+           
+        } else {
+            
+            if (groupNumber > 0 && i === 0 && this.voices[i].stave.subtitle) {
+                y += 5 ;
+            }
+
+            h = this.calcHeight(this.voices[i], printer.currentTune.formatting.hideLyrics);
+
+            this.voices[i].stave.top = y;
+            this.voices[i].stave.y = y + shiftabove;
+
+            height += h;
+            y += h;
+            
+            this.voices[i].stave.bottom = y;
+        }
+    }
+    
+    // verifica se deve iniciar nova pagina
+    var nexty = printer.y + height + printer.staffsep ; 
+    if( nexty >= printer.estimatedPageLength )  {
+        printer.skipPage();
+    } else  if (groupNumber > 0) {
+     // ou espaco entre os grupos de pautas
+      printer.y += printer.staffsep; 
+    }
+    
+    var delta = printer.y - yi; 
+
+    // ajusta a grupo para a nova posição
+    if( delta !== 0 ) {
+        for (var i = 0; i < this.voices.length; i++) {
+            this.voices[i].stave.bottom += delta;
+            this.voices[i].stave.top += delta;
+            this.voices[i].stave.y += delta;
+        }    
+    }
+    
+    // imprime a pauta
+    for (i = 0; i < this.voices.length; i++) {
+        if (this.voices[i].stave.numLines === 0 || this.voices[i].duplicate)
+            continue;
+        printer.y = this.voices[i].stave.y;
+        if( typeof(debug) !== 'undefined' && debug ) {
+          printer.printDebugLine(this.startx, this.w, this.voices[i].stave.y, "#ff0000"); 
+          printer.printDebugMsg( this.startx-5, this.voices[i].stave.y, 'y' );
+          printer.printDebugLine(this.startx, this.w, this.voices[i].stave.top, "#00ff00"); 
+          printer.printDebugMsg( this.startx-5, this.voices[i].stave.top, 'top' );
+          printer.printDebugLine(this.startx, this.w, this.voices[i].stave.bottom, "#00ff00"); 
+          printer.printDebugMsg( this.startx+50, this.voices[i].stave.bottom, 'bottom' );
+          printer.printDebugLine(this.startx, this.w, printer.calcY(this.voices[i].stave.highest), "#0000ff"); 
+          printer.printDebugMsg( this.w-50, printer.calcY(this.voices[i].stave.highest), 'highest' );
+          printer.printDebugLine(this.startx, this.w, printer.calcY(this.voices[i].stave.lowest), "#0000ff"); 
+          printer.printDebugMsg( this.w-50, printer.calcY(this.voices[i].stave.lowest), 'lowest' );
+        }  
+        printer.printStave(this.startx, this.w-1, this.voices[i].stave);
+    }
+    
+    for (i = 0; i < this.voices.length; i++) {
+        if (groupNumber > 0 && i === 0 && this.voices[i].stave.subtitle) {
+            printer.y = this.voices[i].stave.top - 18;
+            printer.printSubtitleLine(this.voices[i].stave.subtitle);
+        }
+        //if(this.voices[i].stave.clef.type === 'accordionTab') // flavio - implementar impressão seletiva da pauta
+        this.voices[i].draw(printer);
+    }
+
+    if (this.voices.length > 0) {
+        var top = this.voices[0].stave.y;
+        var clef = this.voices[this.voices.length - 1].stave.clef.type;
+        var bottom = printer.calcY(clef==="accordionTab"?0:2);
+        printer.printBar(this.startx, 0.6, top, bottom, false);
+        printer.printBar(this.w-1, 0.6, top, bottom, false);
+        if (this.voices.length > 1)  {
+            printer.paper.printBrace(this.startx-10, top-10, bottom+10);  
+        }
+    }
+    // registra a posição do staffgroup e sua altura para uso posterior, fazendo scroll durante a execução do MIDI.
+    this.top = yi+delta +printer.totalY;
+    this.height = height;
+    
+    // nova posição da impressora
+    printer.y = yi+ delta + height; 
+    
+};
+
+ABCXJS.write.VoiceElement = function(voicenumber, staffnumber, abcstaff) {
+    this.children = [];
+    this.fingers = [];
+    this.beams = [];
+    this.otherchildren = []; // ties, slurs, triplets
+    this.w = 0;
+    this.duplicate = false;
+    this.voicenumber = voicenumber; //number of the voice on a given stave (not staffgroup)
+    this.staffnumber = staffnumber; // number of the staff in the staffgroup
+    this.voicetotal = abcstaff.voices.length;
+    this.stem = abcstaff.stem[voicenumber];
+    this.stave = {
+        y: 0
+       ,top: 0
+       ,bottom: 0
+       ,clef: abcstaff.clef
+       ,subtitle: abcstaff.subtitle
+       ,lyricsRows: abcstaff.lyricsRows
+       ,lowest: (abcstaff.clef.type === "accordionTab" ) ? -2 : 0
+       ,highest: (abcstaff.clef.type === "accordionTab" ) ? 21.5 : 10
+       ,numLines: (abcstaff.clef.type === "accordionTab" ) ? 4 : abcstaff.clef.staffLines || 5
+    };
+};
+
+ABCXJS.write.VoiceElement.prototype.addChild = function(child) {
+    this.children[this.children.length] = child;
+    // FINGERS - Parte I
+    // o parse do dedilhado foi feito nos moldes da letra (lyrics)
+    // porém agora, removo os elementos de dedilhados do padrão original e crio uma estrutura separada da voz
+    for (i=0; i<child.children.length; i++) {
+        if(child.children[i].type === 'fingering'){
+            var relativeChild =  child.children[i] ;
+            this.fingers[this.fingers.length] = relativeChild ;
+            child.children.splice(i,1);
+        }
+    }
+};
+
+ABCXJS.write.VoiceElement.prototype.addOther = function(child) {
+    if (child instanceof ABCXJS.write.BeamElem) {
+        this.beams.push(child);
+    } else {
+        this.otherchildren.push(child);
+    }
+};
+
+ABCXJS.write.VoiceElement.prototype.updateIndices = function() {
+    if (!this.layoutEnded()) {
+        this.durationindex += this.children[this.i].duration;
+        if (this.children[this.i].duration === 0)
+            this.durationindex = Math.round(this.durationindex * 64) / 64; // everytime we meet a barline, do rounding to nearest 64th
+        this.i++;
+    }
+};
+
+ABCXJS.write.VoiceElement.prototype.layoutEnded = function() {
+    return (this.i >= this.children.length);
+};
+
+ABCXJS.write.VoiceElement.prototype.getDurationIndex = function() {
+    return this.durationindex - (this.children[this.i] && (this.children[this.i].duration > 0) ? 0 : 0.0000005); // if the ith element doesn't have a duration (is not a note), its duration index is fractionally before. This enables CLEF KEYSIG TIMESIG PART, etc. to be laid out before we get to the first note of other voices
+};
+
+// number of spacing units expected for next positioning
+ABCXJS.write.VoiceElement.prototype.getSpacingUnits = function() {
+    return (this.minx < this.nextx) ? Math.sqrt(this.spacingduration * 8) : 0; // we haven't used any spacing units if we end up using minx
+};
+
+//
+ABCXJS.write.VoiceElement.prototype.getNextX = function() {
+    return Math.max(this.minx, this.nextx);
+};
+
+ABCXJS.write.VoiceElement.prototype.beginLayout = function(startx) {
+    this.i = 0;
+    this.durationindex = 0;
+    this.ii = this.children.length;
+    this.startx = startx;
+    this.minx = startx; // furthest left to where negatively positioned elements are allowed to go
+    this.nextx = startx; // x position where the next element of this voice should be placed assuming no other voices and no fixed width constraints
+    this.spacingduration = 0; // duration left to be laid out in current iteration (omitting additional spacing due to other aspects, such as bars, dots, sharps and flats)
+};
+
+// Try to layout the element at index this.i
+// x - position to try to layout the element at
+// spacing - base spacing
+// can't call this function more than once per iteration
+ABCXJS.write.VoiceElement.prototype.layoutOneItem = function(x, spacing) {
+    var child = this.children[this.i];
+    if (!child)
+        return 0;
+    var er = x - this.minx; // available extrawidth to the left
+    if (er < child.getExtraWidth()) { // shift right by needed amount
+        x += child.getExtraWidth() - er;
+    }
+    child.x = x; // place child at x
+
+    this.spacingduration = child.duration;
+    //update minx
+    this.minx = x + child.getMinWidth(); // add necessary layout space
+    if (this.i !== this.ii - 1)
+        this.minx += child.minspacing; // add minimumspacing except on last elem
+
+    this.updateNextX(x, spacing);
+
+    // contribute to staff y position
+    this.stave.highest = Math.max(child.top, this.stave.highest);
+    this.stave.lowest = Math.min(child.bottom, this.stave.lowest);
+
+    return x; // where we end up having placed the child
+};
+
+// call when spacingduration has been updated
+ABCXJS.write.VoiceElement.prototype.updateNextX = function(x, spacing) {
+    var temp = x + (spacing * Math.sqrt(this.spacingduration * 8));
+    // isso resolve um problema que apareceu no chrome 71.0.3578.98, mas não sei o impacto de retornar 0.
+    this.nextx = isNaN(temp)? 0: temp;
+};
+
+ABCXJS.write.VoiceElement.prototype.shiftRight = function(dx) {
+    var child = this.children[this.i];
+    if (!child)
+        return;
+    child.x += dx;
+    this.minx += dx;
+    this.nextx += dx;
+};
+
+ABCXJS.write.VoiceElement.prototype.draw = function(printer) {
+    var ve = this;
+    var width = ve.w - 1;
+    printer.y = ve.stave.y;
+    
+    if (this.header) { // print voice name
+        var headerY = (ve.stave.clef.type!=='accordionTab'? printer.calcY(6) : ve.stave.y ) +3;
+        var headerX = printer.paddingleft;
+        printer.printText(headerX, headerY,  this.header, 'abc_voice_header', 'start' );
+    }
+    
+    // beams must be drawn first for proper printing of triplets, slurs and ties.
+    for (var i = 0; i < this.beams.length; i++) {
+        this.beams[i].draw(printer ); 
+    };
+
+    // bars, notes, stems, etc
+    for (var i = 0; i < this.children.length; i++) {
+        this.children[i].draw(printer, ve.stave);
+    }
+    
+    // tie arcs, endings, decorations, etc..
+    for (var i = 0; i < this.otherchildren.length; i++) {
+        this.otherchildren[i].draw(printer, ve.startx + 10, width, ve.stave, ve.staffnumber, ve.voicenumber );
+    };
+
+};
+
+// duration - actual musical duration - different from notehead duration in triplets. 
+// refer to abcelem to get the notehead duration
+// minspacing - spacing which must be taken on top of the width defined by the duration
+ABCXJS.write.AbsoluteElement = function(abcelem, duration, minspacing) {
+    this.abcelem = abcelem;
+    this.duration = duration;
+    this.minspacing = minspacing || 0;
+    this.x = 0;
+    this.children = [];
+    this.heads = [];
+    this.extra = [];
+    this.extraw = 0;
+    this.decs = [];
+    this.w = 0;
+    this.right = [];
+    this.invisible = false;
+    this.bottom = 7;
+    this.top = 7;
+};
+
+ABCXJS.write.AbsoluteElement.prototype.getMinWidth = function() {
+    // absolute space taken to the right of the note
+    return this.w;
+};
+
+ABCXJS.write.AbsoluteElement.prototype.getExtraWidth = function() {
+    // space needed to the left of the note
+    return -this.extraw;
+};
+
+ABCXJS.write.AbsoluteElement.prototype.addExtra = function(extra) {
+    if (extra.dx < this.extraw)
+        this.extraw = extra.dx;
+    this.extra[this.extra.length] = extra;
+    this.addChild(extra);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.addHead = function(head) {
+    if (head.dx < this.extraw)
+        this.extraw = head.dx;
+    this.heads[this.heads.length] = head;
+    this.addRight(head);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.addRight = function(right) {
+    if (right.dx + right.w > this.w)
+        this.w = right.dx + right.w;
+    this.right[this.right.length] = right;
+    this.addChild(right);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.addChild = function(child) {
+    child.parent = this;
+    this.children[this.children.length] = child;
+    this.pushTop(child.top);
+    this.pushBottom(child.bottom);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.pushTop = function(top) {
+    this.top = Math.max(top, this.top);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.pushBottom = function(bottom) {
+    this.bottom = Math.min(bottom, this.bottom);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.draw = function(printer, staveInfo ) {
+    
+    if (this.invisible) return;
+
+    var l = 0;
+    
+    this.elemset = {};// printer.paper.set();
+    
+    // imprimir primeiro ledger e mante-los fora do grupo de selecionaveis
+    for (var i = 0; i < this.children.length; i++) {
+        //this.elemset.push(this.children[i].draw(printer, this.x, staveInfo ));
+        if ( this.children[i].type === 'ledger' || this.children[i].type === 'part' ) {
+            this.children[i].draw(printer, this.x, staveInfo );
+        } else {
+            l++; // count notes, bars, etc
+        }
+    }
+    
+    if( l > 0 ){
+        printer.beginGroup(this);
+    }
+    
+    for (var i = 0; i < this.children.length; i++) {
+        if ( this.children[i].type !== 'ledger' && this.children[i].type !== 'part' ) {
+            this.children[i].draw(printer, this.x, staveInfo );
+        }
+    }
+    
+    if( l > 0 ){
+        printer.endGroup();
+    }
+    
+    this.abcelem.parent = this; 
+    this.abcelem.parent.staffGroup = printer.staffgroups.length; // indica em qual staff group este abc elem vai estar
+                                                                 // lembrando que o staffgroup sera incluido mais adiante.
+    
+};
+/*
+var svgns = "http://www.w3.org/2000/svg";
+for (var x = 0; x < 5000; x += 50) {
+    for (var y = 0; y < 3000; y += 50) {
+        var rect = document.createElementNS(svgns, 'rect');
+        rect.setAttributeNS(null, 'x', x);
+        rect.setAttributeNS(null, 'y', y);
+        rect.setAttributeNS(null, 'height', '50');
+        rect.setAttributeNS(null, 'width', '50');
+        rect.setAttributeNS(null, 'fill', '#'+Math.round(0xffffff * Math.random()).toString(16));
+        document.getElementById('svgOne').appendChild(rect);
+
+  var translate = d3.transform(d3.select(this.parentNode).attr("transform")).translate;
+        var dataset = [1,2,3,4]                                    // HERE
+        vis.selectAll("line")                                      // HERE
+            .data(dataset)                                 // HERE
+            .enter()                                       // HERE
+            .append("line")                                // HERE
+            .attr("x1", translate[0])                            // HERE'S THE PROBLEM FOR PERRY
+            .attr("y1", translate[1])   
+
+ */
+
+ABCXJS.write.AbsoluteElement.prototype.setMouse = function(printer) {
+    var self = this;
+    this.svgElem = document.getElementById(self.gid);
+    
+    if(ABCXJS.write.color.useTransparency) {
+        try {
+            var svgns = "http://www.w3.org/2000/svg";
+
+            var bounds = this.svgElem.getBBox();
+            var rect = document.createElementNS(svgns, 'rect');
+                rect.setAttributeNS(null, 'x', bounds.x.toFixed(1)-1);
+                rect.setAttributeNS(null, 'y', bounds.y.toFixed(1)-1);
+                rect.setAttributeNS(null, 'height', bounds.height.toFixed(1)+2);
+                rect.setAttributeNS(null, 'width', bounds.width.toFixed(1)+2);
+                rect.setAttributeNS(null, 'fill', 'none' );
+
+            this.svgElem.appendChild(rect);
+            this.svgArea = rect;
+        } catch( e ) {
+            // Firefox dies if svgElem is not Visible
+        }
+    }    
+    
+    this.svgElem.onmouseover =  function() {self.highlight(true);};
+    this.svgElem.onmouseout =  function() {self.unhighlight(true);};
+    this.svgElem.onclick =  function() {printer.notifyClearNSelect(self, true);};
+ };
+
+ABCXJS.write.AbsoluteElement.prototype.highlight = function(keepState) {
+    if(!this.svgElem) return;
+    if(keepState) this.svgElem.prevFill = this.svgElem.style.fill;
+    this.svgElem.style.setProperty( 'fill', ABCXJS.write.color.highLight );
+    (this.svgArea) && this.svgArea.style.setProperty( 'fill', ABCXJS.write.color.highLight );
+    (this.svgArea) && this.svgArea.style.setProperty( 'fill-opacity', '0.15' );
+};
+
+ABCXJS.write.AbsoluteElement.prototype.unhighlight = function(keepState) {
+    if(!this.svgElem) return;
+    var fill = (keepState && this.svgElem.prevFill ) ? this.svgElem.prevFill : ABCXJS.write.color.unhighLight;
+    this.svgElem.style.setProperty( 'fill', fill );
+    (this.svgArea) && this.svgArea.style.setProperty( 'fill-opacity', '0' );
+};
+
+
+ABCXJS.write.RelativeElement = function(c, dx, w, pitch, opt) {
+    opt = opt || {};
+    this.x = 0;
+    this.c = c;      // character or path or string
+    this.dx = dx;    // relative x position
+    this.w = w;      // minimum width taken up by this element (can include gratuitous space)
+    this.pitch = pitch; // relative y position by pitch
+    this.type = opt.type || "symbol"; // cheap types.
+    this.pitch2 = opt.pitch2;
+    this.linewidth = opt.linewidth;
+    this.attributes = opt.attributes; // only present on textual elements
+    this.top = pitch + ((opt.extreme === "above") ? 7 : 0);
+    this.bottom = pitch - ((opt.extreme === "below") ? 7 : 0);
+};
+
+ABCXJS.write.RelativeElement.prototype.draw = function(printer, x, staveInfo ) {
+
+    this.x = x + this.dx;
+
+    switch (this.type) {
+      
+        case "symbol":
+            if (this.c === null)
+                return null;
+            this.graphelem = printer.printSymbol(this.x, this.pitch, this.c);
+            break;
+        case "debug":
+            this.graphelem = printer.printDebugMsg(this.x, staveInfo.highest+2, this.c);
+            break;
+        case "fingering":
+            this.graphelem = printer.printFingering(this.x, staveInfo, this.c);
+            break;
+        case "lyrics":
+            this.graphelem = printer.printLyrics(this.x, staveInfo, this.c);
+            break;
+        case "barnumber":
+            this.graphelem = printer.printText(this.x, this.pitch, this.c, 'abc_ending', 'middle');
+            break
+        case "part":
+            this.graphelem = printer.printText(this.x, this.pitch, this.c, 'abc_subtitle');
+            break;
+        case "text":
+            this.graphelem = printer.printText(this.x, this.pitch, this.c, 'abc_text');
+            break;
+        case "tabText":
+            this.graphelem = printer.printTabText(this.x, this.pitch, this.c);
+            break;
+        case "tabText2":
+            this.graphelem = printer.printTabText2(this.x, this.pitch, this.c);
+            break;
+        case "tabText3":
+            this.graphelem = printer.printTabText3(this.x, this.pitch, this.c);
+            break;
+        case "bar":
+            this.graphelem = printer.printBar(this.x, this.linewidth, printer.calcY(this.pitch), printer.calcY(this.pitch2), true);
+            break;
+        case "stem":
+            this.drawStem(printer);
+            //this.graphelem = printer.printStem(this.x, this.linewidth, printer.calcY(this.pitch), printer.calcY(this.pitch2));
+            break;
+        case "ledger":
+            this.graphelem = printer.printLedger(this.x, this.x + this.w, this.pitch);
+            break;
+    }
+    
+    return this.graphelem;
+};
+
+ABCXJS.write.RelativeElement.prototype.drawStem = function( printer ) {
+    var beam = this.parent.beam;
+    var abcelem = this.parent.abcelem;
+    if( beam ) { // under the beam, calculate new size for the stem
+        if (abcelem.rest) return;
+        var i = this.parent.beamId; 
+        var furthesthead = beam.elems[i].heads[(beam.asc) ? 0 : beam.elems[i].heads.length - 1];
+        var ovaldelta = (beam.isgrace) ? 1 / 3 : 1 / 5;
+        var pitch = furthesthead.pitch + ((beam.asc) ? ovaldelta : -ovaldelta);
+        var y = printer.calcY(pitch);
+        var x = furthesthead.x + ((beam.asc) ? furthesthead.w : 0);
+        var bary = beam.getBarYAt(x);
+        var dx = (beam.asc) ? -0.6 : 0.6;
+        printer.printStem(x, dx, y, bary);        
+    } else {
+        this.graphelem = printer.printStem(this.x, 0.6*this.linewidth/*fixme: mudar linew para 0.6*/, printer.calcY(this.pitch), printer.calcY(this.pitch2));
+    }
+};
+
+ABCXJS.write.TieElem = function(anchor1, anchor2, above, forceandshift) {
+    this.anchor1 = anchor1; // must have a .x and a .pitch, and a .parent property or be null (means starts at the "beginning" of the line - after keysig)
+    this.anchor2 = anchor2; // must have a .x and a .pitch property or be null (means ends at the end of the line)
+    this.above = above; // true if the arc curves above
+    this.force = forceandshift; // force the arc curve, regardless of beaming if true
+    // move by +7 "up" by -7 if "down"
+};
+
+ABCXJS.write.TieElem.prototype.draw = function(printer, linestartx, lineendx, staveInfo) {
+
+    var startpitch;
+    var endpitch;
+
+    if (this.startlimitelem) {
+        linestartx = this.startlimitelem.x + this.startlimitelem.w;
+    }
+
+    if (this.endlimitelem) {
+        lineendx = this.endlimitelem.x;
+    }
+    // PER: We might have to override the natural slur direction if the first and last notes are not in the
+    // save direction. We always put the slur up in this case. The one case that works out wrong is that we always
+    // want the slur to be up when the last note is stem down. We can tell the stem direction if the top is
+    // equal to the pitch: if so, there is no stem above it.
+    if (!this.force && this.anchor2 && this.anchor2.pitch === this.anchor2.top)
+        this.above = true;
+
+    if (this.anchor1) {
+        linestartx = this.anchor1.x;
+        startpitch = this.above ? this.anchor1.highestVert : this.anchor1.pitch;
+        if (!this.anchor2) {
+            endpitch = this.above ? this.anchor1.highestVert : this.anchor1.pitch;
+        }
+    }
+
+    if (this.anchor2) {
+        lineendx = this.anchor2.x;
+        endpitch = this.above ? this.anchor2.highestVert : this.anchor2.pitch;
+        if (!this.anchor1) {
+            startpitch = this.above ? this.anchor2.highestVert : this.anchor2.pitch;
+        }
+    }
+
+    printer.printTieArc(linestartx, lineendx, startpitch, endpitch, this.above);
+
+};
+
+ABCXJS.write.DynamicDecoration = function(anchor, dec) {
+    this.anchor = anchor;
+    this.dec = dec;
+};
+
+ABCXJS.write.DynamicDecoration.prototype.draw = function(printer, linestartx, lineendx, staveInfo) {
+    var ypos = staveInfo.lowest-1;
+    for( var r=0; r < this.dec.length; r ++ ) {
+        printer.printSymbol(this.anchor.x+r*10, ypos, this.dec[r]);
+    }    
+};
+
+ABCXJS.write.EndingElem = function(text, anchor1, anchor2) {
+    this.text = text; // text to be displayed top left
+    this.anchor1 = anchor1; // must have a .x property or be null (means starts at the "beginning" of the line - after keysig)
+    this.anchor2 = anchor2; // must have a .x property or be null (means ends at the end of the line)
+};
+
+ABCXJS.write.EndingElem.prototype.draw = function(printer, linestartx, lineendx, staveInfo, staffnumber, voicenumber) {
+    if(staffnumber > 0  || voicenumber > 0)  return;
+
+    var y = printer.calcY(staveInfo.highest + 5); // fixme: era 4
+
+    if (this.anchor1) {
+        linestartx = this.anchor1.x + this.anchor1.w;
+        printer.paper.printLine( linestartx, y, linestartx, y + 10 );
+        printer.paper.text( linestartx + 3, y + 9, this.text, 'abc_ending', 'start' );
+    }
+
+    if (this.anchor2) {
+        lineendx = this.anchor2.x;
+    }   
+    
+    printer.paper.printLine(linestartx, y, lineendx-5, y);  
+};
+
+ABCXJS.write.CrescendoElem = function(anchor1, anchor2, dir) {
+    this.anchor1 = anchor1; // must have a .x and a .parent property or be null (means starts at the "beginning" of the line - after keysig)
+    this.anchor2 = anchor2; // must have a .x property or be null (means ends at the end of the line)
+    this.dir = dir; // either "<" or ">"
+};
+
+ABCXJS.write.CrescendoElem.prototype.draw = function(printer, linestartx, lineendx, staveInfo) {
+    var ypos = printer.calcY(staveInfo.lowest - 1);
+
+    if (this.dir === "<") {
+        printer.paper.printLine(this.anchor1.x, ypos, this.anchor2.x, ypos-4);
+        printer.paper.printLine(this.anchor1.x, ypos, this.anchor2.x, ypos+4);
+    } else {
+        printer.paper.printLine(this.anchor1.x, ypos-4, this.anchor2.x, ypos);
+        printer.paper.printLine(this.anchor1.x, ypos+4, this.anchor2.x, ypos);
+    }
+};
+
+ABCXJS.write.TripletElem = function(tripletInfo, anchor1, anchor2, stemDir ) {
+    this.anchor1 = anchor1; // must have a .x and a .parent property or be null (means starts at the "beginning" of the line - after keysig)
+    this.anchor2 = anchor2; // must have a .x property or be null (means ends at the end of the line)
+    this.forceUp = stemDir==='up';
+    this.forceDown = stemDir==='down';
+    this.number = tripletInfo.num;
+    this.qtd_notes = tripletInfo.notes;
+    this.avgPitch = tripletInfo.avgPitch;
+    this.minPitch = 100;
+    this.maxPitch = -100;
+    this.asc = ! ( (this.forceUp || this.avgPitch <= 6 ) && (!this.forceDown) ); // hardcoded 6 is B
+    this.multiplier = tripletInfo.num === 2 ? 1.5 : (tripletInfo.num-1)/tripletInfo.num;
+    
+};
+
+ABCXJS.write.TripletElem.prototype.draw = function(printer, linestartx, lineendx, staveInfo) {
+    
+    if (this.anchor1 && this.anchor2) {
+
+        var maxslant = (this.qtd_notes? this.qtd_notes: this.number) / 2;
+        var slant = this.anchor1.parent.abcelem.averagepitch - this.anchor2.parent.abcelem.averagepitch;
+        var isFlat = true;
+        
+        if (isFlat ) {
+            slant = 0;
+        } else  {
+            slant = Math.min(slant,maxslant);
+            slant = Math.max(slant,-maxslant);
+        }
+
+        var ypos = Math.max( this.forceUp ? this.maxPitch+9 : (this.maxPitch >= 10 ? this.maxPitch + 3 : 13), 13) ;
+        var starty = printer.calcY(ypos + Math.floor(slant / 2));
+        var endy = printer.calcY(ypos + Math.floor(-slant / 2));
+
+        if (this.anchor1.parent.beam &&
+                this.anchor1.parent.beam === this.anchor2.parent.beam) {
+            var beam = this.anchor1.parent.beam;
+            this.asc = beam.asc;
+            ypos = beam.pos;
+        } else {
+            var y = printer.calcY(ypos);
+            var linestartx = this.anchor1.x -2;
+            var lineendx = this.anchor2.x + this.anchor2.w;
+            
+            //printer.paper.printLine(linestartx, starty+ (!this.asc? 0 : -5), linestartx, starty + (!this.asc? 5 : 0) );
+            //printer.paper.printLine(lineendx, endy+ (!this.asc? 0 : -5), lineendx, endy + (!this.asc? 5 : 0));
+
+            printer.paper.printLine(linestartx, starty+ (true? 0 : -5), linestartx, starty + (true? 5 : 0) );
+            printer.paper.printLine(lineendx, endy+ (true? 0 : -5), lineendx, endy + (true? 5 : 0));
+            
+            
+            //printer.paper.printLine(linestartx, y, (linestartx + lineendx) / 2 - 5, y);
+            //printer.paper.printLine((linestartx + lineendx) / 2 + 5, y, lineendx, y);
+            
+            printer.paper.printBeam( linestartx, starty, (linestartx + lineendx) / 2 - 5, y, (linestartx + lineendx) / 2 - 5, y+1, linestartx, starty+1 );
+            printer.paper.printBeam( (linestartx + lineendx) / 2 + 5, y, lineendx, endy, lineendx, endy+1, (linestartx + lineendx) / 2 + 5, y+1 );
+        }
+        
+        var ydelta = ypos + (beam ? ( this.asc ? 2 : -3.5 ) : -1 );
+        var xdelta = ( this.anchor1.x + this.anchor2.x + this.anchor1.w + (beam && this.asc ? this.anchor2.w : 0 ) - 2 ) / 2;
+        
+        printer.printText( xdelta, ydelta, this.number, 'abc_ending', "middle");
+
+    } else {
+        waterbug.log( 'Incomplete triplet' );
+    }
+};
+
+ABCXJS.write.BeamElem = function(type, flat) {
+    this.isflat = (flat);
+    this.isgrace = (type && type === "grace");
+    this.forceup = (type && type === "up");
+    this.forcedown = (type && type === "down");
+    this.elems = []; // all the ABCXJS.write.AbsoluteElements
+    this.total = 0;
+    this.dy = (this.asc) ? ABCXJS.write.spacing.STEP * 1.2 : -ABCXJS.write.spacing.STEP * 1.2;
+    if (this.isgrace)
+        this.dy = this.dy * 0.4;
+    this.allrests = true;
+};
+
+ABCXJS.write.BeamElem.prototype.add = function(abselem) {
+    var pitch = abselem.abcelem.averagepitch;
+    if (pitch === undefined)
+        return; // don't include elements like spacers in beams
+    this.allrests = this.allrests && abselem.abcelem.rest;
+    abselem.beam = this;
+    this.elems.push(abselem);
+    //var pitch = abselem.abcelem.averagepitch;
+    this.total += pitch; // TODO CHORD (get pitches from abselem.heads)
+    if (!this.min || abselem.abcelem.minpitch < this.min) {
+        this.min = abselem.abcelem.minpitch;
+    }
+    if (!this.max || abselem.abcelem.maxpitch > this.max) {
+        this.max = abselem.abcelem.maxpitch;
+    }
+};
+
+ABCXJS.write.BeamElem.prototype.average = function() {
+    try {
+        return this.total / this.elems.length;
+    } catch (e) {
+        return 0;
+    }
+};
+
+ABCXJS.write.BeamElem.prototype.calcDir = function() {
+    var average = this.average();
+    this.asc = (this.forceup || this.isgrace || average < 6) && (!this.forcedown); // hardcoded 6 is B
+    return this.asc;
+};
+
+ABCXJS.write.BeamElem.prototype.getBarYAt = function(x) {
+    return this.starty + (this.endy - this.starty) / (this.endx - this.startx) * (x - this.startx);
+};
+
+ABCXJS.write.BeamElem.prototype.draw = function(printer) {
+
+    if (this.elems.length === 0 || this.allrests)
+        return;
+    
+    var average = this.average();
+    var barpos = (this.isgrace) ? 5 : 7;
+    this.calcDir();
+
+    //PER: I just bumped up the minimum height for notes with descending stems to clear a rest in the middle of them.
+    var barminpos = this.asc ? 5 : 8;	
+    
+    this.pos = Math.round(this.asc ? Math.max(average + barpos, this.max + barminpos) : Math.min(average - barpos, this.min - barminpos));
+    
+    var maxslant = this.elems.length / 2;
+    var slant = this.elems[0].abcelem.averagepitch - this.elems[this.elems.length - 1].abcelem.averagepitch;
+    
+    if (this.isflat ) {
+        slant = 0;
+    } else  {
+        slant = Math.min(slant,maxslant);
+        slant = Math.max(slant,-maxslant);
+    }
+
+    this.starty = printer.calcY(this.pos + Math.floor(slant / 2));
+    this.endy = printer.calcY(this.pos + Math.floor(-slant / 2));
+   
+    var starthead = this.elems[0].heads[(this.asc) ? 0 : this.elems[0].heads.length - 1];
+    var endhead = this.elems[this.elems.length - 1].heads[(this.asc) ? 0 : this.elems[this.elems.length - 1].heads.length - 1];
+    this.startx = this.elems[0].x;
+    
+    if (this.asc)
+        this.startx += starthead.w - 0.6;
+    
+    this.endx = this.elems[this.elems.length - 1].x;
+    
+    if (this.asc)
+        this.endx += endhead.w;
+
+    // PER: if the notes are too high or too low, make the beam go down to the middle
+    if ( (this.asc && this.pos < 6) || (!this.asc && this.pos > 6) ){
+        this.pos = 6;
+        this.starty = printer.calcY(this.pos);
+        this.endy = printer.calcY(this.pos);
+    }
+    
+    printer.paper.printBeam(
+        this.startx, this.starty
+       ,this.startx, (this.starty + this.dy) 
+       ,this.endx, (this.endy + this.dy)
+       ,this.endx, this.endy
+       
+    );
+
+    
+    this.drawAuxBeams(printer);
+};
+
+ABCXJS.write.BeamElem.prototype.drawAuxBeams = function(printer) {
+    var auxbeams = [];  // auxbeam will be {x, y, durlog, single} auxbeam[0] should match with durlog=-4 (16th) (j=-4-durlog)
+    for (var i = 0, ii = this.elems.length; i < ii; i++) {
+        if (this.elems[i].abcelem.rest) continue;
+        var furthesthead = this.elems[i].heads[(this.asc) ? 0 : this.elems[i].heads.length - 1];
+        var x = this.elems[i].x + ((this.asc) ? furthesthead.w : 0);
+        var bary = this.getBarYAt(x);
+
+        var sy = (this.asc) ? 1.5 * ABCXJS.write.spacing.STEP : -1.5 * ABCXJS.write.spacing.STEP;
+        if (this.isgrace)
+            sy = sy * 2 / 3;
+        for (var durlog = ABCXJS.write.getDurlog(this.elems[i].abcelem.duration); durlog < -3; durlog++) { // get the duration via abcelem because of triplets
+            if (auxbeams[-4 - durlog]) {
+                auxbeams[-4 - durlog].single = false;
+            } else {
+                auxbeams[-4 - durlog] = {x: x + ((this.asc) ? -0.6 : 0), y: bary + sy * (-4 - durlog + 1),
+                    durlog: durlog, single: true};
+            }
+        }
+
+        for (var j = auxbeams.length - 1; j >= 0; j--) {
+            if (i === ii - 1 || ABCXJS.write.getDurlog(this.elems[i + 1].abcelem.duration) > (-j - 4)) {
+
+                var auxbeamendx = x;
+                var auxbeamendy = bary + sy * (j + 1);
+
+
+                if (auxbeams[j].single) {
+                    auxbeamendx = (i === 0) ? x + 5 : x - 5;
+                    auxbeamendy = this.getBarYAt(auxbeamendx) + sy * (j + 1);
+                }
+                // TODO I think they are drawn from front to back, hence the small x difference with the main beam
+                printer.paper.printBeam(auxbeams[j].x,auxbeams[j].y, auxbeamendx,auxbeamendy,auxbeamendx,(auxbeamendy + this.dy), auxbeams[j].x,(auxbeams[j].y + this.dy));
+                auxbeams = auxbeams.slice(0, j);
+            }
+        }
+    }
+};
+//    abc_layout.js: Creates a data structure suitable for printing a line of abc
+//    Copyright (C) 2010 Gregory Dyke (gregdyke at gmail dot com)
+//
+//    This program is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+//
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+//
+//    You should have received a copy of the GNU General Public License
+//    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+/*global window, ABCXJS */
+
+if (!window.ABCXJS)
+    window.ABCXJS = {};
+
+if (!window.ABCXJS.write)
+    window.ABCXJS.write = {};
+    
+window.ABCXJS.write.chartable = {rest:{0:"rests.whole", 1:"rests.half", 2:"rests.quarter", 3:"rests.8th", 4: "rests.16th",5: "rests.32nd", 6: "rests.64th", 7: "rests.128th"},
+		   note:{"-1": "noteheads.dbl", 0:"noteheads.whole", 1:"noteheads.half", 2:"noteheads.quarter", 3:"noteheads.quarter", 4:"noteheads.quarter", 5:"noteheads.quarter", 6:"noteheads.quarter"},
+		   uflags:{3:"flags.u8th", 4:"flags.u16th", 5:"flags.u32nd", 6:"flags.u64th"},
+		   dflags:{3:"flags.d8th", 4:"flags.d16th", 5:"flags.d32nd", 6:"flags.d64th"}};
+
+ABCXJS.write.getDuration = function(elem) {
+  var d = 0;
+  if (elem.duration) {
+    d = elem.duration;
+  }
+  return d;
+};
+
+ABCXJS.write.getDurlog = function(duration) {
+    // TODO-PER: This is a hack to prevent a Chrome lockup. Duration should have been defined already,
+    // but there's definitely a case where it isn't. [Probably something to do with triplets.]
+    if (duration === undefined) {
+        return 0;
+    }
+    return Math.floor(Math.log(duration)/Math.log(2));
+};
+
+ABCXJS.write.sortPitch = function (elem) {
+    var sorted;
+    do {
+        sorted = true;
+        for (var p = 0; p < elem.length - 1; p++) {
+            if (elem[p].pitch > elem[p + 1].pitch) {
+                sorted = false;
+                var tmp = elem[p];
+                elem[p] = elem[p + 1];
+                elem[p + 1] = tmp;
+            }
+        }
+    } while (!sorted);
+};
+
+
+ABCXJS.write.Layout = function(printer, bagpipes ) {
+  this.isBagpipes = bagpipes;
+  this.slurs = {};
+  this.ties = [];
+  this.slursbyvoice = {};
+  this.tiesbyvoice = {};
+  this.endingsbyvoice = {};
+  this.staffgroup = {};
+  this.tune = {};
+  this.tuneCurrLine = 0;
+  this.tuneCurrStaff = 0; // current staff number
+  this.tuneCurrVoice = 0; // current voice number on current staff
+  this.tripletmultiplier = 1;
+  this.printer = printer;	// TODO-PER: this is a hack to get access, but it tightens the coupling.
+  this.glyphs = printer.glyphs;
+};
+
+ABCXJS.write.Layout.prototype.getCurrentVoiceId = function() {
+  return "s"+this.tuneCurrStaff+"v"+this.tuneCurrVoice;
+};
+
+ABCXJS.write.Layout.prototype.pushCrossLineElems = function() {
+  this.slursbyvoice[this.getCurrentVoiceId()] = this.slurs;
+  this.tiesbyvoice[this.getCurrentVoiceId()] = this.ties;
+  this.endingsbyvoice[this.getCurrentVoiceId()] = this.partstartelem;
+};
+
+ABCXJS.write.Layout.prototype.popCrossLineElems = function() {
+  this.slurs = this.slursbyvoice[this.getCurrentVoiceId()] || {};
+  this.ties = this.tiesbyvoice[this.getCurrentVoiceId()] || [];
+  this.partstartelem = this.endingsbyvoice[this.getCurrentVoiceId()];
+};
+
+ABCXJS.write.Layout.prototype.getElem = function() {
+    if (this.currVoice.length <= this.pos)
+        return null;
+    return this.currVoice[this.pos];
+};
+
+ABCXJS.write.Layout.prototype.getNextElem = function() {
+    if (this.currVoice.length <= this.pos + 1)
+        return null;
+    return this.currVoice[this.pos + 1];
+};
+
+ABCXJS.write.Layout.prototype.isFirstVoice = function() {
+    return this.currVoice.firstVoice || false;
+};
+
+ABCXJS.write.Layout.prototype.isLastVoice = function() {
+    return this.currVoice.lastVoice || false;
+};
+
+ABCXJS.write.Layout.prototype.layoutABCLine = function( abctune, line, width ) {
+
+    this.tune = abctune;
+    this.tuneCurrLine = line;
+    this.staffgroup = new ABCXJS.write.StaffGroupElement();
+    this.width = width;
+
+    for (this.tuneCurrStaff = 0; this.tuneCurrStaff < this.tune.lines[this.tuneCurrLine].staffs.length; this.tuneCurrStaff++) {
+        var abcstaff = this.tune.lines[this.tuneCurrLine].staffs[this.tuneCurrStaff];
+        var header = "";
+        
+        if(!abcstaff) continue ;
+        
+        if (abcstaff.bracket)
+            header += "bracket " + abcstaff.bracket + " ";
+        if (abcstaff.brace)
+            header += "brace " + abcstaff.brace + " ";
+
+        for (this.tuneCurrVoice = 0; this.tuneCurrVoice < abcstaff.voices.length; this.tuneCurrVoice++) {
+            this.currVoice = abcstaff.voices[this.tuneCurrVoice];
+            this.voice = new ABCXJS.write.VoiceElement( this.tuneCurrVoice, this.tuneCurrStaff, abcstaff );
+            
+            if (this.tuneCurrVoice === 0) {
+                this.voice.barfrom = (abcstaff.connectBarLines === "start" || abcstaff.connectBarLines === "continue");
+                this.voice.barto = (abcstaff.connectBarLines === "continue" || abcstaff.connectBarLines === "end");
+            } else {
+                this.voice.duplicate = true; // barlines and other duplicate info need not be printed
+            }
+
+            if (abcstaff.clef.type !== "accordionTab") {
+                this.voice.addChild(this.printClef(abcstaff.clef));
+                (abcstaff.key) && this.voice.addChild(this.printKeySignature(abcstaff.key));
+                (abcstaff.meter) && this.voice.addChild(this.printTimeSignature(abcstaff.meter));
+                this.printABCVoice();
+            } else {
+                var p = new ABCXJS.tablature.Layout(this.tuneCurrVoice, this.tuneCurrStaff, abcstaff, this.glyphs, this.tune.formatting.restsInTab );
+                this.voice = p.printTABVoice(this.layoutJumpDecorationItem);
+            }
+            
+            if (abcstaff.title && abcstaff.title[this.tuneCurrVoice])
+                this.voice.header = abcstaff.title[this.tuneCurrVoice];
+            
+            this.staffgroup.addVoice(this.voice);
+        }
+    }
+
+    // FINGERS - Parte II
+    // a informação de dedilhado (fingering) esta disponível na primeira voz (treble - pode haver mais de uma)
+    // a cada nota, deve corresponder uma digital.
+    // a terceira voz, em geral é a da tablatura 
+    // busca-se aqui, mover a informação de dedilhado que foi informada na primeira voz para a voz da tablatura
+    if( this.staffgroup.voices[0].stave.clef.type === 'treble' &&  this.staffgroup.voices[0].fingers.length > 0 ) {
+        var fingers = this.staffgroup.voices[0].fingers;
+        var fingerIdx = 0;
+        if(this.staffgroup.voices[2].stave.clef.type === 'accordionTab') {
+            var voz = this.staffgroup.voices[2].children;
+            for (i=0; i<voz.length; i++) {
+                if(voz[i].abcelem.el_type === 'note'){
+                    //verificar se algum dos pitches, que não seja baixo, é do tipo 'tabText'[2|3]
+                    var pitches = voz[i].abcelem.pitches
+                    for (p=0; p<pitches.length; p++) {
+                        if(pitches[p].type.substr(0,7) === 'tabText' && pitches[p].c !== 'scripts.rarrow' && pitches[p].bass === undefined && fingerIdx < fingers.length ){
+                            voz[i].children[voz[i].children.length] = fingers[fingerIdx++];
+                            voz[i].children[voz[i].children.length-1].dx =-5;
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            // existe dedilhado mas não consegui tratar 
+            console.log('abc_layout: existe dedilhado mas não consegui tratar')
+        }
+    }
+
+    this.layoutStaffGroup();
+    
+    return this.staffgroup;
+};
+
+ABCXJS.write.Layout.prototype.layoutJumpDecorationItem = function(jumpDecorationItem, pitch) {
+    switch (jumpDecorationItem.type) {
+        case "coda":     return new ABCXJS.write.RelativeElement("scripts.coda", 0, 0, pitch + 1); 
+        case "segno":    return new ABCXJS.write.RelativeElement("scripts.segno", 0, 0, pitch + 1); 
+        case "fine":     return new ABCXJS.write.RelativeElement("it.Fine", -34, 34, pitch);
+        case "dacapo":   return new ABCXJS.write.RelativeElement("it.DC", -30, 30, pitch);
+        case "dacoda":   return new ABCXJS.write.RelativeElement("it.DaCoda", -30, 30, pitch);
+        case "dasegno":  return new ABCXJS.write.RelativeElement("it.DaSegno", -32, 32, pitch);
+        case "dcalfine": return new ABCXJS.write.RelativeElement("it.DCalFine", 25, -25, pitch);
+        case "dcalcoda": return new ABCXJS.write.RelativeElement("it.DCalCoda", 25, -25, pitch);
+        case "dsalfine": return new ABCXJS.write.RelativeElement("it.DSalFine", 25, -25, pitch);
+        case "dsalcoda": return new ABCXJS.write.RelativeElement("it.DSalCoda", 25, -25, pitch);
+    }
+        
+    return null;
+};
+
+ABCXJS.write.Layout.prototype.layoutStaffGroup = function() {
+    var newspace = ABCXJS.write.spacing.SPACEX;
+
+    for (var it = 0; it < 3; it++) { // TODO shouldn't need this triple pass any more
+        this.staffgroup.layout(newspace, this.printer, false);
+        if (this.tuneCurrLine && this.tuneCurrLine === this.tune.lines.length - 1 &&
+                this.staffgroup.w / this.width < 0.66 && !this.tune.formatting.stretchlast)
+            break; // don't stretch last line too much unless it is 1st
+        var relspace = this.staffgroup.spacingunits * newspace;
+        var constspace = this.staffgroup.w - relspace;
+        if (this.staffgroup.spacingunits > 0) {
+            newspace = (this.printer.width - constspace) / this.staffgroup.spacingunits;
+            if (newspace * this.staffgroup.minspace > 50) {
+                newspace = 50 / this.staffgroup.minspace;
+            }
+        }
+    }
+};
+
+ABCXJS.write.Layout.prototype.printABCVoice = function() {
+  this.popCrossLineElems();
+  this.stemdir = (this.isBagpipes)? "down" : this.voice.stem;
+  if (this.partstartelem) {
+    this.partstartelem = new ABCXJS.write.EndingElem("", null, null);
+    this.voice.addOther(this.partstartelem);
+  }
+  for (var slur in this.slurs) {
+    if (this.slurs.hasOwnProperty(slur)) {
+      this.slurs[slur]= new ABCXJS.write.TieElem(null, null, this.slurs[slur].above, this.slurs[slur].force);
+	this.voice.addOther(this.slurs[slur]);
+    }
+  }
+  for (var i=0; i<this.ties.length; i++) {
+    this.ties[i]=new ABCXJS.write.TieElem(null, null, this.ties[i].above, this.ties[i].force);
+    this.voice.addOther(this.ties[i]);
+  }
+
+  for (this.pos=0; this.pos<this.currVoice.length; this.pos++) {
+    var abselems = this.printABCElement();
+    for (i=0; i<abselems.length; i++) {
+      this.voice.addChild(abselems[i]);
+    }
+  }
+  this.pushCrossLineElems();
+};
+
+// return an array of ABCXJS.write.AbsoluteElement
+ABCXJS.write.Layout.prototype.printABCElement = function() {
+  var elemset = [];
+  var elem = this.getElem();
+  
+  switch (elem.el_type) {
+  case "note":
+    elemset = this.printBeam();
+    break;
+  case "bar":
+    elemset[0] = this.printBarLine(elem);
+    if (this.voice.duplicate) elemset[0].invisible = true;
+    break;
+  case "meter":
+    elemset[0] = this.printTimeSignature(elem);
+    if (this.voice.duplicate) elemset[0].invisible = true;
+    break;
+  case "clef":
+    elemset[0] = this.printClef(elem);
+    if (this.voice.duplicate) elemset[0].invisible = true;
+    break;
+  case "key":
+    elemset[0] = this.printKeySignature(elem);
+    if (this.voice.duplicate) elemset[0].invisible = true;
+    break;
+  case "part":
+    var abselem = new ABCXJS.write.AbsoluteElement(elem,0,0);
+    abselem.addChild(new ABCXJS.write.RelativeElement(elem.title, 0, 0, 18.5, {type:"part" })); 
+    elemset[0] = abselem;
+    break;
+  default: 
+    var abselem2 = new ABCXJS.write.AbsoluteElement(elem,0,0);
+    abselem2.addChild(new ABCXJS.write.RelativeElement("element type "+elem.el_type, 0, 0, 0, {type:"debug"}));
+    elemset[0] = abselem2;
+  }
+
+  return elemset;
+};
+
+ABCXJS.write.Layout.prototype.printBeam = function() {
+    var abselemset = [];
+
+    if (this.getElem().startBeam && !this.getElem().endBeam) {
+        
+        var beamelem = new ABCXJS.write.BeamElem(this.stemdir);
+        // PER: need two passes: the first one decides if the stems are up or down.
+        // TODO-PER: This could be more efficient.
+        var oldPos = this.pos;
+        var abselem;
+        while (this.getElem()) {
+            abselem = this.printNote(this.getElem(), true, true); // chamada 1
+            beamelem.add(abselem);
+            if (this.getElem().endBeam)
+                break;
+            this.pos++;
+        }
+        // tentativa de manter a haste na mesma direcao durante as ligaduras
+        var dir = this.lastTieStemDir? (this.lastTieStemDir==='up') : ( beamelem.calcDir() );
+        this.pos = oldPos;
+
+        beamelem = new ABCXJS.write.BeamElem(dir ? "up" : "down");
+        var oldDir = this.stemdir;
+        this.stemdir = dir ? "up" : "down";
+        var beamId =0;
+        while (this.getElem()) {
+            abselem = this.printNote(this.getElem(),true); // chamada 2
+            abselem.beamId = beamId++;
+            abselemset.push(abselem);
+            beamelem.add(abselem);
+            if (this.getElem().endBeam) {
+                break;
+            }
+            this.pos++;
+        }
+        this.stemdir = oldDir;
+        this.voice.addOther(beamelem);
+    } else {
+        abselemset[0] = this.printNote(this.getElem());
+    }
+    return abselemset;
+};
+
+ABCXJS.write.Layout.prototype.printNote = function(elem, nostem, dontDraw) { //stem presence: true for drawing stemless notehead
+    var notehead = null;
+    var grace = null;
+    this.roomtaken = 0; // room needed to the left of the note
+    this.roomtakenright = 0; // room needed to the right of the note
+    var dotshiftx = 0; // room taken by chords with displaced noteheads which cause dots to shift
+    var c = "";
+    var flag = null;
+    var additionalLedgers = []; // PER: handle the case of [bc'], where the b doesn't have a ledger line
+
+    var p, i, pp;
+    var width, p1, p2, dx;
+
+    var duration = ABCXJS.write.getDuration(elem);
+    
+    //PER: zero duration will draw a quarter note head.
+    if (duration === 0) {
+        duration = 0.25;
+        nostem = true;
+    }   
+    
+    var durlog = Math.floor(Math.log(duration) / Math.log(2));  //TODO use getDurlog
+    var dot = 0;
+
+    for (var tot = Math.pow(2, durlog), inc = tot / 2; tot < duration; dot++, tot += inc, inc /= 2)
+        ;
+
+    if (elem.startTriplet) {
+        
+        if( ! this.stemdir ) {
+            this.clearStem = true;
+            this.stemdir = elem.startTriplet.avgPitch < 6? 'up' : 'down';
+        }
+            
+        this.triplet = new ABCXJS.write.TripletElem( elem.startTriplet, null, null, this.stemdir ); 
+        this.tripletmultiplier = this.triplet.multiplier;
+    }
+
+    var abselem = new ABCXJS.write.AbsoluteElement(elem, duration * this.tripletmultiplier, 1);
+
+    if (elem.rest) {
+        var restpitch = 7;
+        if (this.stemdir === "down")
+            restpitch = 3;
+        if (this.stemdir === "up")
+            restpitch = 11;
+        switch (elem.rest.type) {
+            case "rest":
+                c = ABCXJS.write.chartable.rest[-durlog];
+                elem.averagepitch = restpitch;
+                elem.minpitch = restpitch;
+                elem.maxpitch = restpitch;
+                break;
+            case "invisible":
+            case "spacer":
+                c = "";
+        }
+        if (!dontDraw)
+            notehead = this.printNoteHead(abselem, c, {verticalPos: restpitch}, null, 0, -this.roomtaken, null, dot, 0, 1);
+        if (notehead)
+            abselem.addHead(notehead);
+        this.roomtaken += this.accidentalshiftx;
+        this.roomtakenright = Math.max(this.roomtakenright, this.dotshiftx);
+
+    } else {
+        ABCXJS.write.sortPitch(elem.pitches);
+
+        // determine averagepitch, minpitch, maxpitch and stem direction
+        var sum = 0;
+        var startsTie=false;
+        var endsTie=false;
+        for (p = 0, pp = elem.pitches.length; p < pp; p++) {
+            sum += elem.pitches[p].verticalPos;
+
+            //tentativa de garantir que as notas da ligadura usem hastes na mesma direcao
+            if(elem.pitches[p].startTie && !dontDraw) {
+                var startsTie=true;
+            }
+            if(elem.pitches[p].endTie && !dontDraw) {
+                var endsTie=true;
+            }
+
+        }
+        elem.averagepitch = sum / elem.pitches.length;
+        elem.minpitch = elem.pitches[0].verticalPos;
+        elem.maxpitch = elem.pitches[elem.pitches.length - 1].verticalPos;
+        var dir = this.stemdir? this.stemdir : ((elem.averagepitch >= 6) ? "down" : "up");
+
+        //tentativa de garantir que as notas da ligadura usem hastes na mesma direcao
+        if( startsTie ) {
+            this.lastTieStemDir = dir;
+        } else if( endsTie ) {
+            if ( this.lastTieStemDir  && this.lastTieStemDir != dir){
+                dir = this.lastTieStemDir;
+            }
+            delete this.lastTieStemDir;
+        }
+        
+        // determine elements of chords which should be shifted
+        for (p = (dir === "down") ? elem.pitches.length - 2 : 1; (dir === "down") ? p >= 0 : p < elem.pitches.length; p = (dir === "down") ? p - 1 : p + 1) {
+            var prev = elem.pitches[(dir === "down") ? p + 1 : p - 1];
+            var curr = elem.pitches[p];
+            var delta = (dir === "down") ? prev.pitch - curr.pitch : curr.pitch - prev.pitch;
+            if (delta <= 1 && !prev.printer_shift) {
+                curr.printer_shift = (delta) ? "different" : "same";
+                if (curr.verticalPos > 11 || curr.verticalPos < 1) {	// PER: add extra ledger line
+                    additionalLedgers.push(curr.verticalPos - (curr.verticalPos % 2));
+                }
+                if (dir === "down") {
+                    this.roomtaken = this.glyphs.getSymbolWidth(ABCXJS.write.chartable.note[-durlog]) + 2;
+                } else {
+                    dotshiftx = this.glyphs.getSymbolWidth(ABCXJS.write.chartable.note[-durlog]) + 2;
+                }
+            }
+        }
+
+        // The accidentalSlot will hold a list of all the accidentals on this chord. Each element is a vertical place,
+        // and contains a pitch, which is the last pitch that contains an accidental in that slot. The slots are numbered
+        // from closest to the note to farther left. We only need to know the last accidental we placed because
+        // we know that the pitches are sorted by now.
+        this.accidentalSlot = [];
+
+        for (p = 0; p < elem.pitches.length; p++) {
+
+            // vou retirar apenas flags
+            if (/*flavio*/ nostem || (dir === "down" && p !== 0) || (dir === "up" && p !== pp - 1)) { // not the stemmed elem of the chord
+                flag = null;
+            } else {
+                flag = ABCXJS.write.chartable[(dir === "down") ? "dflags" : "uflags"][-durlog];
+            }
+            
+            c = ABCXJS.write.chartable.note[-durlog];
+
+            // The highest position for the sake of placing slurs is itself if the slur is internal. It is the highest position possible if the slur is for the whole chord.
+            // If the note is the only one in the chord, then any slur it has counts as if it were on the whole chord.
+            elem.pitches[p].highestVert = elem.pitches[p].verticalPos;
+            var isTopWhenStemIsDown = (this.stemdir === "up" || dir === "up") && p === 0;
+            var isBottomWhenStemIsUp = (this.stemdir === "down" || dir === "down") && p === pp - 1;
+            if (!dontDraw && (isTopWhenStemIsDown || isBottomWhenStemIsUp)) { // place to put slurs if not already on pitches
+
+                if (elem.startSlur || pp === 1) {
+                    elem.pitches[p].highestVert = elem.pitches[pp - 1].verticalPos;
+                    if (this.stemdir === "up" || dir === "up")
+                        elem.pitches[p].highestVert += 6;	// If the stem is up, then compensate for the length of the stem
+                }
+                if (elem.startSlur) {
+                    if (!elem.pitches[p].startSlur)
+                        elem.pitches[p].startSlur = []; //TODO possibly redundant, provided array is not optional
+                    for (i = 0; i < elem.startSlur.length; i++) {
+                        elem.pitches[p].startSlur.push(elem.startSlur[i]);
+                    }
+                }
+
+                if (!dontDraw && elem.endSlur) {
+                    elem.pitches[p].highestVert = elem.pitches[pp - 1].verticalPos;
+                    if (this.stemdir === "up" || dir === "up")
+                        elem.pitches[p].highestVert += 6;	// If the stem is up, then compensate for the length of the stem
+                    if (!elem.pitches[p].endSlur)
+                        elem.pitches[p].endSlur = [];  //TODO possibly redundant, provided array is not optional
+                    for (i = 0; i < elem.endSlur.length; i++) {
+                        elem.pitches[p].endSlur.push(elem.endSlur[i]);
+                    }
+                }
+            }
+
+            if (!dontDraw)
+                notehead = this.printNoteHead(abselem, c, elem.pitches[p], dir, 0, -this.roomtaken, flag, dot, dotshiftx, 1);
+            if (notehead)
+                abselem.addHead(notehead);
+            this.roomtaken += this.accidentalshiftx;
+            this.roomtakenright = Math.max(this.roomtakenright, this.dotshiftx);
+        }
+
+        // draw stem from the furthest note to a pitch above/below the stemmed note
+        if ( durlog <= -1 ) {
+            p1 = (dir === "down") ? elem.minpitch - 7 : elem.minpitch + 1 / 3;
+            // PER added stemdir test to make the line meet the note.
+            if (p1 > 6 && !this.stemdir)
+                p1 = 6;
+            p2 = (dir === "down") ? elem.maxpitch - 1 / 3 : elem.maxpitch + 7;
+            // PER added stemdir test to make the line meet the note.
+            if (p2 < 6 && !this.stemdir)
+                p2 = 6;
+            dx = (dir === "down" || abselem.heads.length === 0) ? 0 : abselem.heads[0].w;
+            width = (dir === "down") ? 1 : -1;
+            abselem.addExtra(new ABCXJS.write.RelativeElement(null, dx, 0, p1, {"type": "stem", "pitch2": p2, linewidth: width}));
+        }
+    }
+
+    if (elem.lyric !== undefined && !this.tune.formatting.hideLyrics ) {
+        var lyricStr = "";
+        var maxLen = 0;
+        window.ABCXJS.parse.each(elem.lyric, function(ly) {
+            lyricStr += "\n" + ly.syllable + ly.divider ;
+            maxLen = Math.max( maxLen, (ly.syllable + ly.divider).length );
+        });
+        lyricStr = lyricStr.substring(1); // remove the first linefeed
+        abselem.addRight(new ABCXJS.write.RelativeElement(lyricStr, 0, maxLen * 5, 0, {type: "lyrics"}));
+    }
+    
+    if (elem.fingering !== undefined  && !this.tune.formatting.hideFingering) {
+        var lyricStr = "";
+        var maxLen = 0;
+        window.ABCXJS.parse.each(elem.fingering, function(ly) {
+            lyricStr += "\n" + ly.syllable + ly.divider ;
+            maxLen = Math.max( maxLen, (ly.syllable + ly.divider).length*1.3 );
+        });
+        lyricStr = lyricStr.substring(1); // remove the first linefeed
+        abselem.addRight(new ABCXJS.write.RelativeElement(lyricStr, 0, maxLen * 5, 0, {type: "fingering"}));
+    }
+
+    if (!dontDraw && elem.gracenotes !== undefined) {
+        var gracescale = 3 / 5;
+        var gracebeam = null;
+        if (elem.gracenotes.length > 1) {
+            gracebeam = new ABCXJS.write.BeamElem("grace", this.isBagpipes);
+        }
+
+        var graceoffsets = [];
+        for (i = elem.gracenotes.length - 1; i >= 0; i--) { // figure out where to place each gracenote
+            this.roomtaken += 10;
+            graceoffsets[i] = this.roomtaken;
+            if (elem.gracenotes[i].accidental) {
+                this.roomtaken += 7;
+            }
+        }
+
+        for (i = 0; i < elem.gracenotes.length; i++) {
+            var gracepitch = elem.gracenotes[i].verticalPos;
+
+            flag = (gracebeam) ? null : 'grace'+ABCXJS.write.chartable.uflags[(this.isBagpipes) ? 5 : 3];
+            grace = this.printNoteHead(abselem, "graceheads.quarter", elem.gracenotes[i], "up", -graceoffsets[i], -graceoffsets[i], flag, 0, 0, gracescale);
+            abselem.addExtra(grace);
+            // PER: added acciaccatura slash
+            if (elem.gracenotes[i].acciaccatura) {
+                var pos = elem.gracenotes[i].verticalPos + 7 * gracescale;	// the same formula that determines the flag position.
+                var dAcciaccatura = gracebeam ? 5 : 6;	// just an offset to make it line up correctly.
+                abselem.addRight(new ABCXJS.write.RelativeElement("flags.ugrace", -graceoffsets[i] + dAcciaccatura, 0, pos));
+            }
+            if (gracebeam) { // give the beam the necessary info
+                var pseudoabselem = {heads: [grace],
+                    abcelem: {averagepitch: gracepitch, minpitch: gracepitch, maxpitch: gracepitch},
+                    duration: (this.isBagpipes) ? 1 / 32 : 1 / 16};
+                gracebeam.add(pseudoabselem);
+            } else { // draw the stem
+                p1 = gracepitch + 1 / 3 * gracescale;
+                p2 = gracepitch + 7 * gracescale;
+                dx = grace.dx + grace.w;
+                width = -0.6;
+                abselem.addExtra(new ABCXJS.write.RelativeElement(null, dx, 0, p1, {"type": "stem", "pitch2": p2, linewidth: width}));
+            }
+
+            if (i === 0 && !this.isBagpipes && !(elem.rest && (elem.rest.type === "spacer" || elem.rest.type === "invisible")))
+                this.voice.addOther(new ABCXJS.write.TieElem(grace, notehead, false, true));
+        }
+
+        
+        if (gracebeam) {
+            this.voice.addOther(gracebeam);
+        }
+    }
+
+    if (!dontDraw && elem.decoration) {
+        var addMark = this.printDecoration(elem.decoration, elem.maxpitch, (notehead) ? notehead.w : 0, abselem, this.roomtaken, dir, elem.minpitch);
+        if (addMark) {
+            abselem.klass = "mark";
+        }
+    }
+
+    // ledger lines
+    for (i = elem.maxpitch; i > 11; i--) {
+        if (i % 2 === 0 && !elem.rest) {
+            abselem.addChild(new ABCXJS.write.RelativeElement(null, -2, this.glyphs.getSymbolWidth(c) + 4, i, {type: "ledger"}));
+        }
+    }
+
+    for (i = elem.minpitch; i < 1; i++) {
+        if (i % 2 === 0 && !elem.rest) {
+            abselem.addChild(new ABCXJS.write.RelativeElement(null, -2, this.glyphs.getSymbolWidth(c) + 4, i, {type: "ledger"}));
+        }
+    }
+
+    for (i = 0; i < additionalLedgers.length; i++) { // PER: draw additional ledgers
+        var ofs = this.glyphs.getSymbolWidth(c);
+        if (dir === 'down')
+            ofs = -ofs;
+        abselem.addChild(new ABCXJS.write.RelativeElement(null, ofs - 2, this.glyphs.getSymbolWidth(c) + 4, additionalLedgers[i], {type: "ledger"}));
+    }
+
+    if (elem.chord !== undefined) { //16 -> high E.
+        for (i = 0; i < elem.chord.length; i++) {
+            var x = 0;
+            var y = 16;
+            switch (elem.chord[i].position) {
+                case "left":
+                    this.roomtaken += 7;
+                    x = -this.roomtaken;	// TODO-PER: This is just a guess from trial and error
+                    y = elem.averagepitch;
+                    abselem.addExtra(new ABCXJS.write.RelativeElement(elem.chord[i].name, x, this.glyphs.getSymbolWidth(elem.chord[i].name[0]) + 4, y, {type: "text"}));
+                    break;
+                case "right":
+                    this.roomtakenright += 4;
+                    x = this.roomtakenright;// TODO-PER: This is just a guess from trial and error
+                    y = elem.averagepitch;
+                    abselem.addRight(new ABCXJS.write.RelativeElement(elem.chord[i].name, x, this.glyphs.getSymbolWidth(elem.chord[i].name[0]) + 4, y, {type: "text"}));
+                    break;
+                case "below":
+                    y = elem.minpitch - 4;
+                    if (y > -3)
+                        y = -3;
+                    var eachLine = elem.chord[i].name.split("\n");
+                    for (var ii = 0; ii < eachLine.length; ii++) {
+                        abselem.addChild(new ABCXJS.write.RelativeElement(eachLine[ii], x, 0, y, {type: "text"}));
+                        y -= 3;	// TODO-PER: This should actually be based on the font height.
+                    }
+                    break;
+                default:
+                    if (elem.chord[i].rel_position)
+                        abselem.addChild(new ABCXJS.write.RelativeElement(elem.chord[i].name, x + elem.chord[i].rel_position.x, 0, elem.minpitch + elem.chord[i].rel_position.y / ABCXJS.write.spacing.STEP, {type: "text"}));
+                    else
+                        abselem.addChild(new ABCXJS.write.RelativeElement(elem.chord[i].name, x, 0, y, {type: "text"}));
+            }
+        }
+    }
+
+    /* flavio - handle triplets only when drawing - else no notehead */
+    if( !dontDraw ) {
+        
+        if( elem.startTriplet ) {
+            this.triplet.anchor1 = notehead;
+            this.voice.addOther(this.triplet);
+        } 
+        
+        // procura nas notas minimas e máximas do triplet
+        if ( this.triplet ) {
+            this.triplet.minPitch = Math.min( this.triplet.minPitch, notehead.parent.abcelem.minpitch );
+            this.triplet.maxPitch = Math.max( this.triplet.maxPitch, notehead.parent.abcelem.maxpitch );
+        }
+        
+        if ( this.triplet && elem.endTriplet ) {
+            this.triplet.anchor2 = notehead;
+            this.triplet = null;
+            this.tripletmultiplier = 1;
+            if( this.clearStem ) {
+                this.stemdir = null;
+                delete this.clearStem;
+            }
+        }
+    }
+
+    return abselem;
+};
+
+
+ABCXJS.write.Layout.prototype.printNoteHead = function (abselem, c, pitchelem, dir, headx, extrax, flag, dot, dotshiftx, scale) {
+
+    // TODO scale the dot as well
+    var pitch = pitchelem.verticalPos;
+    var notehead;
+    var i;
+    this.accidentalshiftx = 0;
+    this.dotshiftx = 0;
+
+    if (c === undefined)
+        abselem.addChild(new ABCXJS.write.RelativeElement("pitch is undefined", 0, 0, 0, { type: "debug" }));
+    else if (c === "") {
+        notehead = new ABCXJS.write.RelativeElement(null, 0, 0, pitch);
+    } else {
+        var shiftheadx = headx;
+        if (pitchelem.printer_shift) {
+            var adjust = (pitchelem.printer_shift === "same") ? 1 : 0;
+            shiftheadx = (dir === "down") ? -this.glyphs.getSymbolWidth(c) * scale + adjust : this.glyphs.getSymbolWidth(c) * scale - adjust;
+        }
+        //fixme: tratar adequadamente a escala - provavel problema com gracenotes
+        notehead = new ABCXJS.write.RelativeElement(c, shiftheadx, this.glyphs.getSymbolWidth(c) * scale, pitch, { scalex: scale, scaley: scale, extreme: ((dir === "down") ? "below" : "above") });
+        if (flag) {
+            var pos = pitch + ((dir === "down") ? -7 : 7) * scale;
+            if (scale === 1 && (dir === "down") ? (pos > 6) : (pos < 6)) pos = 6;
+            var xdelta = (dir === "down") ? headx : headx + notehead.w - 0.6;
+            abselem.addRight(new ABCXJS.write.RelativeElement(flag, xdelta, this.glyphs.getSymbolWidth(flag) * scale, pos, { scalex: scale, scaley: scale }));
+        }
+        this.dotshiftx = notehead.w + dotshiftx - 2 + 5 * dot;
+        for (; dot > 0; dot--) {
+            var dotadjusty = (1 - Math.abs(pitch) % 2); //PER: take abs value of the pitch. And the shift still happens on ledger lines.
+            abselem.addRight(new ABCXJS.write.RelativeElement("dots.dot", notehead.w + dotshiftx - 2 + 5 * dot, this.glyphs.getSymbolWidth("dots.dot"), pitch + dotadjusty));
+        }
+    }
+    if (notehead)
+        notehead.highestVert = pitchelem.highestVert;
+
+    if (pitchelem.accidental) {
+        var symb;
+        switch (pitchelem.accidental) {
+            case "quartersharp":
+                symb = "accidentals.halfsharp";
+                break;
+            case "dblsharp":
+                symb = "accidentals.dblsharp";
+                break;
+            case "sharp":
+                symb = "accidentals.sharp";
+                break;
+            case "quarterflat":
+                symb = "accidentals.halfflat";
+                break;
+            case "flat":
+                symb = "accidentals.flat";
+                break;
+            case "dblflat":
+                symb = "accidentals.dblflat";
+                break;
+            case "natural":
+                symb = "accidentals.nat";
+        }
+        // if a note is at least a sixth away, it can share a slot with another accidental
+        var accSlotFound = false;
+        var accPlace = extrax;
+        for (var j = 0; j < this.accidentalSlot.length; j++) {
+            if (pitch - this.accidentalSlot[j][0] >= 6) {
+                this.accidentalSlot[j][0] = pitch;
+                accPlace = this.accidentalSlot[j][1];
+                accSlotFound = true;
+                break;
+            }
+        }
+        if (accSlotFound === false) {
+            accPlace -= (this.glyphs.getSymbolWidth(symb) * scale + 2);
+            this.accidentalSlot.push([pitch, accPlace]);
+            this.accidentalshiftx = (this.glyphs.getSymbolWidth(symb) * scale + 2);
+        }
+        //fixme: verificar se há problemas com a escala aqui também      
+        abselem.addExtra(new ABCXJS.write.RelativeElement(symb, accPlace, this.glyphs.getSymbolWidth(symb), pitch));
+    }
+
+    if (pitchelem.endTie) {
+        if (this.ties[0]) {
+            this.ties[0].anchor2 = notehead;
+            this.ties = this.ties.slice(1, this.ties.length);
+        }
+    }
+
+    if (pitchelem.startTie) {
+        //PER: bug fix: var tie = new ABCXJS.write.TieElem(notehead, null, (this.stemdir=="up" || dir=="down") && this.stemdir!="down",(this.stemdir=="down" || this.stemdir=="up"));
+        var tie = new ABCXJS.write.TieElem(notehead, null, (this.stemdir === "down" || dir === "down") && this.stemdir !== "up", (this.stemdir === "down" || this.stemdir === "up"));
+        this.ties[this.ties.length] = tie;
+        this.voice.addOther(tie);
+    }
+
+    if (pitchelem.endSlur) {
+        for (i = 0; i < pitchelem.endSlur.length; i++) {
+            var slurid = pitchelem.endSlur[i];
+            var slur;
+            if (this.slurs[slurid]) {
+                slur = this.slurs[slurid].anchor2 = notehead;
+                delete this.slurs[slurid];
+            } else {
+                slur = new ABCXJS.write.TieElem(null, notehead, dir === "down", (this.stemdir === "up" || dir === "down") && this.stemdir !== "down", this.stemdir);
+                this.voice.addOther(slur);
+            }
+            if (this.startlimitelem) {
+                slur.startlimitelem = this.startlimitelem;
+            }
+        }
+    }
+
+    if (pitchelem.startSlur) {
+        for (i = 0; i < pitchelem.startSlur.length; i++) {
+            var slurid = pitchelem.startSlur[i].label;
+            //PER: bug fix: var slur = new ABCXJS.write.TieElem(notehead, null, (this.stemdir=="up" || dir=="down") && this.stemdir!="down", this.stemdir);
+            var slur = new ABCXJS.write.TieElem(notehead, null, (this.stemdir === "down" || dir === "down") && this.stemdir !== "up", false);
+            this.slurs[slurid] = slur;
+            this.voice.addOther(slur);
+        }
+    }
+
+    return notehead;
+
+};
+
+ABCXJS.write.Layout.prototype.printDecoration = function(decoration, pitch, width, abselem, roomtaken, dir, minPitch) {
+    var dec;
+    var compoundDec;	// PER: for decorations with two symbols
+    var diminuendo;
+    var crescendo;
+    var unknowndecs = [];
+    var yslot = (pitch > 9) ? pitch + 3 : 12;
+    var ypos;
+    //var dir = (this.stemdir==="down" || pitch>=6) && this.stemdir!=="up";
+    var below = false;	// PER: whether decoration goes above or below.
+    var yslotB = -6; // neste ponto min-Y era sempre -2 - min-Y foi eliminado this.min-Y - 4; // (pitch<1) ? pitch-9 : -6;
+    var i;
+    roomtaken = roomtaken || 0;
+    if (pitch === 5)
+        yslot = 14; // avoid upstem of the A
+    var addMark = false; // PER: to allow the user to add a class whereever
+
+    for (i = 0; i < decoration.length; i++) { // treat staccato and tenuto first (may need to shift other markers) //TODO, same with tenuto?
+        if (decoration[i] === "staccato" || decoration[i] === "tenuto") {
+            var symbol = "scripts." + decoration[i];
+            ypos = (dir === "down") ? pitch + 2 : minPitch - 2;
+            // don't place on a stave line. The stave lines are 2,4,6,8,10
+            switch (ypos) {
+                case 2:
+                case 4:
+                case 6:
+                case 8:
+                case 10:
+                    if (dir === "up")
+                        ypos--;
+                    else
+                        ypos++;
+                    break;
+            }
+            if (pitch > 9)
+                yslot++; // take up some room of those that are above
+            var deltax = width / 2;
+            if (this.glyphs.getSymbolAlign(symbol) !== "center") {
+                deltax -= (this.glyphs.getSymbolWidth(dec) / 2);
+            }
+            abselem.addChild(new ABCXJS.write.RelativeElement(symbol, deltax, this.glyphs.getSymbolWidth(symbol), ypos));
+        }
+        if (decoration[i] === "slide" && abselem.heads[0]) {
+            ypos = abselem.heads[0].pitch;
+            var blank1 = new ABCXJS.write.RelativeElement("", -roomtaken - 15, 0, ypos - 1);
+            var blank2 = new ABCXJS.write.RelativeElement("", -roomtaken - 5, 0, ypos + 1);
+            abselem.addChild(blank1);
+            abselem.addChild(blank2);
+            this.voice.addOther(new ABCXJS.write.TieElem(blank1, blank2, false));
+        }
+    }
+
+    for (i = 0; i < decoration.length; i++) {
+        below = false;
+        switch (decoration[i]) {
+            case "trill":
+                dec = "scripts.trill";
+                break;
+            case "roll":
+                dec = "scripts.roll";
+                break; //TODO put abc2ps roll in here
+            case "irishroll":
+                dec = "scripts.roll";
+                break;
+            case "marcato":
+                dec = "scripts.umarcato";
+                break;
+            case "marcato2":
+                dec = "scriopts.dmarcato";
+                break;//other marcato
+            case "turn":
+                dec = "scripts.turn";
+                break;
+            case "uppermordent":
+                dec = "scripts.prall";
+                break;
+            case "mordent":
+            case "lowermordent":
+                dec = "scripts.mordent";
+                break;
+            case "staccato":
+            case "tenuto":
+            case "slide":
+                continue;
+            case "downbow":
+                dec = "scripts.downbow";
+                break;
+            case "upbow":
+                dec = "scripts.upbow";
+                break;
+            case "fermata":
+                dec = "scripts.ufermata";
+                break;
+            case "invertedfermata":
+                below = true;
+                dec = "scripts.dfermata";
+                break;
+            case "breath":
+                dec = ",";
+                break;
+            case "accent":
+                dec = "scripts.sforzato";
+                break;
+            case "umarcato":
+                dec = "scripts.umarcato";
+                break;
+            case "/":
+                compoundDec = ["flags.ugrace", 1];
+                continue;	// PER: added new decorations
+            case "//":
+                compoundDec = ["flags.ugrace", 2];
+                continue;
+            case "///":
+                compoundDec = ["flags.ugrace", 3];
+                continue;
+            case "////":
+                compoundDec = ["flags.ugrace", 4];
+                continue;
+            case "p":
+            case "mp":
+            case "pp":
+            case "ppp":
+            case "pppp":
+            case "f":
+            case "ff":
+            case "fff":
+            case "ffff":
+            case "sfz":
+            case "mf":
+                var ddelem = new ABCXJS.write.DynamicDecoration(abselem, decoration[i]);
+                this.voice.addOther(ddelem);
+                continue;
+            case "mark":
+                addMark = true;
+                continue;
+            case "diminuendo(":
+                ABCXJS.write.Layout.prototype.startDiminuendoX = abselem;
+                diminuendo = undefined;
+                continue;
+            case "diminuendo)":
+                diminuendo = {start: ABCXJS.write.Layout.prototype.startDiminuendoX, stop: abselem};
+                ABCXJS.write.Layout.prototype.startDiminuendoX = undefined;
+                continue;
+            case "crescendo(":
+                ABCXJS.write.Layout.prototype.startCrescendoX = abselem;
+                crescendo = undefined;
+                continue;
+            case "crescendo)":
+                crescendo = {start: ABCXJS.write.Layout.prototype.startCrescendoX, stop: abselem};
+                ABCXJS.write.Layout.prototype.startCrescendoX = undefined;
+                continue;
+            default:
+                unknowndecs[unknowndecs.length] = decoration[i];
+                continue;
+        }
+        if (below) {
+            ypos = yslotB;
+            yslotB -= 4;
+        } else {
+            ypos = yslot;
+            yslot += 3;
+        }
+        var deltax = width / 2;
+        if (this.glyphs.getSymbolAlign(dec) !== "center") {
+            deltax -= (this.glyphs.getSymbolWidth(dec) / 2);
+        }
+        abselem.addChild(new ABCXJS.write.RelativeElement(dec, deltax, this.glyphs.getSymbolWidth(dec), ypos));
+    }
+    if (compoundDec) {	// PER: added new decorations
+        ypos = (dir === 'down') ? pitch + 1 : pitch + 9;
+        deltax = width / 2;
+        deltax += (dir === 'down') ? -5 : 3;
+        for (var xx = 0; xx < compoundDec[1]; xx++) {
+            ypos -= 1;
+            abselem.addChild(new ABCXJS.write.RelativeElement(compoundDec[0], deltax, this.glyphs.getSymbolWidth(compoundDec[0]), ypos));
+        }
+    }
+    if (diminuendo) {
+        var delem = new ABCXJS.write.CrescendoElem(diminuendo.start, diminuendo.stop, ">");
+        this.voice.addOther(delem);
+    }
+    if (crescendo) {
+        var celem = new ABCXJS.write.CrescendoElem(crescendo.start, crescendo.stop, "<");
+        this.voice.addOther(celem);
+    }
+    if (unknowndecs.length > 0)
+        abselem.addChild(new ABCXJS.write.RelativeElement(unknowndecs.join(','), 0, 0, 19, {type: "text"}));
+    return addMark;
+};
+
+ABCXJS.write.Layout.prototype.printBarLine = function (elem) {
+// bar_thin, bar_thin_thick, bar_thin_thin, bar_thick_thin, bar_right_repeat, bar_left_repeat, bar_double_repeat
+
+    var topbar = 10;
+    var yDot = 5;
+
+    var abselem = new ABCXJS.write.AbsoluteElement(elem, 0, 10);
+    var anchor = null; // place to attach part lines
+    var dx = 0;
+
+    var firstdots = (elem.type === "bar_right_repeat" || elem.type === "bar_dbl_repeat");
+    var firstthin = (elem.type !== "bar_left_repeat" && elem.type !== "bar_thick_thin" && elem.type !== "bar_invisible");
+    var thick = (elem.type === "bar_right_repeat" || elem.type === "bar_dbl_repeat" || elem.type === "bar_left_repeat" ||
+            elem.type === "bar_thin_thick" || elem.type === "bar_thick_thin");
+    var secondthin = (elem.type === "bar_left_repeat" || elem.type === "bar_thick_thin" || elem.type === "bar_thin_thin" || elem.type === "bar_dbl_repeat");
+    var seconddots = (elem.type === "bar_left_repeat" || elem.type === "bar_dbl_repeat");
+
+    var anyJumpDecoUpper = false; // indica a presença de decorações na parte superior - inibe a impressão do barnumber
+
+    // limit positioning of slurs
+    if (firstdots || seconddots) {
+        for (var slur in this.slurs) {
+            if (this.slurs.hasOwnProperty(slur)) {
+                this.slurs[slur].endlimitelem = abselem;
+            }
+        }
+        this.startlimitelem = abselem;
+    }
+
+    if (firstdots) {
+        abselem.addRight(new ABCXJS.write.RelativeElement("dots.dot", dx, 1, yDot + 2));
+        abselem.addRight(new ABCXJS.write.RelativeElement("dots.dot", dx, 1, yDot));
+        dx += 6; //2 hardcoded, twice;
+    }
+
+    if (firstthin) {
+        anchor = new ABCXJS.write.RelativeElement(null, dx, 1, 2, {"type": "bar", "pitch2": topbar, linewidth: 0.6});
+        abselem.addRight(anchor);
+        if( elem.repeat > 2 && this.tuneCurrStaff == 0) {
+            abselem.addChild(new ABCXJS.write.RelativeElement(elem.repeat+"x", 0, -5, 12, {type: "part"}));
+            anyJumpDecoUpper = true;
+        }
+    }
+
+    if (elem.type === "bar_invisible") {
+        anchor = new ABCXJS.write.RelativeElement(null, dx, 1, 2, {"type": "none", "pitch2": topbar, linewidth: 0.6});
+        abselem.addRight(anchor);
+    }
+
+    if (elem.decoration) {
+        this.printDecoration(elem.decoration, 12, (thick) ? 3 : 1, abselem, 0, "down", 2);
+    }
+
+    if (thick) {
+        dx += 4; //3 hardcoded;    
+        anchor = new ABCXJS.write.RelativeElement(null, dx, 4, 2, {"type": "bar", "pitch2": topbar, linewidth: 4});
+        abselem.addRight(anchor);
+        dx += 5;
+    }
+
+    if (elem.jumpDecoration) {
+        for(var j=0; j< elem.jumpDecoration.length; j++ ) {
+            if(( elem.jumpDecoration[j].upper && this.isFirstVoice() ) || ( !elem.jumpDecoration[j].upper && this.isLastVoice() ) ) {
+                var pitch = elem.jumpDecoration[j].upper ? 12 : -3;
+                anyJumpDecoUpper = (anyJumpDecoUpper||elem.jumpDecoration[j].upper);
+                switch (elem.jumpDecoration[j].type) {
+                    case "coda":     
+                    case "segno":    
+                    case "fine":     
+                    case "dcalfine": 
+                    case "dcalcoda": 
+                    case "dsalfine": 
+                    case "dsalcoda": 
+                        abselem.addRight( this.layoutJumpDecorationItem(elem.jumpDecoration[j], pitch) );
+                        break;
+                    case "dacapo":   
+                    case "dasegno":  
+                    case "dacoda":   
+                        abselem.addExtra( this.layoutJumpDecorationItem(elem.jumpDecoration[j], pitch) );
+                        break;
+                }
+            }
+        }
+    
+    }
+    
+    if (elem.barNumber && elem.barNumberVisible && !anyJumpDecoUpper) {
+        // quando não há jumpDecorations na parte superiror da pauta, o barnumber pode ser escrito sem sobreposição
+        abselem.addChild(new ABCXJS.write.RelativeElement(elem.barNumber, 0, 0, 12, {type: "barnumber"}));
+    }
+
+    if (this.partstartelem && elem.endDrawEnding) {
+        this.partstartelem.anchor2 = anchor;
+        this.partstartelem = null;
+    }
+
+    if (secondthin) {
+        dx += 3; //3 hardcoded;
+        anchor = new ABCXJS.write.RelativeElement(null, dx, 1, 2, {"type": "bar", "pitch2": topbar, linewidth: 0.6});
+        abselem.addRight(anchor); // 3 is hardcoded
+    }
+
+    if (seconddots) {
+        dx += 3; //3 hardcoded;
+        abselem.addRight(new ABCXJS.write.RelativeElement("dots.dot", dx, 1, yDot + 2));
+        abselem.addRight(new ABCXJS.write.RelativeElement("dots.dot", dx, 1, yDot));
+    } // 2 is hardcoded
+
+    if (elem.startEnding) {
+        this.partstartelem = new ABCXJS.write.EndingElem(elem.startEnding, anchor, null);
+        this.voice.addOther(this.partstartelem);
+    }
+
+    return abselem;
+
+};
+
+ABCXJS.write.Layout.prototype.printClef = function (elem) {
+    var clef = "clefs.G";
+    var octave = 0;
+    var abselem = new ABCXJS.write.AbsoluteElement(elem, 0, 10);
+
+    switch (elem.type) {
+        case "treble": break;
+        case "tenor": clef = "clefs.C"; break;
+        case "alto": clef = "clefs.C"; break;
+        case "bass": clef = "clefs.F"; break;
+        case 'treble+8': octave = 1; break;
+        case 'tenor+8': clef = "clefs.C"; octave = 1; break;
+        case 'bass+8': clef = "clefs.F"; octave = 1; break;
+        case 'alto+8': clef = "clefs.C"; octave = 1; break;
+        case 'treble-8': octave = -1; break;
+        case 'tenor-8': clef = "clefs.C"; octave = -1; break;
+        case 'bass-8': clef = "clefs.F"; octave = -1; break;
+        case 'alto-8': clef = "clefs.C"; octave = -1; break;
+        case "accordionTab": clef = "clefs.tab"; break;
+        case 'none': clef = ""; break;
+        case 'perc': clef = "clefs.perc"; break;
+        default: abselem.addChild(new ABCXJS.write.RelativeElement("clef=" + elem.type, 0, 0, 0, { type: "debug" }));
+    }
+
+    var dx = 10;
+    if (clef !== "") {
+        abselem.addRight(new ABCXJS.write.RelativeElement(clef, dx, this.glyphs.getSymbolWidth(clef), elem.clefPos));
+    }
+    if (octave !== 0) {
+        // fixme: ajustar a escala da oitava  
+        var scale = 2 / 3;
+        var adjustspacing = (this.glyphs.getSymbolWidth(clef) - this.glyphs.getSymbolWidth("8")) / 2;
+        abselem.addRight(new ABCXJS.write.RelativeElement("8", dx + adjustspacing, this.glyphs.getSymbolWidth("8"), (octave > 0) ? 16 : -2));
+    }
+    return abselem;
+};
+
+ABCXJS.write.Layout.prototype.printKeySignature = function(elem) {
+    var abselem = new ABCXJS.write.AbsoluteElement(elem,0,10);
+    var dx = 0;
+    if ( elem.accidentals) {
+        ABCXJS.parse.each(elem.accidentals, function(acc) {
+            var symbol = (acc.acc === "sharp") ? "accidentals.sharp" : (acc.acc === "natural") ? "accidentals.nat" : "accidentals.flat";
+            abselem.addRight(new ABCXJS.write.RelativeElement(symbol, dx, this.glyphs.getSymbolWidth(symbol), acc.verticalPos));
+            dx += this.glyphs.getSymbolWidth(symbol)+2;
+        }, this);
+    }
+    this.startlimitelem = abselem; // limit ties here
+    return abselem;
+};
+
+ABCXJS.write.Layout.prototype.printTimeSignature= function(elem) {
+  var abselem = new ABCXJS.write.AbsoluteElement(elem,0,20);
+  if (elem.type === "specified") {
+    //TODO make the alignment for time signatures centered
+    for (var i = 0; i < elem.value.length; i++) {
+      if (i !== 0)
+        abselem.addRight(new ABCXJS.write.RelativeElement("+", i*20-9, this.glyphs.getSymbolWidth("+"), 7));
+      var num = "n."+ elem.value[i].num;
+      if (elem.value[i].den) {
+        var den = "n."+ elem.value[i].den;
+        abselem.addRight(new ABCXJS.write.RelativeElement(num, i*20, this.glyphs.getSymbolWidth(num)*num.length, 6));
+        abselem.addRight(new ABCXJS.write.RelativeElement(den, i*20, this.glyphs.getSymbolWidth(den)*den.length, 2));
+      } else {
+        abselem.addRight(new ABCXJS.write.RelativeElement(num, i*20, this.glyphs.getSymbolWidth(num)*num.length, 4));
+      }
+    }
+  } else if (elem.type === "common_time") {
+    abselem.addRight(new ABCXJS.write.RelativeElement("timesig.common", 0, this.glyphs.getSymbolWidth("timesig.common"), 7));
+    
+  } else if (elem.type === "cut_time") {
+    abselem.addRight(new ABCXJS.write.RelativeElement("timesig.cut", 0, this.glyphs.getSymbolWidth("timesig.cut"), 7));
+  }
+  this.startlimitelem = abselem; // limit ties here
+  return abselem;
+};
+//    abc_write.js: Prints an abc file parsed by abc_parse.js
+//    Copyright (C) 2010 Gregory Dyke (gregdyke at gmail dot com)
 //
 //    This program is free software: you can redistribute it and/or modify
 //    it under the terms of the GNU General Public License as published by
@@ -9807,20 +14171,11 @@ ABCXJS.write.Printer.prototype.printLyrics = function(x, staveInfo, msg) {
 };
 
 ABCXJS.write.Printer.prototype.printFingering = function(x, staveInfo, msg) {
-    var y = this.calcY(staveInfo.lowest+4);
+    var y = this.calcY(staveInfo.lowest)-10;
     try {
         this.paper.printSymbol(x-3, y, 'cn.'+msg.trim());
     } catch(e){
-        this.paper.text(x, y+12, msg.trim(), 'abc_fingers', 'start');        
-    }
-};
-
-ABCXJS.write.Printer.prototype.printBassFingering = function(x, staveInfo, msg) {
-    var y = this.calcY(staveInfo.highest+1.5);
-    try {
-        this.paper.printSymbol(x-3, y, 'cn.'+msg.trim());
-    } catch(e){
-        this.paper.text(x, y+12, msg.trim(), 'abc_bassfingers', 'start');        
+        this.paper.text(x, y+12, msg.trim(), 'abc_lyrics', 'start');        
     }
 };
 
@@ -13653,6 +18008,3206 @@ var touch = function(i) {
 
       var currentTime = new Date().getTime();
 
+<<<<<<< HEAD
+ABCXJS.write.Printer.prototype.printFingering = function(x, staveInfo, msg) {
+    var y = this.calcY(staveInfo.lowest+4);
+    try {
+        this.paper.printSymbol(x-3, y, 'cn.'+msg.trim());
+    } catch(e){
+        this.paper.text(x, y+12, msg.trim(), 'abc_fingers', 'start');        
+    }
+};
+
+ABCXJS.write.Printer.prototype.printBassFingering = function(x, staveInfo, msg) {
+    var y = this.calcY(staveInfo.highest+1.5);
+    try {
+        this.paper.printSymbol(x-3, y, 'cn.'+msg.trim());
+    } catch(e){
+        this.paper.text(x, y+12, msg.trim(), 'abc_bassfingers', 'start');        
+=======
+      var timeGap = currentTime - startTime;
+      if (timeGap > 0) {
+        speed.x = differenceX / timeGap;
+        speed.y = differenceY / timeGap;
+        startTime = currentTime;
+      }
+
+      if (shouldPrevent(differenceX, differenceY)) {
+        e.preventDefault();
+      }
+>>>>>>> d38a9ec5c4afd72b062b197287f50064800a284b
+    }
+  }
+  function touchEnd() {
+    if (i.settings.swipeEasing) {
+      clearInterval(easingLoop);
+      easingLoop = setInterval(function() {
+        if (i.isInitialized) {
+          clearInterval(easingLoop);
+          return;
+        }
+
+        if (!speed.x && !speed.y) {
+          clearInterval(easingLoop);
+          return;
+        }
+
+        if (Math.abs(speed.x) < 0.01 && Math.abs(speed.y) < 0.01) {
+          clearInterval(easingLoop);
+          return;
+        }
+
+        applyTouchMove(speed.x * 30, speed.y * 30);
+
+        speed.x *= 0.8;
+        speed.y *= 0.8;
+      }, 10);
+    }
+  }
+
+  if (env.supportsTouch) {
+    i.event.bind(element, 'touchstart', touchStart);
+    i.event.bind(element, 'touchmove', touchMove);
+    i.event.bind(element, 'touchend', touchEnd);
+  } else if (env.supportsIePointer) {
+    if (window.PointerEvent) {
+      i.event.bind(element, 'pointerdown', touchStart);
+      i.event.bind(element, 'pointermove', touchMove);
+      i.event.bind(element, 'pointerup', touchEnd);
+    } else if (window.MSPointerEvent) {
+      i.event.bind(element, 'MSPointerDown', touchStart);
+      i.event.bind(element, 'MSPointerMove', touchMove);
+      i.event.bind(element, 'MSPointerUp', touchEnd);
+    }
+  }
+};
+
+var defaultSettings = function () { return ({
+  handlers: ['click-rail', 'drag-thumb', 'keyboard', 'wheel', 'touch'],
+  maxScrollbarLength: null,
+  minScrollbarLength: null,
+  scrollingThreshold: 1000,
+  scrollXMarginOffset: 0,
+  scrollYMarginOffset: 0,
+  suppressScrollX: false,
+  suppressScrollY: false,
+  swipeEasing: true,
+  useBothWheelAxes: false,
+  wheelPropagation: false,
+  wheelSpeed: 1
+}); };
+
+var handlers = {
+  'click-rail': clickRail,
+  'drag-thumb': dragThumb,
+  keyboard: keyboard,
+  wheel: wheel,
+  touch: touch
+};
+
+var PerfectScrollbar = function PerfectScrollbar(element, userSettings) {
+  var this$1 = this;
+  if ( userSettings === void 0 ) userSettings = {};
+
+  if (typeof element === 'string') {
+    element = document.querySelector(element);
+  }
+
+  if (!element || !element.nodeName) {
+    throw new Error('no element is specified to initialize PerfectScrollbar');
+  }
+
+  this.element = element;
+
+  element.classList.add(cls.main);
+
+  this.settings = defaultSettings();
+  for (var key in userSettings) {
+    this$1.settings[key] = userSettings[key];
+  }
+
+  this.containerWidth = null;
+  this.containerHeight = null;
+  this.contentWidth = null;
+  this.contentHeight = null;
+
+  var focus = function () { return element.classList.add(cls.state.focus); };
+  var blur = function () { return element.classList.remove(cls.state.focus); };
+
+  this.isRtl = get(element).direction === 'rtl';
+  this.isNegativeScroll = (function () {
+    var originalScrollLeft = element.scrollLeft;
+    var result = null;
+    element.scrollLeft = -1;
+    result = element.scrollLeft < 0;
+    element.scrollLeft = originalScrollLeft;
+    return result;
+  })();
+  this.negativeScrollAdjustment = this.isNegativeScroll
+    ? element.scrollWidth - element.clientWidth
+    : 0;
+  this.event = new EventManager();
+  this.ownerDocument = element.ownerDocument || document;
+
+  this.scrollbarXRail = div(cls.element.rail('x'));
+  element.appendChild(this.scrollbarXRail);
+  
+  if( this.settings["margin"] ) {
+      this.scrollbarXRail.style.margin = this.settings["margin"];
+  }
+  
+  this.scrollbarX = div(cls.element.thumb('x'));
+  this.scrollbarXRail.appendChild(this.scrollbarX);
+  this.scrollbarX.setAttribute('tabindex', 0);
+  this.event.bind(this.scrollbarX, 'focus', focus);
+  this.event.bind(this.scrollbarX, 'blur', blur);
+  this.scrollbarXActive = null;
+  this.scrollbarXWidth = null;
+  this.scrollbarXLeft = null;
+  var railXStyle = get(this.scrollbarXRail);
+  this.scrollbarXBottom = parseInt(railXStyle.bottom, 10);
+  if (isNaN(this.scrollbarXBottom)) {
+    this.isScrollbarXUsingBottom = false;
+    this.scrollbarXTop = toInt(railXStyle.top);
+  } else {
+    this.isScrollbarXUsingBottom = true;
+  }
+  this.railBorderXWidth =
+    toInt(railXStyle.borderLeftWidth) + toInt(railXStyle.borderRightWidth);
+  // Set rail to display:block to calculate margins
+  set(this.scrollbarXRail, { display: 'block' });
+  this.railXMarginWidth =
+    toInt(railXStyle.marginLeft) + toInt(railXStyle.marginRight);
+  set(this.scrollbarXRail, { display: '' });
+  this.railXWidth = null;
+  this.railXRatio = null;
+
+  this.scrollbarYRail = div(cls.element.rail('y'));
+  element.appendChild(this.scrollbarYRail);
+  
+  if( this.settings["margin"] ) {
+      this.scrollbarYRail.style.margin = this.settings["margin"];
+  }
+  
+  this.scrollbarY = div(cls.element.thumb('y'));
+  this.scrollbarYRail.appendChild(this.scrollbarY);
+  this.scrollbarY.setAttribute('tabindex', 0);
+  this.event.bind(this.scrollbarY, 'focus', focus);
+  this.event.bind(this.scrollbarY, 'blur', blur);
+  this.scrollbarYActive = null;
+  this.scrollbarYHeight = null;
+  this.scrollbarYTop = null;
+  var railYStyle = get(this.scrollbarYRail);
+  this.scrollbarYRight = parseInt(railYStyle.right, 10);
+  if (isNaN(this.scrollbarYRight)) {
+    this.isScrollbarYUsingRight = false;
+    this.scrollbarYLeft = toInt(railYStyle.left);
+  } else {
+    this.isScrollbarYUsingRight = true;
+  }
+  this.scrollbarYOuterWidth = this.isRtl ? outerWidth(this.scrollbarY) : null;
+  this.railBorderYWidth =
+    toInt(railYStyle.borderTopWidth) + toInt(railYStyle.borderBottomWidth);
+  set(this.scrollbarYRail, { display: 'block' });
+  this.railYMarginHeight =
+    toInt(railYStyle.marginTop) + toInt(railYStyle.marginBottom);
+  set(this.scrollbarYRail, { display: '' });
+  this.railYHeight = null;
+  this.railYRatio = null;
+
+  this.reach = {
+    x:
+      element.scrollLeft <= 0
+        ? 'start'
+        : element.scrollLeft >= this.contentWidth - this.containerWidth
+          ? 'end'
+          : null,
+    y:
+      element.scrollTop <= 0
+        ? 'start'
+        : element.scrollTop >= this.contentHeight - this.containerHeight
+          ? 'end'
+          : null
+  };
+
+  this.isAlive = true;
+
+  this.settings.handlers.forEach(function (handlerName) { return handlers[handlerName](this$1); });
+
+  this.lastScrollTop = element.scrollTop; // for onScroll only
+  this.lastScrollLeft = element.scrollLeft; // for onScroll only
+  this.event.bind(this.element, 'scroll', function (e) { return this$1.onScroll(e); });
+  updateGeometry(this);
+};
+
+PerfectScrollbar.prototype.hideX = function  () {
+    this.element.classList.remove(cls.state.active('x'));
+};
+PerfectScrollbar.prototype.showX = function  () {
+    this.element.classList.add(cls.state.active('x'));
+};
+
+PerfectScrollbar.prototype.hideY = function  () {
+    this.element.classList.remove(cls.state.active('y'));
+};
+PerfectScrollbar.prototype.showY = function  () {
+    this.element.classList.add(cls.state.active('y'));
+};
+
+PerfectScrollbar.prototype.update = function  () {
+  if (!this.isAlive /*|| this.settings['aceOn']*/ ) {
+    return;
+  }
+
+  // Recalcuate negative scrollLeft adjustment
+  this.negativeScrollAdjustment = this.isNegativeScroll
+    ? this.element.scrollWidth - this.element.clientWidth
+    : 0;
+
+  // Recalculate rail margins
+  set(this.scrollbarXRail, { display: 'block' });
+  set(this.scrollbarYRail, { display: 'block' });
+  this.railXMarginWidth =
+    toInt(get(this.scrollbarXRail).marginLeft) +
+    toInt(get(this.scrollbarXRail).marginRight);
+  this.railYMarginHeight =
+    toInt(get(this.scrollbarYRail).marginTop) +
+    toInt(get(this.scrollbarYRail).marginBottom);
+
+  // Hide scrollbars not to affect scrollWidth and scrollHeight
+  set(this.scrollbarXRail, { display: 'none' });
+  set(this.scrollbarYRail, { display: 'none' });
+
+  updateGeometry(this);
+
+  processScrollDiff(this, 'top', 0, false, true);
+  processScrollDiff(this, 'left', 0, false, true);
+
+  set(this.scrollbarXRail, { display: '' });
+  set(this.scrollbarYRail, { display: '' });
+};
+
+PerfectScrollbar.prototype.onScroll = function onScroll (e) {
+  if (!this.isAlive ) {
+    return;
+  }
+  
+  updateGeometry(this);
+  processScrollDiff(this, 'top', this.element.scrollTop - this.lastScrollTop);
+  processScrollDiff(
+    this,
+    'left',
+    this.element.scrollLeft - this.lastScrollLeft
+  );
+
+  this.lastScrollTop = this.element.scrollTop;
+  this.lastScrollLeft = this.element.scrollLeft;
+};
+
+PerfectScrollbar.prototype.destroy = function destroy () {
+  if (!this.isAlive) {
+    return;
+  }
+
+  this.event.unbindAll();
+  remove(this.scrollbarX);
+  remove(this.scrollbarY);
+  remove(this.scrollbarXRail);
+  remove(this.scrollbarYRail);
+  this.removePsClasses();
+
+  // unset elements
+  this.element = null;
+  this.scrollbarX = null;
+  this.scrollbarY = null;
+  this.scrollbarXRail = null;
+  this.scrollbarYRail = null;
+
+  this.isAlive = false;
+};
+
+PerfectScrollbar.prototype.removePsClasses = function removePsClasses () {
+  this.element.className = this.element.className
+    .split(' ')
+    .filter(function (name) { return !name.match(/^ps([-_].+|)$/); })
+    .join(' ');
+};
+
+return PerfectScrollbar;
+
+})));
+/* 
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+  * Implements: 
+*   - DRAGGABLE.ui.Window
+*   - DRAGGABLE.ui.PushButton
+*/
+
+if (! window.DRAGGABLE )
+    window.DRAGGABLE  = {};
+
+if (! window.DRAGGABLE.ui )
+    window.DRAGGABLE.ui  = { windowId: 0, menuId: 0, slideId: 0, oneTimeCloseFunction : null, lastOpen: null };
+        
+DRAGGABLE.ui.Window = function( parent, aButtons, options, callback, aToolBarButtons ) {
+    
+    var self = this;
+    var opts = options || {};
+
+    this.id = ++ DRAGGABLE.ui.windowId;
+    
+    this.title = opts.title || '';
+    this.top = opts.top || 0;
+    this.left = opts.left || 0;
+    this.width = opts.width || '';
+    this.height = opts.height || '';
+    this.minWidth = opts.minWidth ||  160;
+    this.minHeight = opts.minHeight ||  (24+(aToolBarButtons?76:0));
+    this.hasStatusBar = opts.statusbar || false;
+    this.alternativeResize = opts.alternativeResize || false;
+    this.translator = opts.translator || null;
+    this.zIndex  = opts.zIndex? opts.zIndex : 100;
+    this.draggable = typeof opts.draggable !== 'undefined' ? opts.draggable : true;
+    
+    var div = document.createElement("DIV");
+    div.setAttribute("id", "draggableWindow" +  this.id ); 
+    div.setAttribute("class", "draggableWindow" + (this.draggable? "" : " noShadow") ); 
+    this.topDiv = div;
+    
+    this.topDiv.style.zIndex = this.zIndex;
+    
+    if(!parent) {
+        document.body.appendChild(this.topDiv);
+    } else {
+        if(typeof parent === 'string') {
+            this.parent = document.getElementById(parent);
+        } else {
+            this.parent = parent;
+        }
+        this.parent.appendChild(this.topDiv);
+    }
+    
+/*     if( ! this.draggable ) {
+        //this.topDiv.style.position = "relative";  // pq assume isso quando nao dragavel?
+        //this.topDiv.style.margin = "1px";
+    } else {
+ */ 
+    if( this.draggable ) {       
+        if(this.parent) {
+            this.topDiv.style.position = "absolute";
+        }
+        this.minTop = 1;
+        this.minLeft = 1;
+    }
+    
+    if(callback) {
+        this.defineCallback(callback);
+    }
+    
+    if(this.topDiv.style.top === "" ) this.topDiv.style.top = this.top;
+    if(this.topDiv.style.left === "" ) this.topDiv.style.left = this.left;
+    if(this.topDiv.style.height === "" ) this.topDiv.style.height = this.height;
+    if(this.topDiv.style.width === "" ) this.topDiv.style.width = this.width;
+    
+    var div = document.createElement("DIV");
+    div.setAttribute("id", "dMenu" +  this.id ); 
+    div.setAttribute("class", "draggableMenu gradiente" ); 
+    this.topDiv.appendChild( div );
+    this.menuDiv = div;
+
+    if( aToolBarButtons ) {
+        var div = document.createElement("DIV");
+        div.setAttribute("id", "dToolBar" +  this.id ); 
+        div.setAttribute("class", "draggableToolBar" ); 
+        this.topDiv.appendChild( div );
+        this.toolBar = div;
+    }
+    
+    div = document.createElement("DIV");
+    div.setAttribute("id", "draggableData" + this.id ); 
+    div.setAttribute("class", "draggableData" ); 
+    this.topDiv.appendChild( div );
+    this.dataDiv = div;
+    
+    if(this.alternativeResize) {
+        this.hasStatusBar = false;
+        this.topDiv.style.overflow = 'visible';
+        div = document.createElement("DIV");
+        div.setAttribute("id", "draggableStatusResize" + this.id ); 
+        div.setAttribute("class", "draggableAlternativeResize" ); 
+        this.topDiv.appendChild( div );
+        this.resizeCorner = div;
+        this.resizeCorner.innerHTML = '<img src="images/corner_resize.gif">';
+
+    } else if( this.hasStatusBar ) {
+        
+        this.dataDiv.setAttribute("class", "draggableData withStatusBar" ); ;
+        div = document.createElement("DIV");
+        div.setAttribute("id", "draggableStatus" + this.id ); 
+        div.setAttribute("class", "draggableStatus" ); 
+        this.topDiv.appendChild( div );
+        this.bottomBar = div;
+
+        div = document.createElement("DIV");
+        div.setAttribute("id", "draggableStatusMsgLine" + this.id ); 
+        div.setAttribute("class", "draggableStatusMsgLine" ); 
+        this.bottomBar.appendChild( div );
+        this.messageLine = div;
+
+        div = document.createElement("DIV");
+        div.setAttribute("id", "draggableStatusResize" + this.id ); 
+        div.setAttribute("class", "draggableStatusResize" ); 
+        this.bottomBar.appendChild( div );
+        this.resizeCorner = div;
+        this.resizeCorner.innerHTML = '<img src="images/statusbar_resize.gif">';
+    }
+    
+    this.calcMinHeight = function () {
+        this.minHeight = (this.menuDiv && this.menuDiv.style.display !== 'none' ? this.menuDiv.clientHeight : 0 ) 
+           + (this.toolBar && this.toolBar.style.display !== 'none' ? this.toolBar.clientHeight : 0 ) 
+           + (this.bottomBar && this.bottomBar.style.display !== 'none' ? this.bottomBar.clientHeight+3 : 0 );
+    };
+    
+    if( this.alternativeResize || this.hasStatusBar ) {
+
+        this.divResize = function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+            var touches = e.changedTouches;
+            var p = {x: e.clientX, y: e.clientY};
+
+            if (touches) {
+                var l = touches.length - 1;
+                p.x = touches[l].clientX;
+                p.y = touches[l].clientY;
+            }
+            e.preventDefault();
+            
+            self.calcMinHeight();
+            
+            var w = (self.topDiv.clientWidth + p.x - self.x);
+            var h = (self.topDiv.clientHeight + p.y - self.y);
+            self.topDiv.style.width = ( w < self.minWidth ? self.minWidth : w ) + 'px';
+            self.topDiv.style.height = ( h < self.minHeight ? self.minHeight : h ) + 'px';
+
+            self.x = p.x;
+            self.y = p.y;
+            self.eventsCentral('RESIZE');
+        };
+
+        this.mouseEndResize = function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+            window.removeEventListener('mouseup', self.mouseEndResize, false);
+            window.removeEventListener('touchend', self.mouseEndResize, false);
+            window.removeEventListener('touchmove', self.divResize, false);
+            window.removeEventListener('touchleave', self.divResize, false);
+            window.removeEventListener('mousemove', self.divResize, false);
+            window.removeEventListener('mouseout', self.divResize, false);
+            self.dataDiv.style.pointerEvents = "auto";
+            self.eventsCentral('RESIZE');
+        };
+
+        this.mouseResize = function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+            self.dataDiv.style.pointerEvents = "none";
+            window.addEventListener('mouseup', self.mouseEndResize, false);
+            window.addEventListener('touchend', self.mouseEndResize, false);
+            window.addEventListener('touchmove', self.divResize, false);
+            window.addEventListener('touchleave', self.divResize, false);
+            window.addEventListener('mousemove', self.divResize, false);
+            window.addEventListener('mouseout', self.divResize, false);
+            self.x = e.clientX;
+            self.y = e.clientY;
+        };
+
+        this.resizeCorner.addEventListener( 'mouseover', function() { self.resizeCorner.style.cursor='nwse-resize'; }, false);
+        this.resizeCorner.addEventListener( 'mousedown', this.mouseResize, false);
+        this.resizeCorner.addEventListener('touchstart', this.mouseResize, {passive:true});
+    }
+    
+    this.divMove = function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var touches = e.changedTouches;
+        var p = {x: e.clientX, y: e.clientY};
+
+        if (touches) {
+            var l = touches.length - 1;
+            p.x = touches[l].clientX;
+            p.y = touches[l].clientY;
+        }
+        e.preventDefault();
+        var y = ((p.y - self.y) + parseInt(self.topDiv.style.top));
+        var x = ((p.x - self.x) + parseInt(self.topDiv.style.left));
+        self.topDiv.style.top = (self.minTop && y < self.minTop ? self.minTop: y) + "px"; //hardcoded top of window
+        self.topDiv.style.left = (self.minLeft && x < self.minLeft ? self.minLeft: x) + "px";
+        self.x = p.x;
+        self.y = p.y;
+    };
+
+    this.mouseEndMove = function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        window.removeEventListener('mouseup', self.mouseEndMove, false);
+        window.removeEventListener('touchend', self.mouseEndMove, false);
+        window.removeEventListener('touchmove', self.divMove, false);
+        window.removeEventListener('touchleave', self.divMove, false);
+        window.removeEventListener('mousemove', self.divMove, false);
+        window.removeEventListener('mouseout', self.divMove, false);
+        self.dataDiv.style.pointerEvents = "auto";
+        self.eventsCentral('MOVE');
+    };
+    
+    this.mouseMove = function (e) {
+//        e.preventDefault();
+//        e.stopPropagation();
+//        if(!self.draggable) return;
+
+        if(!self.draggable) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+       
+        self.dataDiv.style.pointerEvents = "none";
+        window.addEventListener('mouseup', self.mouseEndMove, false);
+        window.addEventListener('touchend', self.mouseEndMove, false);
+        window.addEventListener('touchmove', self.divMove, false);
+        window.addEventListener('touchleave', self.divMove, false);
+        window.addEventListener('mousemove', self.divMove, false);
+        window.addEventListener('mouseout', self.divMove, false);
+        self.x = e.clientX;
+        self.y = e.clientY;
+    };
+
+    this.close = function(e) {
+        self.topDiv.style.display='none';
+    };
+    
+    this.focus = function(e) {
+        if(self.draggable)
+            self.topDiv.style.zIndex = self.zIndex+1000;
+        //waterbug.log(self.topDiv.id + ' ' + self.topDiv.style.zIndex);
+        //waterbug.show();
+    };
+    
+    this.blur = function(e) {
+        self.topDiv.style.zIndex = self.zIndex;
+        //waterbug.log(self.topDiv.id + ' ' + self.topDiv.style.zIndex);
+        //waterbug.show();
+    };
+    
+    this.addButtons( this.id, aButtons );
+    this.addToolButtons( this.id, aToolBarButtons );
+    this.addTitle( this.id, this.title );
+    
+    this.topDiv.tabIndex = this.id;
+
+    this.topDiv.addEventListener( 'focus', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        self.focus();
+    }, false );
+    
+    this.topDiv.addEventListener( 'blur', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        self.blur();
+    }, false );
+    
+};
+
+DRAGGABLE.ui.Window.prototype.formatStyleParam = function ( p ) {
+    p = (isNaN(p)===false) ? ''+p : p;
+    return (p === ''+parseInt(p)? p + 'px' : p );
+};
+
+DRAGGABLE.ui.Window.prototype.move = function( left, top ) {
+    this.topDiv.style.left = this.formatStyleParam( left );
+    this.topDiv.style.top = this.formatStyleParam( top );
+};
+
+DRAGGABLE.ui.Window.prototype.setSize = function( width, height ) {
+    this.topDiv.style.width = this.formatStyleParam( width ); 
+    this.topDiv.style.height = this.formatStyleParam( height ); 
+};
+
+
+DRAGGABLE.ui.Window.prototype.setVisible = function( visible ) {
+    this.topDiv.style.display=(visible? 'block':'none');
+    (visible) && this.focus();
+};
+
+DRAGGABLE.ui.Window.prototype.setMenuVisible = function( visible ) {
+    this.menuDiv.style.display=(visible? 'block':'none');
+    (visible) && this.focus();
+}
+
+DRAGGABLE.ui.Window.prototype.setToolBarVisible = function (visible) {
+    if( this.toolBar ) {
+        this.toolBar.style.display = visible ? 'block' : 'none';
+        this.resize();
+    }
+};
+
+DRAGGABLE.ui.Window.prototype.setStatusBarVisible = function (visible) {
+    if( this.bottomBar ) {
+        this.bottomBar.style.display = visible ? 'block' : 'none';
+        this.resize();
+    }
+};
+
+DRAGGABLE.ui.Window.prototype.setStatusMessage = function (msg) {
+    if(this.messageLine)
+        this.messageLine.innerHTML = msg;
+};        
+
+DRAGGABLE.ui.Window.prototype.setButtonVisible = function( action, visible ) {
+    var b = this.actionList[action.toUpperCase()];
+    if( b ) {
+        b.style.display = visible? '' : 'none';
+    }
+};
+
+DRAGGABLE.ui.Window.prototype.setFloating = function (floating) {
+    this.draggable = floating;
+    
+    if( this.draggable ) {
+        if( this.alternativeResize )
+            this.resizeCorner.style.display = 'block';
+        
+        this.topDiv.className = "draggableWindow";
+        if(this.parent) {
+            this.topDiv.style.position = "absolute";
+        }
+        this.minTop = 1; // ver isso
+        this.minLeft = 1; // ver isso
+        this.focus();
+    } else {
+        if( this.alternativeResize )
+            this.resizeCorner.style.display='none';
+        
+        this.topDiv.className = "draggableWindow noShadow";
+        this.topDiv.style.position = "relative"; // pq assume isso quando nao dragavel?
+        this.topDiv.style.margin = "1px";
+        this.blur();
+    }
+};
+
+DRAGGABLE.ui.Window.prototype.resize = function() {
+    this.calcMinHeight();
+    this.dataDiv.style.height =  (this.topDiv.clientHeight - this.minHeight) + 'px';
+};
+
+DRAGGABLE.ui.Window.prototype.defineCallback = function( cb ) {
+    this.callback = cb;
+};
+
+DRAGGABLE.ui.Window.prototype.eventsCentral = function (action, elem) {
+    if (this.callback) {
+        this.callback.listener[this.callback.method]( action, elem);
+    } else {
+        if (action === 'CLOSE') {
+            this.close();
+        }
+    }
+};
+
+DRAGGABLE.ui.Window.prototype.setTitle = function( title, translator ) {
+    var translated_title = "";
+    if( translator && title !== "" ) {
+        translated_title = translator.getResource(title);
+        this.titleSpan.setAttribute('data-translate', title);
+    } else {
+        this.titleSpan.removeAttribute('data-translate');
+        translated_title = (title? title : translated_title);
+    }
+    this.titleSpan.innerHTML = translated_title;
+};
+
+DRAGGABLE.ui.Window.prototype.setSubTitle = function( title, translator ) {
+    var translated_title = "";
+    if( translator && title !== "" ) {
+        var t = translator.getResource(title);
+        translated_title = (t? '- ' + t : translated_title); 
+        this.subTitleSpan.setAttribute('data-translate', title);
+    } else {
+        this.subTitleSpan.removeAttribute('data-translate');
+        translated_title = (title? title : translated_title);
+    }
+    this.subTitleSpan.innerHTML = translated_title;
+};
+
+DRAGGABLE.ui.Window.prototype.addTitle = function( id, title  ) {
+    var self = this, translated_title, spn = "";
+    
+    var div = document.createElement("DIV");
+    div.setAttribute("class", "dTitle" ); 
+    
+    if( title && this.translator ) {
+        translated_title = this.translator.getResource(title);
+        spn = 'data-translate="'+title+'"';
+    }
+    
+    div.innerHTML = '<span id="dSpanTitle'+id+'" '+spn+' style="padding-left: 6px; float:left; white-space: nowrap;">'+(translated_title?translated_title:title)+'</span>'+
+                        '<span id="dSpanSubTitle'+id+'" style="padding-left: 6px; float:left; white-space: nowrap;"></span>';
+    
+    self.menuDiv.appendChild(div);
+    
+    self.titleSpan = document.getElementById("dSpanTitle"+id);
+    self.subTitleSpan = document.getElementById("dSpanSubTitle"+id);
+    
+    if(self.draggable && self.menuDiv) {
+        self.menuDiv.addEventListener( 'mouseover', function() { self.menuDiv.style.cursor='move'; }, false);
+    }
+    self.menuDiv.addEventListener( 'mousedown', self.mouseMove, false);
+    self.menuDiv.addEventListener('touchstart', self.mouseMove, {passive:true});
+    
+};
+
+DRAGGABLE.ui.Window.prototype.addButtons = function( id,  aButtons ) {
+    var defaultButtons = ['close'];
+    var self = this;
+    
+    var buttonMap = { CLOSE: 'close', MOVE: 'move', ROTATE: 'rotate', GLOBE: 'world', ZOOM:'zoom-in', HELP:'circle-question', 
+                        POPIN: 'popin', POPOUT: 'popout', RESTORE:'restore', MAXIMIZE:'full-screen', APPLY:'tick', PRINT:'printer'  };
+    
+    if(aButtons)
+        defaultButtons = defaultButtons.concat(aButtons);
+    
+    defaultButtons.forEach( function (label) {
+        
+        label = label.split('|');
+        
+        var spn = "";
+        var action = label[0].toUpperCase();
+        var rotulo = label.length > 1 ? label[1] : "";
+        var ico = 'ico-' + (buttonMap[action] ? buttonMap[action] : action.toLowerCase());
+        var translateId = label.length > 1 ? label[1] : label[0];
+        
+        if( self.translator ) {
+            rotulo = self.translator.getResource(translateId);
+            spn = 'data-translate="'+translateId+'"';
+        }
+        
+        var html = '<i class="'+ ico +' ico-white" title="'+ rotulo +'" '+spn+' ></i>';
+        
+        var div = document.createElement("DIV");
+        div.setAttribute("id", 'd'+ action +'Button'+id ); 
+        div.setAttribute("class", "dButton" ); 
+        div.innerHTML = action === 'MOVE' ? html : '<a href="">'+html+'</a>' ;
+        
+        self.addAction( action, div, self );
+        self.menuDiv.appendChild(div);
+        
+    });
+};
+
+DRAGGABLE.ui.Window.prototype.addAction = function( action, div, self ) {
+        
+    if(! this.actionList ) {
+        this.actionList = {};
+    }
+    
+    this.actionList[action] = div; // salva a lista de acões 
+    
+    if( action === 'MOVE' ) return; // apenas registra na lista de ações 
+    
+    var f = function(e) {
+        e.preventDefault(); 
+        e.stopPropagation(); 
+        self.eventsCentral(action, div);
+    };
+    
+    div.addEventListener( 'click', f, false);
+    div.addEventListener( 'touchstart', f, {passive:true});
+    div.addEventListener( 'mousedown', function(e) { e.preventDefault(); e.stopPropagation(); }, false);
+};
+
+DRAGGABLE.ui.Window.prototype.dispatchAction = function( action ) {
+    this.eventsCentral(action, this.actionList[action] );
+};
+
+DRAGGABLE.ui.Window.prototype.addToolButtons = function( id,  aButtons ) {
+    if(!aButtons) return;
+    var self = this;
+    
+    var buttonMap = { 
+        GUTTER:'list-numbered', REFRESH:'bolt', DOWNLOAD:'download', FONTSIZE: 'fontsize', 
+        DROPDOWN:'open-down', OCTAVEDOWN:'octave-down', OCTAVEUP:'octave-up', 
+        FINDNREPLACE:'find-and-replace', 
+        UNDO:'undo', UNDOALL:'undo-all', REDO:'redo', REDOALL:'redo-all', LIGHTON:'lightbulb-on', READONLY:'lock-open' };
+    
+    aButtons.forEach( function (label) {
+        
+        label = label.split('|');
+        
+        var spn = "";
+        var action = label[0].toUpperCase();
+        var rotulo = label.length > 1 ? label[1] : "";
+        var translateId = label.length > 1 ? label[1] : label[0];
+        
+        
+        if( self.translator ) {
+            rotulo = self.translator.getResource(translateId);
+            spn = 'data-translate="'+translateId+'"';
+        }
+        
+        var div = document.createElement("DIV");
+        div.id =  'd'+ action +'Button'+id ; 
+        self.toolBar.appendChild(div);
+        
+        if( action === 'DROPDOWN' ) {
+            // flavio - verificar as implicações de não usar tradução aqui
+            div.className = "dButton topMenu";
+            
+            if( typeof self.menu === "undefined" ) {
+                self.menu = {};
+            }
+                    
+            var ddmId = label[1];
+            self.menu[ddmId] = new DRAGGABLE.ui.DropdownMenu(
+                 div
+                ,self.callback
+                ,[{title: '...', ddmId: ddmId, tip: rotulo, itens: []}]
+            );
+    
+        } else {
+            
+            var icon = 'ico-' + (buttonMap[action] ? buttonMap[action] : action.toLowerCase());
+            
+            div.className = "dButton";
+            div.innerHTML = '<a href="" ><i class="'+ icon +' ico-black ico-large" title="'+ rotulo +'" '+spn+' ></i></a>';
+            self.addAction( action, div, self );
+            
+        }
+    });
+};
+
+DRAGGABLE.ui.Window.prototype.addPushButtons = function( aButtons ) {
+    for( var p = 0; p < aButtons.length; p ++ ) {
+        var ico, claz;
+        var part = aButtons[p].split('|');
+        var button = document.getElementById(part[0]);
+        
+        var action = part[1].split('-');
+
+        switch( action[action.length-1].toUpperCase() ) {
+            case 'SEARCH': 
+                ico = 'ico-search';  
+                claz = 'pushbutton';  
+                break;
+            case 'REPLACE': 
+                ico = 'ico-redo';  
+                claz = 'pushbutton';  
+                break;
+            case 'REPLACEALL': 
+                ico = 'ico-redo-all';  
+                claz = 'pushbutton';  
+                break;
+            case 'YES': 
+            case 'APPLY': 
+                ico = 'ico-circle-tick';  
+                claz = 'pushbutton';  
+                break;
+            case 'RESET': 
+                ico = 'ico-circle-r';     
+                claz = 'pushbutton';  
+                break;
+            case 'NO': 
+            case 'CLOSE': 
+            case 'CANCEL':
+                ico = 'ico-circle-error'; 
+                claz = 'pushbutton cancel'; 
+                break;
+        }
+        
+        new DRAGGABLE.ui.PushButton(button, claz, ico, part[1], part[2], this );
+        
+    }
+};
+
+
+DRAGGABLE.ui.PushButton = function( item, claz, ico, act, text, janela) {
+    var spn = "";
+    var translateId = text ? text : act;
+    this.item = item;
+    this.item.className = claz;
+    
+    if( janela.translator ) {
+        text = janela.translator.getResource(translateId);
+        spn = 'data-translate="'+translateId+'"';
+    }
+
+    this.item.innerHTML = '<i class="'+ico+'" ></i><span '+spn+'>'+text+'</span></div>' ;
+    
+    this.item.addEventListener('click', function(e) {
+        e.preventDefault(); 
+        e.stopPropagation(); 
+        janela.eventsCentral(act.toUpperCase(), item);
+    }, false );
+};
+/* 
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ * Implements: 
+*   - DRAGGABLE.ui.DropdownMenu
+*/
+
+if (! window.DRAGGABLE )
+    window.DRAGGABLE  = {};
+
+if (! window.DRAGGABLE.ui )
+    window.DRAGGABLE.ui  = { windowId: 0, menuId: 0, slideId: 0, oneTimeCloseFunction : null, lastOpen: null };
+        
+DRAGGABLE.ui.DropdownMenu = function (topDiv, options, menu) {
+    var self = this;
+    var opts = options || {};
+    this.headers = {};
+    
+    this.id = ++ DRAGGABLE.ui.menuId;
+    
+    this.Lastkey = { time: 0, key: 0, label: "" }; // controla última pesquisa feita no menu.
+
+    this.container = ( typeof topDiv === 'object' ) ? topDiv : document.getElementById(topDiv);
+    this.listener = opts.listener || null;
+    this.method = opts.method || null;
+    this.translate = opts.translate || false;
+    this.menuLabel = opts.label || null;
+    this.menuBorder = opts.border || false
+    this.menuBorderClass = opts.borderClass || 'rounded-corners'
+
+    if (!this.container) {
+        waterbug.log('Elemento ' + topDiv + ' não existe!');
+        return;
+    } else {
+        this.container.innerHTML = "";
+    }
+
+  
+    for ( var m = 0; m < menu.length; m++ ) {
+        
+        var ddmId = menu[m].ddmId || ('ddm' +this.id +m );
+        
+        var e1 = document.createElement("div");
+        e1.setAttribute( "class", 'dropdown' );
+        this.container.appendChild(e1);
+
+        //assumo por hora que, se tem label, tem borda
+        if( this.menuLabel ) {
+            var h = document.createElement("H1");
+            h.setAttribute( "data-translate", this.menuLabel );
+            h.appendChild(document.createTextNode(this.menuLabel));
+            e1.appendChild(h);
+            this.menuBorder = true;
+        }
+
+        if(this.menuBorder){
+            e1.className += " " + this.menuBorderClass;
+        }
+        
+        var e2 = document.createElement("input");
+        e2.setAttribute( "type", "checkbox" );
+        e1.appendChild(e2);
+        this.headers[ddmId] = { div: null, chk: e2, btn: null, list: null, actionList: {}, labelList: {} };
+        
+        e2 = document.createElement("button");
+        
+        if( menu[m].tip ) {
+            e2.setAttribute( "data-translate", ddmId );
+            e2.setAttribute( "title", menu[m].tip );
+        }
+        
+        e2.setAttribute( "data-ddm", ddmId );
+        var spn = this.translate ? '<span data-translate="'+ddmId+'" >' :'<span>';
+        e2.innerHTML = spn + (menu[m].title || '' ) + '</span>' + '&#160;'+'<i class="ico-open-down" data-toggle="toggle"></i>';
+        
+        e2.addEventListener( 'click', function(e) { 
+            e.stopPropagation(); 
+            e.preventDefault(); 
+            self.eventsCentral(this.getAttribute("data-ddm")); 
+        }, false);
+        
+        e2.addEventListener( 'touchstart', function(e) { 
+            e.stopPropagation(); 
+            e.preventDefault(); 
+            self.eventsCentral(this.getAttribute("data-ddm")); 
+        }, {passive:false});
+ 
+        e2.addEventListener("keydown",function(e) {
+            e.stopPropagation(); 
+            e.preventDefault(); 
+        });
+            
+        e2.addEventListener("keyup",function(e) {
+            e.stopPropagation(); 
+            e.preventDefault(); 
+            var ddm = this.getAttribute("data-ddm");
+            switch( e.keyCode ) {
+                case 27:
+                    if(DRAGGABLE.ui.oneTimeCloseFunction) {
+                        DRAGGABLE.ui.oneTimeCloseFunction();
+                    }
+                    break;
+                case 13:
+                    if( DRAGGABLE.ui.lastOpen && self.headers[DRAGGABLE.ui.lastOpen].highlightItem ) {
+                       //alert(DRAGGABLE.ui.lastOpen+','+self.headers[DRAGGABLE.ui.lastOpen].highlightItem);
+                       self.eventsCentral( DRAGGABLE.ui.lastOpen, self.headers[DRAGGABLE.ui.lastOpen].highlightItem ) ;  
+                    }
+                    break;
+                case 33: // PgUp
+                case 34: // PgDn
+                    var cnt = 7;
+                    while( self.highlightItem( DRAGGABLE.ui.lastOpen, e.keyCode === 33 ) && cnt > 0 )  cnt --;  
+                    break;
+                case 36: // Home
+                case 35: // End
+                    while( self.highlightItem( DRAGGABLE.ui.lastOpen, e.keyCode === 36 ) ) ;  
+                    break;
+                case 38: // Up
+                case 40: // Down
+                    if( DRAGGABLE.ui.lastOpen )
+                        self.highlightItem( DRAGGABLE.ui.lastOpen, e.keyCode === 38 ) ;  
+                    break;
+                case 37: // Left
+                case 39: // Right
+                    if( DRAGGABLE.ui.lastOpen )
+                        self.openMenu(DRAGGABLE.ui.lastOpen, e.keyCode === 37 ); 
+                    break;
+                default:
+                    if(e.keyCode >=65 && e.keyCode <=122  ) {
+                        self.searchInMenu(DRAGGABLE.ui.lastOpen, e.keyCode ); 
+                    }
+                    break;    
+            }
+        });
+        
+        e1.appendChild(e2);
+        this.headers[ddmId].btn = e2;
+        
+        var e3 = document.createElement("div");
+        e3.setAttribute( "class", "dropdown-menu ps--active-y" );
+        e3.setAttribute( "data-toggle", "toggle-menu" );
+        e1.appendChild(e3);
+
+        this.sbar = new PerfectScrollbar( e3, {
+             handlers: ['click-rail', 'drag-thumb', 'keyboard', 'wheel', 'touch']
+            ,wheelSpeed: 1
+            ,wheelPropagation: false
+            ,suppressScrollX: true
+            ,minScrollbarLength: 100
+            ,swipeEasing: true
+            ,scrollingThreshold: 500
+            ,margin: "4px 0 2px 0"
+        });
+        
+        this.headers[ddmId].div = e3;
+        
+        e3.addEventListener( 'transitionend', function(e) {
+            var v = this.scrollTop;
+            this.scrollTop=10000;
+            this.scrollTop=v;
+            self.sbar.update();
+        }, false);
+
+        var e4 = document.createElement("ul");
+        e3.appendChild(e4);
+        this.headers[ddmId].list = e4;
+        
+        for ( var i = 0; i < menu[m].itens.length; i++ ) {
+            this.addItemSubMenu(ddmId, menu[m].itens[i]);
+        }
+    }
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.dispatchAction = function( ddm, action ) {
+    this.headers[ddm].actionList[action].getElementsByTagName('a')[0].click();
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.setVisible = function (visible) {
+    this.container.style.display = visible? '' : 'none' ;
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.getSubMenu = function (ddm) {
+    if( ! this.headers[ddm] ) {
+        waterbug.log( 'Menu não encontrado!' );
+        return false;
+    }
+    return this.headers[ddm];
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.getSubItem = function (ddm, item) {
+    
+    if( ! this.getSubMenu(ddm) ) {
+        return false;
+    }
+    
+    var toSel = item;
+    if(  typeof item === "string" ) {
+        toSel = this.headers[ddm].actionList[item];
+    } 
+    
+    return (toSel ?  toSel: false );
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.disableSubItem = function (ddm, action) {
+    var item = this.getSubItem(ddm,action);
+    
+    if( ! item ) {
+        return false;
+    }
+    
+    item.style.pointerEvents = 'none';
+    item.style.opacity = '0.5';
+    
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.enableSubItem = function (ddm, action) {
+    
+    var item = this.getSubItem(ddm,action);
+    
+    if( ! item ) {
+        return false;
+    }
+    
+    item.style.pointerEvents = '';
+    item.style.opacity = '';
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.disableSubMenu = function (ddm) {
+    
+    if( ! this.getSubMenu(ddm) ) {
+        return false;
+    }
+    
+    this.headers[ddm].chk.checked = false;
+    this.headers[ddm].btn.style.pointerEvents = 'none';
+    this.headers[ddm].btn.style.opacity = '0.5';
+    
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.enableSubMenu = function (ddm) {
+    
+    if( ! this.getSubMenu(ddm) ) {
+        return false;
+    }
+    
+    this.headers[ddm].chk.checked = false;
+    this.headers[ddm].btn.style.pointerEvents = '';
+    this.headers[ddm].btn.style.opacity = '';
+    
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.emptySubMenu = function (ddm) {
+    
+    if( ! this.getSubMenu(ddm) ) {
+        return false;
+    }
+    this.headers[ddm].list.innerHTML = "";
+    
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.openMenu = function (ddm, previous ) {
+    var toSel, next = false, prev;
+    for( var item in this.headers ) {
+        if(next) {
+            toSel = item;
+            break;
+        }
+        if( !previous && item === ddm) {
+            next = true;
+        } else if (previous && prev && item === ddm ){
+            toSel = prev;
+            break;
+        }
+        prev = item;
+    }
+    if( ! toSel ) return false;
+    this.eventsCentral(toSel);
+    
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.searchInMenu = function (ddm, key ) {
+
+    if( this.headers[ddm] === undefined ) return;
+
+    var toSel = "";
+    var acts = this.headers[ddm].labelList;
+    var chr = String.fromCharCode(key).toUpperCase();
+    var agora = new Date().getTime();
+    var validade  = 3000; // 3 segundos
+
+    // tecla repetida, dentro da validade, então busque o próximo da mesma letra inicial
+    var findNext = ( this.Lastkey.key === key && this.Lastkey.time > ( agora - validade ) );
+
+    if( findNext ) {
+        var next = false;
+        for( var item in acts ) {
+            if(  next ) {
+                if( item.startsWith(chr) ) {
+                    toSel = item;
+                    break;
+                }
+            } else if( this.headers[ddm].highlightItem && item === this.Lastkey.label ) {
+                next = true;
+            }
+        }
+    } else {
+        var previo = "";
+        //tenta encontrar um que comece com a letra procurada
+        for( var item in acts ) {
+            if( previo === "" ) previo = item; // registra o primeiro item para usar abaixo
+            if( item.startsWith(chr) ){
+               toSel = item;
+               break;
+            }
+        }
+        //se não encontrar, para no último menor que a letra procurada
+        if( toSel === "" ) {
+            for( var item in acts ) {
+                if( item.charAt(0) >= chr ){
+                    toSel = previo;
+                    break;
+                }
+                previo = item;
+            }
+        }
+    }
+
+    if( toSel !== "" ) {
+        this.highlightItem(ddm, this.headers[ddm].labelList[toSel]);
+        this.Lastkey = { time: agora, key: key, label: toSel }
+    }
+
+};
+
+
+DRAGGABLE.ui.DropdownMenu.prototype.unhighlightItem = function (menu) {
+    var acts = menu.actionlList;
+
+    for( var item in acts ) {
+         menu.actionList[item].className = '';
+    }
+
+    if( menu.highlightItem && (!menu.selectedItem || menu.selectedItem !== menu.actionList[menu.highlightItem]) ) {
+        menu.actionList[menu.highlightItem].className = '';
+        delete menu.highlightItem;
+    }
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.highlightItem = function (ddm, up) {
+    // up can be true or false (indicating direction) or it can be a string indicating an item
+    var toSel = up, next = false, prev;
+    var menu = this.headers[ddm];
+
+    if( menu === undefined ) return;
+
+    var acts = menu.actionList;
+    if( typeof up === "boolean" ) {
+        toSel = false;
+        for( var item in acts ) {
+            if(  acts[item].style.pointerEvents === 'none' ){
+                continue;
+            }
+            if( (! menu.highlightItem) || next ) {
+                toSel = item;
+                break;
+            } else if( !up && menu.highlightItem && menu.highlightItem === item ) {
+                next = true;
+            } else if (up && prev && menu.highlightItem && menu.highlightItem === item ){
+                toSel = prev;
+                break;
+            }
+            prev = item;
+        }
+    }
+    
+    if(!toSel) return false;
+    
+    // sempre limpa e registra o item que seria destacado, mesmo que não veja a marcar (item já selecionado).
+    this.unhighlightItem( menu );
+    menu.highlightItem = toSel;
+    
+    if( !menu.selectedItem || menu.selectedItem !== acts[menu.highlightItem] ) {
+        acts[toSel].className = 'hover';
+    }
+        
+    if( acts[toSel].offsetTop+acts[toSel].clientHeight >=  menu.div.scrollTop + menu.div.clientHeight ) {
+        menu.div.scrollTop = acts[toSel].offsetTop+(1.9*acts[toSel].clientHeight)-menu.div.clientHeight;
+    }
+    if( acts[toSel].offsetTop <  menu.div.scrollTop ) {
+        menu.div.scrollTop = acts[toSel].offsetTop;
+    }    
+    return true;
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.selectItem = function (ddm, item) {
+    var toSel = item;
+
+    var menu = this.headers[ddm];
+    this.unhighlightItem( menu );
+
+    if(  typeof item === "string" ) {
+        toSel = this.headers[ddm].actionList[item];
+    } 
+    
+    if( ! toSel ) return false;
+    
+    if( this.headers[ddm].selectedItem ) {
+        this.headers[ddm].selectedItem.className = '';
+    }
+    
+    toSel.className = 'selected';
+    this.headers[ddm].selectedItem = toSel;
+    return toSel;
+};
+    
+DRAGGABLE.ui.DropdownMenu.prototype.setSubMenuTitle = function (ddm, newTitle) {
+    
+    if( ! this.headers[ddm] ) {
+        waterbug.log( 'Menu não encontrado!' );
+        return;
+    }
+    
+    var title = newTitle;
+    if(  typeof title !== "string" ) {
+        title = newTitle.getElementsByTagName('a')[0].innerHTML;
+    } 
+    
+    if( ! title ) {
+        waterbug.log( 'Título não encontrado!' );
+        return false;
+    }
+        
+    this.headers[ddm].btn.innerHTML = (title || '' ) +'&#160;<i class="ico-open-down" data-toggle="toggle"></i>';
+    
+};
+    
+DRAGGABLE.ui.DropdownMenu.prototype.addItemSubMenu = function (ddm, newItem, pos) {
+    
+    var self = this, e4;
+    var tags = newItem.split('|'); 
+    
+    if( ! self.headers[ddm] ) {
+        waterbug.log( 'Menu não encontrado!' );
+        return;
+    }
+    
+    if( tags[0].substring(0, 3) ===  '---' ) {
+        e4 = document.createElement("hr");
+    } else {
+        e4 = document.createElement("li"); 
+        var action = tags.length > 1 ? tags[1] : tags[0];
+        e4.setAttribute( "id",  action );
+        
+        var e5 = document.createElement("a");
+        var spn = this.translate ? '<span data-translate="'+action+'" >' :'<span>';
+        
+        e5.innerHTML = spn + tags[0] + '</span>';
+        e4.appendChild(e5);
+        
+        this.addAction( ddm, action, e4, this, tags[0]);
+        
+    }
+    
+    if(pos>=0) {
+        self.headers[ddm].list.insertBefore(e4, self.headers[ddm].list.children[pos]);
+    } else {
+        self.headers[ddm].list.appendChild(e4);
+    }  
+    
+    // added element
+    return e4;
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.setListener = function (listener, method) {
+    this.listener = listener || null;
+    this.method = method || 'callback';
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.eventsCentral = function (ddm, event) {
+    var self = this;
+    var e = this.headers[ddm];
+    e.chk.checked = ! e.chk.checked;
+      
+    // close any previously opened menu
+    if(DRAGGABLE.ui.oneTimeCloseFunction) {
+        DRAGGABLE.ui.oneTimeCloseFunction();
+    }
+
+    if( e.chk.checked ) {
+        DRAGGABLE.ui.oneTimeCloseFunction = function () { 
+            e.chk.checked = false; 
+            DRAGGABLE.ui.lastOpen = null;
+            self.unhighlightItem( e );
+            document.removeEventListener('click', DRAGGABLE.ui.oneTimeCloseFunction, false );
+            DRAGGABLE.ui.oneTimeCloseFunction = null;
+        };
+
+        document.addEventListener( 'click', DRAGGABLE.ui.oneTimeCloseFunction  );
+        DRAGGABLE.ui.lastOpen = ddm;
+
+        if( e.selectedItem )
+             e.div.scrollTop = e.selectedItem.offsetTop-115;
+    }
+    
+    if(event && this.listener){
+        this.listener[this.method](event);
+    }
+};
+
+DRAGGABLE.ui.DropdownMenu.prototype.addAction = function( ddm, action, div, self, label ) {
+    
+    self.headers[ddm].actionList[action]=div; 
+    self.headers[ddm].labelList[label]=action; 
+    
+    div.setAttribute( "data-ddm", ddm );
+    div.setAttribute( "data-value", action );
+    
+    div.addEventListener( 'click', function (e) {
+       e.preventDefault(); 
+       e.stopPropagation(); 
+       self.eventsCentral(this.getAttribute("data-ddm"), this.getAttribute("data-value") );
+    }, false);
+    
+    var swiping = function(e) {
+        e.preventDefault(); 
+        e.stopPropagation(); 
+        self.mouseMovido = true;
+        var newY = e.changedTouches[0].pageY;
+        var delta = self.startY - newY;
+        
+        var m = self.headers[ddm].div; 
+        
+        if( Math.abs(delta) > 10) {
+           var v = m.scrollTop + delta;
+           if( v < 0 )
+               m.scrollTop = 0;
+           else if ( v > ( m.scrollHeight - m.ClientHeight ) ) {
+               m.scrollTop = ( m.scrollHeight - m.ClientHeight );
+           } else {
+               m.scrollTop = v;
+           }
+           self.startY = newY;
+           self.moved = true;
+        }
+    };
+    
+    div.addEventListener( 'touchstart', function (e) {
+       self.startY = e.changedTouches[0].pageY;
+       self.moved = false;
+       div.addEventListener( 'touchmove', swiping, false );
+       e.preventDefault(); 
+       e.stopPropagation(); 
+    }, {passive:true});
+    
+    div.addEventListener( 'touchend', function (e) {
+        
+        div.removeEventListener( 'touchmove', swiping, false );
+        
+        swiping(e);
+        
+        if(! self.moved ) {
+            e.preventDefault(); 
+            e.stopPropagation(); 
+            self.eventsCentral(this.getAttribute("data-ddm"), this.getAttribute("data-value") );
+        }
+        
+    }, false);
+    
+    div.addEventListener( 'mousedown', function(e) { e.preventDefault(); e.stopPropagation(); }, false);
+    div.addEventListener( 'mouseout', function(e)  { e.preventDefault(); e.stopPropagation(); }, false); 
+    
+    div.addEventListener( 'mouseover', function(e) { 
+        e.preventDefault(); 
+        e.stopPropagation(); 
+        if( self.mouseMovido ) 
+           self.highlightItem(this.getAttribute("data-ddm"), this.getAttribute("data-value") );
+        self.mouseMovido = false;
+    }, false);
+    
+};
+/* 
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ * Implements: 
+*   - DRAGGABLE.ui.Alert
+*   - DRAGGABLE.ui.ReplaceDialog
+*   - DRAGGABLE.ui.ColorPicker
+*   
+ */
+
+if (! window.DRAGGABLE )
+    window.DRAGGABLE  = {};
+
+if (! window.DRAGGABLE.ui )
+    window.DRAGGABLE.ui  = { windowId: 0, menuId: 0, slideId: 0, oneTimeCloseFunction : null, lastOpen: null };
+
+DRAGGABLE.ui.Alert = function( parent, action, text, description, options ) {
+    
+    var x, y, w, h, callback;
+    
+    options = options? options : {};
+    this.translator = options.translator ? options.translator : null;
+    
+    this.callback = { listener: this, method: 'alertCallback' };
+    
+    if(!parent) {
+        
+        this.parentCallback = null;
+        
+        // redimensiona a workspace
+        var winH = window.innerHeight
+                    || document.documentElement.clientHeight
+                    || document.body.clientHeight;
+
+        var winW = window.innerWidth
+                || document.documentElement.clientWidth
+                || document.body.clientWidth;
+        
+        x = winW/2-350;
+        y = winH/2-150;
+        
+    } else {
+        this.parentCallback = parent.callback;
+        x = parent.topDiv.offsetLeft + 50;
+        y = parent.topDiv.offsetTop + 50;
+    }
+    
+    var w = ( action ? "500px" : "700px" );
+    var h = "auto";
+    
+    x = options.x !== undefined ? options.x : x;
+    y = options.y !== undefined ? options.y : y;
+    w = options.w !== undefined ? options.w : w;
+    h = options.h !== undefined ? options.h : h;
+    
+    this.container = new DRAGGABLE.ui.Window(
+          null
+        , null
+        , {title: 'AlertTitle', translator: this.translator, statusbar: false, top: y+"px", left: x+"px", width: w, height: h, zIndex: 300}
+        , this.callback
+    );
+    
+    this.container.dataDiv.innerHTML = '<div class="dialog" >\n\
+        <div class="flag"><i class="ico-circle-'+(action? 'question' : 'exclamation')+'"></i></div>\n\
+        <div class="text-group'+(action? '' : ' wide')+'">\n\
+            <div class="title">'+text+'</div>\n\
+            <div class="description">'+description+'</div>\n\
+        </div>\n\
+        <div id="pgAlert" class="pushbutton-group" style="right: 0; bottom: 0;" >\
+            <div id="botao1Alert"></div>\n\
+            <div id="botao2Alert"></div>\n\
+        </div>\n\
+    </div>';
+    
+    if( action ) {
+    
+        this.container.addPushButtons([
+            'botao1Alert|'+action+'-YES|yes',
+            'botao2Alert|'+action+'-NO|no'
+        ]);
+
+    } else {
+        
+        this.container.addPushButtons([
+            'botao1Alert|CLOSE|ok'
+        ]);
+        
+    }   
+    this.modalPane = document.getElementById('modalPane');
+    
+    if( ! this.modalPane ) {
+        
+        var div = document.createElement("DIV");
+        div.id = 'modalPane';
+        div.style = "position:absolute; z-index:250; background-color:black; opacity:0.4; top:0; left:0; bottom:0; right:0; pointer-events: block; display:none;";
+        document.body.appendChild(div);
+        this.modalPane = div;
+        
+    }    
+    
+    this.modalPane.style.display = 'block';
+        
+    this.container.setVisible(true);
+
+};
+
+DRAGGABLE.ui.Alert.prototype.close = function( ) {
+    this.modalPane.style.display = 'none';
+    this.container.setVisible(false);
+    this.container.topDiv.remove();
+    this.container = null;
+};
+
+DRAGGABLE.ui.Alert.prototype.alertCallback = function ( action, elem ) {
+    switch(action) {
+        case 'CLOSE': 
+        case 'CANCEL': 
+           this.close();
+           break;
+        default:
+            if( this.parentCallback )
+                this.parentCallback.listener[this.parentCallback.method](action, elem);
+    }
+};
+
+DRAGGABLE.ui.ReplaceDialog = function( parent, options ) {
+    
+    var x, y, st = "Localizar:", rt = "Substituir por:", cs = 'Diferenciar maiúsculas e minúsculas', ww = 'Pesquisar palavras inteiras';
+    
+    options = options? options : {};
+    this.translator = options.translator ? options.translator : null;
+    
+    this.parentCallback = parent.callback;
+    this.callback = { listener: this, method: 'dialogCallback' };
+    x = Math.min( parent.dataDiv.clientWidth/2 - 250, 200);
+    y = 20;
+    
+    this.container = new DRAGGABLE.ui.Window(
+          parent.dataDiv
+        , null
+        , {title: 'ReplaceDialogTitle', translator: this.translator, statusbar: false, top: y+"px", left: x+"px", width: "500px", height:"auto", zIndex: 300}
+        , this.callback
+    );
+    
+    if( this.translator ) {
+        st = this.translator.getResource( "searchTerm" );
+        rt = this.translator.getResource( "replaceTerm" );
+        cs = this.translator.getResource( "match_case" );
+        ww = this.translator.getResource( "whole_word" );
+    }
+    
+    this.container.dataDiv.innerHTML = '<div class="dialog" >\n\
+        <div class="flag"><i class="ico-find-and-replace"></i></div>\n\
+        <div class="text-group">\n\
+            <br><span data-translate="searchTerm">'+st+'</span><br><input id="searchTerm" type="text" value=""></input>\n\
+            <br><input id="chk_match_case" type="checkbox"><span data-translate="match_case">'+cs+'</span>\n\
+            <br><input id="chk_whole_word" type="checkbox"><span data-translate="whole_word">'+ww+'</span>\n\
+            <br><br><span data-translate="replaceTerm">'+rt+'</span><br><input id="replaceTerm" type="text" value=""></input>\n\
+        </div>\n\
+        <div id="pgAlert" class="pushbutton-group" style="right: 0; bottom: 0;" >\
+            <div id="botao1Replace"></div>\n\
+            <div id="botao2Replace"></div>\n\
+            <div id="botao3Replace"></div>\n\
+            <div id="botao4Replace"></div>\n\
+        </div>\n\
+    </div>';
+    
+    this.container.addPushButtons([
+        'botao1Replace|search',
+        'botao2Replace|replace',
+        'botao3Replace|replaceall',
+        'botao4Replace|cancel'
+    ]);
+
+    this.searchTerm = document.getElementById("searchTerm");
+    this.replaceTerm = document.getElementById("replaceTerm");
+    this.chkMatchCase = document.getElementById("chk_match_case");
+    this.chkWholeWord  = document.getElementById("chk_whole_word");       
+    
+    this.container.setVisible(true);
+
+};
+
+DRAGGABLE.ui.ReplaceDialog.prototype.close = function( ) {
+    //this.modalPane.style.display = 'none';
+    this.container.setVisible(false);
+    this.container.topDiv.remove();
+    this.container = null;
+};
+
+DRAGGABLE.ui.ReplaceDialog.prototype.dialogCallback = function ( action, elem ) {
+    switch(action) {
+        case 'MOVE': 
+           break;
+        case 'CLOSE': 
+        case 'CANCEL': 
+           this.close();
+           break;
+        default:
+            this.parentCallback.listener[this.parentCallback.method]('DO-'+action, elem, this.searchTerm.value, this.replaceTerm.value, this.chkMatchCase.checked, this.chkWholeWord.checked );
+    }
+};
+
+DRAGGABLE.ui.ColorPicker = function( itens, options ) {
+    
+    options = options? options : {};
+    this.translator = options.translator ? options.translator : null;
+    
+    this.container = new DRAGGABLE.ui.Window( 
+          null
+        , [ 'apply|select' ]
+        , { title: 'PickerTitle', translator: this.translator, draggable:true, width: "auto", height: "auto", zIndex:"200" }
+        , {listener : this, method: 'pickerCallBack' }
+    );
+
+    var txtRO = ""
+    if(options.readonly) {
+        txtRO='readonly'
+    }
+
+    this.container.dataDiv.innerHTML = '\
+<div class="picker-group">\
+    <canvas id="colorPickerCanvas"></canvas><br>\
+    <input id="originalColor" '+txtRO+' ></input>\
+    <input id="newColor" '+txtRO+' ></input>\
+</div>'; 
+   
+    this.originalColor = document.getElementById( 'originalColor' );
+    this.newColor = document.getElementById( 'newColor' );
+    
+    this.cp = new KellyColorPicker({
+        place : 'colorPickerCanvas', 
+        size : 190, 
+        input : 'newColor'  
+    });
+    
+    var self = this;
+    
+    for( var i = 0; i < itens.length; i++ ) {
+        document.getElementById(itens[i]).addEventListener('click', function( e ) { self.activate(this); e.stopPropagation(); } );
+    }
+};
+
+DRAGGABLE.ui.ColorPicker.prototype.pickerCallBack = function( action, elem ) {
+    switch(action) {
+        case 'MOVE': 
+            break;
+        case 'APPLY': 
+            this.item.style.backgroundColor = this.item.value = this.newColor.value;
+            this.close();
+            break;
+        case 'CLOSE': 
+           this.item.style.backgroundColor = this.item.value = this.originalColor.value;
+           this.close();
+   }
+};
+
+DRAGGABLE.ui.ColorPicker.prototype.close = function( ) {
+    this.container.setVisible(false);
+};
+
+DRAGGABLE.ui.ColorPicker.prototype.activate = function( parent ) {
+    var self = this;
+    
+    var oneTimeCloseFunction = function () { 
+        self.close(); 
+        this.removeEventListener('click', oneTimeCloseFunction, false );
+    };
+    
+    document.addEventListener( 'click', oneTimeCloseFunction  );
+    
+    this.item = parent;
+    this.container.topDiv.addEventListener( 'click', function (e) { e.stopPropagation(); } );
+    
+    this.newColor.value = this.originalColor.value = this.item.value;
+    this.originalColor.style.backgroundColor = this.item.value;
+    this.cp.setColorByHex(this.item.value);
+    
+    var bounds = this.item.getBoundingClientRect();
+    
+    this.container.topDiv.style.top = ( bounds.top + bounds.height/2  -120 ) + "px";
+    this.container.topDiv.style.left = bounds.left + bounds.width + 5 + "px";
+    this.container.setVisible(true);
+};
+/* 
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+if (! window.DRAGGABLE )
+    window.DRAGGABLE  = {};
+
+if (! window.DRAGGABLE.ui )
+    window.DRAGGABLE.ui  = { windowId: 0, menuId: 0, slideId: 0, oneTimeCloseFunction : null, lastOpen: null };
+        
+DRAGGABLE.ui.Slider = function (topDiv, opts ) {
+
+    var self = this;
+
+    self.color = opts.color || 'white';
+    self.bgcolor = opts.bgcolor || 'black';
+    self.opacity = opts.opacity || '30%'
+    self.speed = opts.speed || 100;
+    self.step = opts.step || 5;
+    self.size = opts.size || { w: 150, h:23, tw: 42 }
+    self.callback = opts.callback;
+    self.type = opts.type || 'perc';
+
+    this.id = ++ DRAGGABLE.ui.slideId;
+    this.container = ( typeof topDiv === 'object' ) ? topDiv : document.getElementById(topDiv);
+
+    this.container.className = "slide-container";
+    this.container.id = "slider" + this.id;
+
+    this.tracker = document.createElement('div');
+    this.tracker.className = "slide-tracker";
+    this.tracker.id = "tracker" + this.id;
+    this.tracker.style.background = self.bgcolor;
+    this.tracker.style.opacity = self.opacity;
+    this.container.appendChild(this.tracker);
+
+    this.thumb = document.createElement('div');
+    this.thumb.className = "slide-thumb";
+    this.thumb.id = "thumb" + this.id;
+    this.container.appendChild(this.thumb);
+    
+    this.thumb.span = document.createElement('span');
+    this.thumb.span.style.color  =  self.color;
+    this.thumb.span.style.background  =  self.bgcolor;
+    this.thumb.span.style.width  = + self.size.tw + 'px';
+    this.thumb.span.style.height  = (self.size.h + 1) +  'px';
+    this.thumb.span.style.lineHeight  = (self.size.h + 1) +  'px';
+    this.thumb.span.style.marginTop  = '-1px';
+    this.thumb.span.style.paddingTop  = '1px';
+    this.thumb.span.innerHTML  = (opts.start + '%') || 100;
+    this.thumb.appendChild(this.thumb.span);
+
+    this.slider = document.createElement('input');
+    this.slider.type="range";
+    this.slider.min = opts.min || 0;
+    this.slider.max = opts.max || 100;
+    this.slider.value = opts.start || 100;
+    this.slider.step = opts.step || 1;
+    this.container.appendChild(this.slider);
+    
+    this.container.style.height= self.size.h +"px"
+    this.container.style.width=self.size.w +"px"
+
+    this.slider.oninput = function(e) {
+        self.updateScreen(true);
+        e.stopPropagation();
+        e.preventDefault();
+    };
+
+	this.setValue = function(val) {
+        this.slider.value = val;
+        this.updateScreen(false);
+    }
+
+	this.updateScreen = function(call) {
+        const
+            pct = Number( (this.slider.value - this.slider.min) / (this.slider.max - this.slider.min) ),
+            newPosition = 100 * (pct - 0.5),
+            newDelta =  self.size.tw * (0.5 - pct);
+
+        this.setDisplay(this.slider.value);
+
+        this.thumb.style.left = 'calc('+newPosition+'% + '+newDelta+'px)';
+
+        (call) && (self.callback) && self.callback(this.slider.value);
+    };
+
+	this.setDisplay = function(val) {
+        switch( this.type ) {
+            case 'perc':
+                this.thumb.span.innerHTML = val+'%';
+                break;
+            case 'bin':
+                this.thumb.span.innerHTML = val>0?'on':'off';
+                this.thumb.style.filter = (val>0?'none': "grayscale(1)");
+                this.tracker.style.filter = (val>0?'none': "grayscale(100%)");
+                break;
+            default:
+                this.thumb.span.innerHTML = val;
+                break;
+        }
+    };
+
+    self.updateScreen(false);
+};
+
+DRAGGABLE.ui.Slider.prototype.enable = function( ) {
+    this.container.style.pointerEvents = 'all';
+    this.container.style.backgroundColor = 'transparent';
+    this.container.style.opacity = '1';
+};
+
+DRAGGABLE.ui.Slider.prototype.disable = function( ) {
+   this.container.style.pointerEvents = 'none';
+   this.container.style.backgroundColor = 'gray';
+   this.container.style.opacity = '0.3';
+};
+
+DRAGGABLE.ui.Slider.prototype.getValue = function( ) {
+   return this.slider.value;
+};
+
+DRAGGABLE.ui.Slider.prototype.getBoolValue = function( ) {
+    return (this.slider.value != 0);
+ };
+ /* 
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+if (!window.ABCXJS)
+	window.ABCXJS = {};
+
+if (!window.ABCXJS.tablature)
+	window.ABCXJS.tablature = {};
+
+ABCXJS.tablature.Accordion = function( params, pautaNumerica, pautaNumericaMini ) {
+    
+    this.loaded        = undefined;
+    this.tabLines      = [];
+    this.accordions    = params.accordionMaps || [] ;
+    this.translator    = params.translator || null;
+    this.transposer    = new window.ABCXJS.parse.Transposer();
+    this.pautaNumerica = pautaNumerica || 0;
+    this.pautaNumericaMini = pautaNumericaMini || (pautaNumericaMini===undefined);
+    
+    if( this.accordions.length === 0 ) {
+        throw new Error( 'No accordionMap found!');
+    }
+    
+    this.render_opts = {};
+    this.setRenderOptions( params.render_keyboard_opts, true );
+
+    if( params.id )
+        this.loadById( params.id );
+    else
+        this.load( 0 );
+    
+};
+
+ABCXJS.tablature.Accordion.prototype.setRenderOptions = function ( options, initial ) {
+    
+    var opt = options || {};
+
+    this.render_opts.transpose = (typeof opt.transpose === 'undefined'? (initial? false : this.render_opts.transpose ): opt.transpose) ;
+    this.render_opts.mirror = (typeof opt.mirror === 'undefined'? (initial? false : this.render_opts.mirror ): opt.mirror) ;
+    this.render_opts.draggable = (typeof opt.draggable === 'undefined'? (initial? false : this.render_opts.draggable ): opt.draggable) ;
+    this.render_opts.show = (typeof opt.show === 'undefined'? (initial? false : this.render_opts.show ): opt.show) ;
+    this.render_opts.label = (typeof opt.label === 'undefined'? (initial? false : this.render_opts.label ): opt.label) ;
+    
+    this.render_opts.scale = (typeof opt.scale === 'undefined'? (initial? 1 : this.render_opts.scale ): opt.scale) ;
+    
+    if( ! initial ) {
+        DIATONIC.map.color.fill = (typeof opt.fillColor === 'undefined'? DIATONIC.map.color.fill : opt.fillColor) ;
+        DIATONIC.map.color.background = (typeof opt.backgroundColor === 'undefined'? DIATONIC.map.color.background : opt.backgroundColor) ;
+        DIATONIC.map.color.open = (typeof opt.openColor === 'undefined'? DIATONIC.map.color.open : opt.openColor) ;
+        DIATONIC.map.color.close = (typeof opt.closeColor === 'undefined'? DIATONIC.map.color.close : opt.closeColor) ;
+    }    
+};
+
+
+ABCXJS.tablature.Accordion.prototype.loadById = function (id) {
+    for (var g = 0; g < this.accordions.length; g ++)
+        if (this.accordions[g].id === id) {
+            return this.load(g);
+        }
+        waterbug.log( 'Accordion not found. Loading the first one.');
+        return this.load(0);
+};
+
+ABCXJS.tablature.Accordion.prototype.load = function (sel) {
+    this.loaded = this.accordions[sel];
+    this.loadedKeyboard = this.loaded.keyboard;
+    this.loadedKeyboard.setFormatoTab(this.pautaNumerica,this.pautaNumericaMini)
+
+    return this.loaded;
+};
+
+ABCXJS.tablature.Accordion.prototype.accordionExists = function(id) {
+    var ret = false;
+    for(var a = 0; a < this.accordions.length; a++ ) {
+        if( this.accordions[a].id === id) ret  = true;
+    }
+    return ret;
+};
+
+ABCXJS.tablature.Accordion.prototype.accordionIsCurrent = function(id) {
+    return (this.accordions.loaded && this.accordions.loaded.id === id);
+};
+
+ABCXJS.tablature.Accordion.prototype.clearKeyboard = function(full) {
+    this.loadedKeyboard.clear(full);
+};
+
+ABCXJS.tablature.Accordion.prototype.changeNotation = function() {
+    this.render_opts.label = ! this.render_opts.label;
+    this.loadedKeyboard.redraw(this.render_opts);
+};
+
+ABCXJS.tablature.Accordion.prototype.rotateKeyboard = function(div_id) {
+    var o = this.render_opts;
+    
+    if( o.transpose ) {
+        o.mirror=!o.mirror;
+    }
+    
+    o.transpose=!o.transpose;
+    
+    this.printKeyboard(div_id);
+};
+
+ABCXJS.tablature.Accordion.prototype.scaleKeyboard = function(div_id) {
+    if( this.render_opts.scale < 1.2 ) {
+        this.render_opts.scale += 0.2;
+    } else {
+        this.render_opts.scale = 0.8;
+    }
+    this.printKeyboard(div_id);
+};
+
+ABCXJS.tablature.Accordion.prototype.printKeyboard = function(div_id, options) {
+    
+    this.setRenderOptions( options );
+    
+    var div =( typeof(div_id) === "string" ? document.getElementById(div_id) : div_id );
+
+    if( this.render_opts.show ) {
+        div.style.display="inline-block";
+        this.loadedKeyboard.print(div,this.render_opts, this.translator);
+    } else {
+        div.style.display="none";
+    }
+};
+
+ABCXJS.tablature.Accordion.prototype.getFormatoTab = function () {
+    return this.pautaNumerica;
+};
+
+ABCXJS.tablature.Accordion.prototype.setFormatoTab = function (val,mini) {
+    this.pautaNumerica = val;
+    this.pautaNumericaMini = mini
+    this.loadedKeyboard.setFormatoTab(this.pautaNumerica,mini)
+};
+
+ABCXJS.tablature.Accordion.prototype.getId = function () {
+    return this.loaded.getId();
+}
+ABCXJS.tablature.Accordion.prototype.getFullName = function () {
+    return this.loaded.getFullName();
+};
+
+ABCXJS.tablature.Accordion.prototype.getTxtModel = function () {
+    return this.loaded.getTxtModel();
+};
+
+ABCXJS.tablature.Accordion.prototype.getTxtNumButtons = function () {
+    return this.loaded.getTxtNumButtons();
+};
+
+ABCXJS.tablature.Accordion.prototype.getTxtTuning = function () {
+    return this.loaded.getTxtTuning();
+};
+
+ABCXJS.tablature.Accordion.prototype.getNoteName = function( item, keyAcc, barAcc, bass ) {
+    
+    // mapeia 
+    //  de: nota da pauta + acidentes (tanto da clave, quanto locais)
+    //  para: valor da nota cromatica (com oitava)
+
+    var n = this.transposer.staffNoteToCromatic(this.transposer.extractStaffNote(item.pitch));
+    var oitava = this.transposer.extractStaffOctave(item.pitch);
+    var staffNote = this.transposer.numberToKey(n);
+    
+    if(item.accidental) {
+        barAcc[item.pitch] = this.transposer.getAccOffset(item.accidental);
+        n += barAcc[item.pitch];
+    } else {
+        if(typeof(barAcc[item.pitch]) !== "undefined") {
+          n += barAcc[item.pitch];
+        } else {
+          n += this.transposer.getKeyAccOffset(staffNote, keyAcc);
+        }
+    }
+    
+    oitava   += (n < 0 ? -1 : (n > 11 ? 1 : 0 ));
+    n         = (n < 0 ? 12+n : (n > 11 ? n%12 : n ) );
+    
+    var key   = this.transposer.numberToKey(n);
+    var value = n;
+    
+    if (item.chord) key = key.toLowerCase();    
+    
+    return { key: key, octave:oitava, isBass:bass, isChord: item.chord, isMinor: item.minor, value:value };
+};
+
+ABCXJS.tablature.Accordion.prototype.inferTablature = function(tune, vars, addWarning ) {
+
+    var inferer = new ABCXJS.tablature.Infer( this, tune, vars );
+    
+    vars.missingButtons = {};
+    vars.invalidBasses = '';
+    
+    for (var t = 0; t < tune.lines.length; t++) {
+       if (tune.lines[t].staffs ) {
+          var voice = inferer.inferTabVoice( t );
+          if (voice.length > 0) {
+              tune.lines[t].staffs[tune.tabStaffPos].voices[0] = voice;
+          }
+       }  
+    }
+    
+    if(vars.invalidBasses.length > 0){
+        addWarning('Baixo incompatível com o movimento do fole no(s) compasso(s): ' + vars.invalidBasses.substring(1,vars.invalidBasses.length-1) + '.' ) ;
+    }
+    
+    if(vars.missingButtons){
+        for( var m in vars.missingButtons ) {
+            addWarning('Nota "' + m + '" não disponível no(s) compasso(s): ' + vars.missingButtons[m].join(", ") + '.' ) ;
+        }
+    }
+    
+    delete vars.missingButtons;
+    delete vars.invalidBasses;
+   
+    
+};
+
+ABCXJS.tablature.Accordion.prototype.parseTabVoice = function(str, vars ) {
+    var p = new ABCXJS.tablature.Parse( this,  str, vars);
+    return p.parseTabVoice();
+};
+
+<<<<<<< HEAD
+/*!
+ * perfect-scrollbar v1.3.0
+ * (c) 2017 Hyunje Jun
+ * @license MIT
+ */
+(function (global, factory) {
+	typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
+	typeof define === 'function' && define.amd ? define(factory) :
+	(global.PerfectScrollbar = factory());
+}(this, (function () { 'use strict';
+
+function get(element) {
+  return getComputedStyle(element);
+}
+
+function set(element, obj) {
+  for (var key in obj) {
+    var val = obj[key];
+    if (typeof val === 'number') {
+      val = val + "px";
+    }
+    element.style[key] = val;
+  }
+  return element;
+}
+
+function div(className) {
+  var div = document.createElement('div');
+  div.className = className;
+  return div;
+}
+
+var elMatches =
+  typeof Element !== 'undefined' &&
+  (Element.prototype.matches ||
+    Element.prototype.webkitMatchesSelector ||
+    Element.prototype.msMatchesSelector);
+
+function matches(element, query) {
+  if (!elMatches) {
+    throw new Error('No element matching method supported');
+  }
+
+  return elMatches.call(element, query);
+}
+
+function remove(element) {
+  if (element.remove) {
+    element.remove();
+  } else {
+    if (element.parentNode) {
+      element.parentNode.removeChild(element);
+    }
+  }
+}
+
+function queryChildren(element, selector) {
+  return Array.prototype.filter.call(element.children, function (child) { return matches(child, selector); }
+  );
+}
+
+var cls = {
+  main: 'ps',
+  element: {
+    thumb: function (x) { return ("ps__thumb-" + x); },
+    rail: function (x) { return ("ps__rail-" + x); },
+    consuming: 'ps__child--consume'
+  },
+  state: {
+    focus: 'ps--focus',
+    active: function (x) { return ("ps--active-" + x); },
+    scrolling: function (x) { return ("ps--scrolling-" + x); }
+  }
+};
+
+/*
+ * Helper methods
+ */
+var scrollingClassTimeout = { x: null, y: null };
+
+function addScrollingClass(i, x) {
+  var classList = i.element.classList;
+  var className = cls.state.scrolling(x);
+
+  if (classList.contains(className)) {
+    clearTimeout(scrollingClassTimeout[x]);
+  } else {
+    classList.add(className);
+  }
+}
+
+function removeScrollingClass(i, x) {
+  scrollingClassTimeout[x] = setTimeout(
+    function () { return i.isAlive && i.element.classList.remove(cls.state.scrolling(x)); },
+    i.settings.scrollingThreshold
+  );
+}
+
+function setScrollingClassInstantly(i, x) {
+  addScrollingClass(i, x);
+  removeScrollingClass(i, x);
+}
+
+var EventElement = function EventElement(element) {
+  this.element = element;
+  this.handlers = {};
+};
+
+var prototypeAccessors = { isEmpty: { configurable: true } };
+
+EventElement.prototype.bind = function bind (eventName, handler) {
+  if (typeof this.handlers[eventName] === 'undefined') {
+    this.handlers[eventName] = [];
+  }
+  this.handlers[eventName].push(handler);
+  if(handler === 'touch' || handler === 'touchstart' )
+    this.element.addEventListener(eventName, handler, {passive:true});
+  else
+    this.element.addEventListener(eventName, handler, {passive:false});
+};
+
+EventElement.prototype.unbind = function unbind (eventName, target) {
+    var this$1 = this;
+
+  this.handlers[eventName] = this.handlers[eventName].filter(function (handler) {
+    if (target && handler !== target) {
+      return true;
+    }
+    this$1.element.removeEventListener(eventName, handler, false);
+    return false;
+  });
+};
+
+EventElement.prototype.unbindAll = function unbindAll () {
+    var this$1 = this;
+
+  for (var name in this$1.handlers) {
+    this$1.unbind(name);
+  }
+};
+
+prototypeAccessors.isEmpty.get = function () {
+    var this$1 = this;
+
+  return Object.keys(this.handlers).every(
+    function (key) { return this$1.handlers[key].length === 0; }
+  );
+};
+
+Object.defineProperties( EventElement.prototype, prototypeAccessors );
+
+var EventManager = function EventManager() {
+  this.eventElements = [];
+};
+
+EventManager.prototype.eventElement = function eventElement (element) {
+  var ee = this.eventElements.filter(function (ee) { return ee.element === element; })[0];
+  if (!ee) {
+    ee = new EventElement(element);
+    this.eventElements.push(ee);
+  }
+  return ee;
+};
+
+EventManager.prototype.bind = function bind (element, eventName, handler) {
+  this.eventElement(element).bind(eventName, handler);
+};
+
+EventManager.prototype.unbind = function unbind (element, eventName, handler) {
+  var ee = this.eventElement(element);
+  ee.unbind(eventName, handler);
+
+  if (ee.isEmpty) {
+    // remove
+    this.eventElements.splice(this.eventElements.indexOf(ee), 1);
+  }
+};
+
+EventManager.prototype.unbindAll = function unbindAll () {
+  this.eventElements.forEach(function (e) { return e.unbindAll(); });
+  this.eventElements = [];
+};
+
+EventManager.prototype.once = function once (element, eventName, handler) {
+  var ee = this.eventElement(element);
+  var onceHandler = function (evt) {
+    ee.unbind(eventName, onceHandler);
+    handler(evt);
+  };
+  ee.bind(eventName, onceHandler);
+};
+
+function createEvent(name) {
+  if (typeof window.CustomEvent === 'function') {
+    return new CustomEvent(name);
+  } else {
+    var evt = document.createEvent('CustomEvent');
+    evt.initCustomEvent(name, false, false, undefined);
+    return evt;
+  }
+}
+
+var processScrollDiff = function(
+  i,
+  axis,
+  diff,
+  useScrollingClass,
+  forceFireReachEvent
+) {
+  if ( useScrollingClass === void 0 ) useScrollingClass = true;
+  if ( forceFireReachEvent === void 0 ) forceFireReachEvent = false;
+
+  var fields;
+  if (axis === 'top') {
+    fields = [
+      'contentHeight',
+      'containerHeight',
+      'scrollTop',
+      'y',
+      'up',
+      'down' ];
+  } else if (axis === 'left') {
+    fields = [
+      'contentWidth',
+      'containerWidth',
+      'scrollLeft',
+      'x',
+      'left',
+      'right' ];
+  } else {
+    throw new Error('A proper axis should be provided');
+  }
+
+  processScrollDiff$1(i, diff, fields, useScrollingClass, forceFireReachEvent);
+};
+
+function processScrollDiff$1(
+  i,
+  diff,
+  ref,
+  useScrollingClass,
+  forceFireReachEvent
+) {
+  var contentHeight = ref[0];
+  var containerHeight = ref[1];
+  var scrollTop = ref[2];
+  var y = ref[3];
+  var up = ref[4];
+  var down = ref[5];
+  if ( useScrollingClass === void 0 ) useScrollingClass = true;
+  if ( forceFireReachEvent === void 0 ) forceFireReachEvent = false;
+
+  var element = i.element;
+
+  // reset reach
+  i.reach[y] = null;
+
+  // 1 for subpixel rounding
+  if (element[scrollTop] < 1) {
+    i.reach[y] = 'start';
+  }
+
+  // 1 for subpixel rounding
+  if (element[scrollTop] > i[contentHeight] - i[containerHeight] - 1) {
+    i.reach[y] = 'end';
+  }
+
+  if (diff) {
+    element.dispatchEvent(createEvent(("ps-scroll-" + y)));
+
+    if (diff < 0) {
+      element.dispatchEvent(createEvent(("ps-scroll-" + up)));
+    } else if (diff > 0) {
+      element.dispatchEvent(createEvent(("ps-scroll-" + down)));
+    }
+
+    if (useScrollingClass) {
+      setScrollingClassInstantly(i, y);
+    }
+  }
+
+  if (i.reach[y] && (diff || forceFireReachEvent)) {
+    element.dispatchEvent(createEvent(("ps-" + y + "-reach-" + (i.reach[y]))));
+  }
+}
+
+function toInt(x) {
+  return parseInt(x, 10) || 0;
+}
+
+function isEditable(el) {
+  return (
+    matches(el, 'input,[contenteditable]') ||
+    matches(el, 'select,[contenteditable]') ||
+    matches(el, 'textarea,[contenteditable]') ||
+    matches(el, 'button,[contenteditable]')
+  );
+}
+
+function outerWidth(element) {
+  var styles = get(element);
+  return (
+    toInt(styles.width) +
+    toInt(styles.paddingLeft) +
+    toInt(styles.paddingRight) +
+    toInt(styles.borderLeftWidth) +
+    toInt(styles.borderRightWidth)
+  );
+}
+
+var env = {
+  isWebKit:
+    typeof document !== 'undefined' &&
+    'WebkitAppearance' in document.documentElement.style,
+  supportsTouch:
+    typeof window !== 'undefined' &&
+    ('ontouchstart' in window ||
+      (window.DocumentTouch && document instanceof window.DocumentTouch)),
+  supportsIePointer:
+    typeof navigator !== 'undefined' && navigator.msMaxTouchPoints,
+  isChrome:
+    typeof navigator !== 'undefined' &&
+    /Chrome/i.test(navigator && navigator.userAgent)
+};
+
+var updateGeometry = function(i) {
+  var element = i.element;
+
+  i.containerWidth = element.clientWidth;
+  i.containerHeight = element.clientHeight;
+  i.contentWidth = element.scrollWidth;
+  i.contentHeight = element.scrollHeight;
+
+  if (!element.contains(i.scrollbarXRail)) {
+    // clean up and append
+    queryChildren(element, cls.element.rail('x')).forEach(function (el) { return remove(el); }
+    );
+    element.appendChild(i.scrollbarXRail);
+  }
+  if (!element.contains(i.scrollbarYRail)) {
+    // clean up and append
+    queryChildren(element, cls.element.rail('y')).forEach(function (el) { return remove(el); }
+    );
+    element.appendChild(i.scrollbarYRail);
+  }
+
+  if (
+    !i.settings.suppressScrollX &&
+    i.containerWidth + i.settings.scrollXMarginOffset < i.contentWidth
+  ) {
+    i.scrollbarXActive = true;
+    i.railXWidth = i.containerWidth - i.railXMarginWidth;
+    i.railXRatio = i.containerWidth / i.railXWidth;
+    i.scrollbarXWidth = getThumbSize(
+      i,
+      toInt(i.railXWidth * i.containerWidth / i.contentWidth)
+    );
+    i.scrollbarXLeft = toInt(
+      (i.negativeScrollAdjustment + element.scrollLeft) *
+        (i.railXWidth - i.scrollbarXWidth) /
+        (i.contentWidth - i.containerWidth)
+    );
+  } else {
+    i.scrollbarXActive = false;
+  }
+
+  if (
+    !i.settings.suppressScrollY &&
+    i.containerHeight + i.settings.scrollYMarginOffset < i.contentHeight
+  ) {
+    i.scrollbarYActive = true;
+    i.railYHeight = i.containerHeight - i.railYMarginHeight;
+    i.railYRatio = i.containerHeight / i.railYHeight;
+    i.scrollbarYHeight = getThumbSize(
+      i,
+      toInt(i.railYHeight * i.containerHeight / i.contentHeight)
+    );
+    i.scrollbarYTop = toInt(
+      element.scrollTop *
+        (i.railYHeight - i.scrollbarYHeight) /
+        (i.contentHeight - i.containerHeight)
+    );
+  } else {
+    i.scrollbarYActive = false;
+  }
+
+  if (i.scrollbarXLeft >= i.railXWidth - i.scrollbarXWidth) {
+    i.scrollbarXLeft = i.railXWidth - i.scrollbarXWidth;
+  }
+  if (i.scrollbarYTop >= i.railYHeight - i.scrollbarYHeight) {
+    i.scrollbarYTop = i.railYHeight - i.scrollbarYHeight;
+  }
+
+  updateCss(element, i);
+
+  if (i.scrollbarXActive) {
+    element.classList.add(cls.state.active('x'));
+  } else {
+    element.classList.remove(cls.state.active('x'));
+    i.scrollbarXWidth = 0;
+    i.scrollbarXLeft = 0;
+    element.scrollLeft = 0;
+  }
+  if (i.scrollbarYActive) {
+    element.classList.add(cls.state.active('y'));
+  } else {
+    element.classList.remove(cls.state.active('y'));
+    i.scrollbarYHeight = 0;
+    i.scrollbarYTop = 0;
+    element.scrollTop = 0;
+  }
+};
+
+function getThumbSize(i, thumbSize) {
+  if (i.settings.minScrollbarLength) {
+    thumbSize = Math.max(thumbSize, i.settings.minScrollbarLength);
+  }
+  if (i.settings.maxScrollbarLength) {
+    thumbSize = Math.min(thumbSize, i.settings.maxScrollbarLength);
+  }
+  return thumbSize;
+}
+
+function updateCss(element, i) {
+  var xRailOffset = { width: i.railXWidth };
+  if (i.isRtl) {
+    xRailOffset.left =
+      i.negativeScrollAdjustment +
+      element.scrollLeft +
+      i.containerWidth -
+      i.contentWidth;
+  } else {
+    xRailOffset.left = element.scrollLeft;
+  }
+  if (i.isScrollbarXUsingBottom) {
+    xRailOffset.bottom = i.scrollbarXBottom - element.scrollTop;
+  } else {
+    xRailOffset.top = i.scrollbarXTop + element.scrollTop;
+  }
+  set(i.scrollbarXRail, xRailOffset);
+
+  var yRailOffset = { top: element.scrollTop, height: i.railYHeight };
+  if (i.isScrollbarYUsingRight) {
+    if (i.isRtl) {
+      yRailOffset.right =
+        i.contentWidth -
+        (i.negativeScrollAdjustment + element.scrollLeft) -
+        i.scrollbarYRight -
+        i.scrollbarYOuterWidth;
+    } else {
+      yRailOffset.right = i.scrollbarYRight - element.scrollLeft;
+    }
+  } else {
+    if (i.isRtl) {
+      yRailOffset.left =
+        i.negativeScrollAdjustment +
+        element.scrollLeft +
+        i.containerWidth * 2 -
+        i.contentWidth -
+        i.scrollbarYLeft -
+        i.scrollbarYOuterWidth;
+    } else {
+      yRailOffset.left = i.scrollbarYLeft + element.scrollLeft;
+    }
+  }
+  set(i.scrollbarYRail, yRailOffset);
+
+  set(i.scrollbarX, {
+    left: i.scrollbarXLeft,
+    width: i.scrollbarXWidth - i.railBorderXWidth
+  });
+  set(i.scrollbarY, {
+    top: i.scrollbarYTop,
+    height: i.scrollbarYHeight - i.railBorderYWidth
+  });
+}
+
+var clickRail = function(i) {
+  i.event.bind(i.scrollbarY, 'click', function (e) { e.preventDefault(); return e.stopPropagation();  });
+  i.event.bind(i.scrollbarYRail, 'click', function (e) { e.preventDefault(); return e.stopPropagation();  });
+  i.event.bind(i.scrollbarY, 'mousedown', function (e) { e.preventDefault(); return e.stopPropagation();  });
+  i.event.bind(i.scrollbarYRail, 'mousedown', function (e) {
+    var positionTop =
+      e.pageY -
+      window.pageYOffset -
+      i.scrollbarYRail.getBoundingClientRect().top;
+    var direction = positionTop > i.scrollbarYTop ? 1 : -1;
+
+    i.element.scrollTop += direction * i.containerHeight;
+    updateGeometry(i);
+
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  i.event.bind(i.scrollbarX, 'mousedown', function (e) { e.preventDefault(); return e.stopPropagation(); });
+  i.event.bind(i.scrollbarXRail, 'mousedown', function (e) {
+    var positionLeft =
+      e.pageX -
+      window.pageXOffset -
+      i.scrollbarXRail.getBoundingClientRect().left;
+    var direction = positionLeft > i.scrollbarXLeft ? 1 : -1;
+
+    i.element.scrollLeft += direction * i.containerWidth;
+    updateGeometry(i);
+
+    e.preventDefault();
+    e.stopPropagation();
+  });
+};
+
+var dragThumb = function(i) {
+  bindMouseScrollHandler(i, [
+    'containerWidth',
+    'contentWidth',
+    'pageX',
+    'railXWidth',
+    'scrollbarX',
+    'scrollbarXWidth',
+    'scrollLeft',
+    'x' ]);
+  bindMouseScrollHandler(i, [
+    'containerHeight',
+    'contentHeight',
+    'pageY',
+    'railYHeight',
+    'scrollbarY',
+    'scrollbarYHeight',
+    'scrollTop',
+    'y' ]);
+};
+
+function bindMouseScrollHandler(
+  i,
+  ref
+) {
+  var containerHeight = ref[0];
+  var contentHeight = ref[1];
+  var pageY = ref[2];
+  var railYHeight = ref[3];
+  var scrollbarY = ref[4];
+  var scrollbarYHeight = ref[5];
+  var scrollTop = ref[6];
+  var y = ref[7];
+
+  var element = i.element;
+
+  var startingScrollTop = null;
+  var startingMousePageY = null;
+  var scrollBy = null;
+
+  function mouseMoveHandler(e) {
+    element[scrollTop] =
+      startingScrollTop + scrollBy * (e[pageY] - startingMousePageY);
+    addScrollingClass(i, y);
+    updateGeometry(i);
+
+    e.stopPropagation();
+    e.preventDefault();
+  }
+
+  function mouseUpHandler(e) {
+    removeScrollingClass(i, y);
+    e.stopPropagation();
+    e.preventDefault();
+    i.event.unbind(i.ownerDocument, 'mousemove', mouseMoveHandler);
+  }
+
+  i.event.bind(i[scrollbarY], 'mousedown', function (e) {
+    startingScrollTop = element[scrollTop];
+    startingMousePageY = e[pageY];
+    scrollBy =
+      (i[contentHeight] - i[containerHeight]) /
+      (i[railYHeight] - i[scrollbarYHeight]);
+
+    i.event.bind(i.ownerDocument, 'mousemove', mouseMoveHandler);
+    i.event.once(i.ownerDocument, 'mouseup', mouseUpHandler);
+
+    e.stopPropagation();
+    e.preventDefault();
+  });
+}
+
+var keyboard = function(i) {
+  var element = i.element;
+
+  var elementHovered = function () { return matches(element, ':hover'); };
+  var scrollbarFocused = function () { return matches(i.scrollbarX, ':focus') || matches(i.scrollbarY, ':focus'); };
+
+  function shouldPreventDefault(deltaX, deltaY) {
+    var scrollTop = element.scrollTop;
+    if (deltaX === 0) {
+      if (!i.scrollbarYActive) {
+        return false;
+      }
+      if (
+        (scrollTop === 0 && deltaY > 0) ||
+        (scrollTop >= i.contentHeight - i.containerHeight && deltaY < 0)
+      ) {
+        return !i.settings.wheelPropagation;
+      }
+    }
+
+    var scrollLeft = element.scrollLeft;
+    if (deltaY === 0) {
+      if (!i.scrollbarXActive) {
+        return false;
+      }
+      if (
+        (scrollLeft === 0 && deltaX < 0) ||
+        (scrollLeft >= i.contentWidth - i.containerWidth && deltaX > 0)
+      ) {
+        return !i.settings.wheelPropagation;
+      }
+    }
+    return true;
+  }
+
+  i.event.bind(i.ownerDocument, 'keydown', function (e) {
+    if (
+      (e.isDefaultPrevented && e.isDefaultPrevented()) ||
+      e.defaultPrevented
+    ) {
+      return;
+    }
+
+    if (!elementHovered() && !scrollbarFocused()) {
+      return;
+    }
+
+    var activeElement = document.activeElement
+      ? document.activeElement
+      : i.ownerDocument.activeElement;
+    if (activeElement) {
+      if (activeElement.tagName === 'IFRAME') {
+        activeElement = activeElement.contentDocument.activeElement;
+      } else {
+        // go deeper if element is a webcomponent
+        while (activeElement.shadowRoot) {
+          activeElement = activeElement.shadowRoot.activeElement;
+        }
+      }
+      if (isEditable(activeElement)) {
+        return;
+      }
+    }
+
+    var deltaX = 0;
+    var deltaY = 0;
+
+    switch (e.which) {
+      case 37: // left
+        if (e.metaKey) {
+          deltaX = -i.contentWidth;
+        } else if (e.altKey) {
+          deltaX = -i.containerWidth;
+        } else {
+          deltaX = -30;
+        }
+        break;
+      case 38: // up
+        if (e.metaKey) {
+          deltaY = i.contentHeight;
+        } else if (e.altKey) {
+          deltaY = i.containerHeight;
+        } else {
+          deltaY = 30;
+        }
+        break;
+      case 39: // right
+        if (e.metaKey) {
+          deltaX = i.contentWidth;
+        } else if (e.altKey) {
+          deltaX = i.containerWidth;
+        } else {
+          deltaX = 30;
+        }
+        break;
+      case 40: // down
+        if (e.metaKey) {
+          deltaY = -i.contentHeight;
+        } else if (e.altKey) {
+          deltaY = -i.containerHeight;
+        } else {
+          deltaY = -30;
+        }
+        break;
+      case 32: // space bar
+        if (e.shiftKey) {
+          deltaY = i.containerHeight;
+        } else {
+          deltaY = -i.containerHeight;
+        }
+        break;
+      case 33: // page up
+        deltaY = i.containerHeight;
+        break;
+      case 34: // page down
+        deltaY = -i.containerHeight;
+        break;
+      case 36: // home
+        deltaY = i.contentHeight;
+        break;
+      case 35: // end
+        deltaY = -i.contentHeight;
+        break;
+      default:
+        return;
+    }
+
+    if (i.settings.suppressScrollX && deltaX !== 0) {
+      return;
+    }
+    if (i.settings.suppressScrollY && deltaY !== 0) {
+      return;
+    }
+
+    element.scrollTop -= deltaY;
+    element.scrollLeft += deltaX;
+    updateGeometry(i);
+
+    if (shouldPreventDefault(deltaX, deltaY)) {
+      e.preventDefault();
+    }
+  });
+};
+
+var wheel = function(i) {
+  var element = i.element;
+
+  function shouldPreventDefault(deltaX, deltaY) {
+    var isTop = element.scrollTop === 0;
+    var isBottom =
+      element.scrollTop + element.offsetHeight === element.scrollHeight;
+    var isLeft = element.scrollLeft === 0;
+    var isRight =
+      element.scrollLeft + element.offsetWidth === element.offsetWidth;
+
+    var hitsBound;
+
+    // pick axis with primary direction
+    if (Math.abs(deltaY) > Math.abs(deltaX)) {
+      hitsBound = isTop || isBottom;
+    } else {
+      hitsBound = isLeft || isRight;
+    }
+
+    return hitsBound ? !i.settings.wheelPropagation : true;
+  }
+
+  function getDeltaFromEvent(e) {
+    var deltaX = e.deltaX;
+    var deltaY = -1 * e.deltaY;
+
+    if (typeof deltaX === 'undefined' || typeof deltaY === 'undefined') {
+      // OS X Safari
+      deltaX = -1 * e.wheelDeltaX / 6;
+      deltaY = e.wheelDeltaY / 6;
+    }
+
+    if (e.deltaMode && e.deltaMode === 1) {
+      // Firefox in deltaMode 1: Line scrolling
+      deltaX *= 10;
+      deltaY *= 10;
+    }
+
+    if (deltaX !== deltaX && deltaY !== deltaY /* NaN checks */) {
+      // IE in some mouse drivers
+      deltaX = 0;
+      deltaY = e.wheelDelta;
+    }
+
+    if (e.shiftKey) {
+      // reverse axis with shift key
+      return [-deltaY, -deltaX];
+    }
+    return [deltaX, deltaY];
+  }
+
+  function shouldBeConsumedByChild(target, deltaX, deltaY) {
+    // FIXME: this is a workaround for <select> issue in FF and IE #571
+    if (!env.isWebKit && element.querySelector('select:focus')) {
+      return true;
+    }
+
+    if (!element.contains(target)) {
+      return false;
+    }
+
+    var cursor = target;
+
+    while (cursor && cursor !== element) {
+      if (cursor.classList.contains(cls.element.consuming)) {
+        return true;
+      }
+
+      var style = get(cursor);
+      var overflow = [style.overflow, style.overflowX, style.overflowY].join(
+        ''
+      );
+
+      // if scrollable
+      if (overflow.match(/(scroll|auto)/)) {
+        var maxScrollTop = cursor.scrollHeight - cursor.clientHeight;
+        if (maxScrollTop > 0) {
+          if (
+            !(cursor.scrollTop === 0 && deltaY > 0) &&
+            !(cursor.scrollTop === maxScrollTop && deltaY < 0)
+          ) {
+            return true;
+          }
+        }
+        var maxScrollLeft = cursor.scrollLeft - cursor.clientWidth;
+        if (maxScrollLeft > 0) {
+          if (
+            !(cursor.scrollLeft === 0 && deltaX < 0) &&
+            !(cursor.scrollLeft === maxScrollLeft && deltaX > 0)
+          ) {
+            return true;
+          }
+        }
+      }
+
+      cursor = cursor.parentNode;
+    }
+
+    return false;
+  }
+
+  function mousewheelHandler(e) {
+    var ref = getDeltaFromEvent(e);
+    var deltaX = ref[0];
+    var deltaY = ref[1];
+
+    if (shouldBeConsumedByChild(e.target, deltaX, deltaY)) {
+      return;
+    }
+
+    var shouldPrevent = false;
+    if (!i.settings.useBothWheelAxes) {
+      // deltaX will only be used for horizontal scrolling and deltaY will
+      // only be used for vertical scrolling - this is the default
+      element.scrollTop -= deltaY * i.settings.wheelSpeed;
+      element.scrollLeft += deltaX * i.settings.wheelSpeed;
+    } else if (i.scrollbarYActive && !i.scrollbarXActive) {
+      // only vertical scrollbar is active and useBothWheelAxes option is
+      // active, so let's scroll vertical bar using both mouse wheel axes
+      if (deltaY) {
+        element.scrollTop -= deltaY * i.settings.wheelSpeed;
+      } else {
+        element.scrollTop += deltaX * i.settings.wheelSpeed;
+      }
+      shouldPrevent = true;
+    } else if (i.scrollbarXActive && !i.scrollbarYActive) {
+      // useBothWheelAxes and only horizontal bar is active, so use both
+      // wheel axes for horizontal bar
+      if (deltaX) {
+        element.scrollLeft += deltaX * i.settings.wheelSpeed;
+      } else {
+        element.scrollLeft -= deltaY * i.settings.wheelSpeed;
+      }
+      shouldPrevent = true;
+    }
+    
+    updateGeometry(i);
+
+    shouldPrevent = shouldPrevent || shouldPreventDefault(deltaX, deltaY);
+    if (shouldPrevent && !e.ctrlKey) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }
+
+  if (typeof window.onwheel !== 'undefined') {
+    i.event.bind(element, 'wheel', mousewheelHandler);
+  } else if (typeof window.onmousewheel !== 'undefined') {
+    i.event.bind(element, 'mousewheel', mousewheelHandler);
+  }
+};
+
+var touch = function(i) {
+  if (!env.supportsTouch && !env.supportsIePointer) {
+    return;
+  }
+
+  var element = i.element;
+
+  function shouldPrevent(deltaX, deltaY) {
+    var scrollTop = element.scrollTop;
+    var scrollLeft = element.scrollLeft;
+    var magnitudeX = Math.abs(deltaX);
+    var magnitudeY = Math.abs(deltaY);
+
+    if (magnitudeY > magnitudeX) {
+      // user is perhaps trying to swipe up/down the page
+
+      if (
+        (deltaY < 0 && scrollTop === i.contentHeight - i.containerHeight) ||
+        (deltaY > 0 && scrollTop === 0)
+      ) {
+        // set prevent for mobile Chrome refresh
+        return window.scrollY === 0 && deltaY > 0 && env.isChrome;
+      }
+    } else if (magnitudeX > magnitudeY) {
+      // user is perhaps trying to swipe left/right across the page
+
+      if (
+        (deltaX < 0 && scrollLeft === i.contentWidth - i.containerWidth) ||
+        (deltaX > 0 && scrollLeft === 0)
+      ) {
+        return true;
+      }
+    }
+
+    return true;
+  }
+
+  function applyTouchMove(differenceX, differenceY) {
+    element.scrollTop -= differenceY;
+    element.scrollLeft -= differenceX;
+
+    updateGeometry(i);
+  }
+
+  var startOffset = {};
+  var startTime = 0;
+  var speed = {};
+  var easingLoop = null;
+
+  function getTouch(e) {
+    if (e.targetTouches) {
+      return e.targetTouches[0];
+    } else {
+      // Maybe IE pointer
+      return e;
+    }
+  }
+
+  function shouldHandle(e) {
+    if (e.pointerType && e.pointerType === 'pen' && e.buttons === 0) {
+      return false;
+    }
+    if (e.targetTouches && e.targetTouches.length === 1) {
+      return true;
+    }
+    if (
+      e.pointerType &&
+      e.pointerType !== 'mouse' &&
+      e.pointerType !== e.MSPOINTER_TYPE_MOUSE
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  function touchStart(e) {
+    if (!shouldHandle(e)) {
+      return;
+    }
+
+    var touch = getTouch(e);
+
+    startOffset.pageX = touch.pageX;
+    startOffset.pageY = touch.pageY;
+
+    startTime = new Date().getTime();
+
+    if (easingLoop !== null) {
+      clearInterval(easingLoop);
+    }
+  }
+
+  function shouldBeConsumedByChild(target, deltaX, deltaY) {
+    if (!element.contains(target)) {
+      return false;
+    }
+
+    var cursor = target;
+
+    while (cursor && cursor !== element) {
+      if (cursor.classList.contains(cls.element.consuming)) {
+        return true;
+      }
+
+      var style = get(cursor);
+      var overflow = [style.overflow, style.overflowX, style.overflowY].join(
+        ''
+      );
+
+      // if scrollable
+      if (overflow.match(/(scroll|auto)/)) {
+        var maxScrollTop = cursor.scrollHeight - cursor.clientHeight;
+        if (maxScrollTop > 0) {
+          if (
+            !(cursor.scrollTop === 0 && deltaY > 0) &&
+            !(cursor.scrollTop === maxScrollTop && deltaY < 0)
+          ) {
+            return true;
+          }
+        }
+        var maxScrollLeft = cursor.scrollLeft - cursor.clientWidth;
+        if (maxScrollLeft > 0) {
+          if (
+            !(cursor.scrollLeft === 0 && deltaX < 0) &&
+            !(cursor.scrollLeft === maxScrollLeft && deltaX > 0)
+          ) {
+            return true;
+          }
+        }
+      }
+
+      cursor = cursor.parentNode;
+    }
+
+    return false;
+  }
+
+  function touchMove(e) {
+    if (shouldHandle(e)) {
+      var touch = getTouch(e);
+
+      var currentOffset = { pageX: touch.pageX, pageY: touch.pageY };
+
+      var differenceX = currentOffset.pageX - startOffset.pageX;
+      var differenceY = currentOffset.pageY - startOffset.pageY;
+
+      if (shouldBeConsumedByChild(e.target, differenceX, differenceY)) {
+        return;
+      }
+
+      applyTouchMove(differenceX, differenceY);
+      startOffset = currentOffset;
+
+      var currentTime = new Date().getTime();
+
       var timeGap = currentTime - startTime;
       if (timeGap > 0) {
         speed.x = differenceX / timeGap;
@@ -15814,6 +23369,23 @@ ABCXJS.tablature.Accordion.prototype.getTabLines = function () {
     this.tabLines = [];
     return ret;
 };
+=======
+ABCXJS.tablature.Accordion.prototype.setTabLine = function (line) {
+    this.tabLines[this.tabLines.length] = line.trim();
+};
+
+ABCXJS.tablature.Accordion.prototype.getTabLines = function () {
+    var ret = "";
+    if(this.tabLines.length === 0) return ret;
+    for(var l = 0; l < this.tabLines.length; l ++ ) {
+        if(this.tabLines[l].length>0){
+            ret += this.tabLines[l]+"\n";
+        }
+    }
+    this.tabLines = [];
+    return ret;
+};
+>>>>>>> d38a9ec5c4afd72b062b197287f50064800a284b
 /* 
  * To change this license header, choose License Headers in Project Properties.
  * To change this template file, choose Tools | Templates

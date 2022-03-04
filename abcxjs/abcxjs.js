@@ -4658,6 +4658,461 @@ window.ABCXJS.parse.parseKeyVoice = {};
 		var key6flat = {acc: 'flat', note: 'c'};
 		var key7flat = {acc: 'flat', note: 'F'};
 
+<<<<<<< HEAD
+				if (tokens.length === 0) throw "Expected meter definition in M: line";
+				var meter = {type: 'specified', value: [ ]};
+				var totalLength = 0;
+				while (1) {
+					var ret = parseFraction();
+					totalLength += ret.value;
+					var mv = { num: ret.num };
+					if (ret.den !== undefined)
+						mv.den = ret.den;
+					meter.value.push(mv);
+					if (tokens.length === 0) break;
+					//var tok = tokens.shift();
+					//if (tok.token !== '+') throw "Extra characters in M: line";
+				}
+
+				if (multilineVars.havent_set_length === true) {
+					multilineVars.default_length = totalLength < 0.75 ? 0.0625 : 0.125;
+				}
+				return meter;
+			} catch (e) {
+				warn(e, line, 0);
+			}
+		}
+		return null;
+	};
+
+	this.calcTempo = function(relTempo) {
+		var dur = 1/4;
+		if (multilineVars.meter && multilineVars.meter.type === 'specified') {
+			dur = 1 / parseInt(multilineVars.meter.value[0].den);
+		} else if (multilineVars.origMeter && multilineVars.origMeter.type === 'specified') {
+			dur = 1 / parseInt(multilineVars.origMeter.value[0].den);
+		}
+		//var dur = multilineVars.default_length ? multilineVars.default_length : 1;
+		for (var i = 0; i < relTempo.duration; i++)
+			relTempo.duration[i] = dur * relTempo.duration[i];
+		return relTempo;
+	};
+
+	this.resolveTempo = function() {
+            if (multilineVars.tempo) {	// If there's a tempo waiting to be resolved
+                this.calcTempo(multilineVars.tempo);
+                tune.metaText.tempo = multilineVars.tempo;
+                delete multilineVars.tempo;
+            }
+	};
+
+	this.addUserDefinition = function(line, start, end) {
+		var equals = line.indexOf('=', start);
+		if (equals === -1) {
+			warn("Need an = in a macro definition", line, start);
+			return;
+		}
+
+		var before = window.ABCXJS.parse.strip(line.substring(start, equals));
+		var after = window.ABCXJS.parse.strip(line.substring(equals+1));
+
+		if (before.length !== 1) {
+			warn("Macro definitions can only be one character", line, start);
+			return;
+		}
+		var legalChars = "HIJKLMNOPQRSTUVWXYhijklmnopqrstuvw~";
+		if (legalChars.indexOf(before) === -1) {
+			warn("Macro definitions must be H-Y, h-w, or tilde", line, start);
+			return;
+		}
+		if (after.length === 0) {
+			warn("Missing macro definition", line, start);
+			return;
+		}
+		if (multilineVars.macros === undefined)
+			multilineVars.macros = {};
+		multilineVars.macros[before] = after;
+	};
+
+	this.setDefaultLength = function(line, start, end) {
+		var len = window.ABCXJS.parse.gsub(line.substring(start, end), " ", "");
+		var len_arr = len.split('/');
+		if (len_arr.length === 2) {
+			var n = parseInt(len_arr[0]);
+			var d = parseInt(len_arr[1]);
+			if (d > 0) {
+				multilineVars.default_length = n / d;	// a whole note is 1
+				multilineVars.havent_set_length = false;
+			}
+		}
+	};
+
+	this.setTempo = function(line, start, end) {
+		//Q - tempo; can be used to specify the notes per minute, e.g. If
+		//the meter denominator is a 4 note then Q:120 or Q:C=120
+		//is 120 quarter notes per minute. Similarly  Q:C3=40 would be 40
+		//dotted half notes per minute. An absolute tempo may also be
+		//set, e.g. Q:1/8=120 is 120 eighth notes per minute,
+		//irrespective of the meter's denominator.
+		//
+		// This is either a number, "C=number", "Cnumber=number", or fraction [fraction...]=number
+		// It depends on the M: field, which may either not be present, or may appear after this.
+		// If M: is not present, an eighth note is used.
+		// That means that this field can't be calculated until the end, if it is the first three types, since we don't know if we'll see an M: field.
+		// So, if it is the fourth type, set it here, otherwise, save the info in the multilineVars.
+		// The temporary variables we keep are the duration and the bpm. In the first two forms, the duration is 1.
+		// In addition, a quoted string may both precede and follow. If a quoted string is present, then the duration part is optional.
+		try {
+			var tokens = tokenizer.tokenize(line, start, end);
+
+			if (tokens.length === 0) throw "Missing parameter in Q: field";
+
+			var tempo = {};
+			var delaySet = true;
+			var token = tokens.shift();
+			if (token.type === 'quote') {
+				tempo.preString = token.token;
+				token = tokens.shift();
+				if (tokens.length === 0) {	// It's ok to just get a string for the tempo
+					return {type: 'immediate', tempo: tempo};
+				}
+			}
+			if (token.type === 'alpha' && token.token === 'C')	 { // either type 2 or type 3
+				if (tokens.length === 0) throw "Missing tempo after C in Q: field";
+				token = tokens.shift();
+				if (token.type === 'punct' && token.token === '=') {
+					// This is a type 2 format. The duration is an implied 1
+					if (tokens.length === 0) throw "Missing tempo after = in Q: field";
+					token = tokens.shift();
+					if (token.type !== 'number') throw "Expected number after = in Q: field";
+					tempo.duration = [1];
+					tempo.bpm = parseInt(token.token);
+				} else if (token.type === 'number') {
+					// This is a type 3 format.
+					tempo.duration = [parseInt(token.token)];
+					if (tokens.length === 0) throw "Missing = after duration in Q: field";
+					token = tokens.shift();
+					if (token.type !== 'punct' || token.token !== '=') throw "Expected = after duration in Q: field";
+					if (tokens.length === 0) throw "Missing tempo after = in Q: field";
+					token = tokens.shift();
+					if (token.type !== 'number') throw "Expected number after = in Q: field";
+					tempo.bpm = parseInt(token.token);
+				} else throw "Expected number or equal after C in Q: field";
+
+			} else if (token.type === 'number') {	// either type 1 or type 4
+				var num = parseInt(token.token);
+				if (tokens.length === 0 || tokens[0].type === 'quote') {
+					// This is type 1
+					tempo.duration = [1];
+					tempo.bpm = num;
+				} else {	// This is type 4
+					delaySet = false;
+					token = tokens.shift();
+					if (token.type !== 'punct' && token.token !== '/') throw "Expected fraction in Q: field";
+					token = tokens.shift();
+					if (token.type !== 'number') throw "Expected fraction in Q: field";
+					var den = parseInt(token.token);
+					tempo.duration = [num/den];
+					// We got the first fraction, keep getting more as long as we find them.
+					while (tokens.length > 0  && tokens[0].token !== '=' && tokens[0].type !== 'quote') {
+						token = tokens.shift();
+						if (token.type !== 'number') throw "Expected fraction in Q: field";
+						num = parseInt(token.token);
+						token = tokens.shift();
+						if (token.type !== 'punct' && token.token !== '/') throw "Expected fraction in Q: field";
+						token = tokens.shift();
+						if (token.type !== 'number') throw "Expected fraction in Q: field";
+						den = parseInt(token.token);
+						tempo.duration.push(num/den);
+					}
+					token = tokens.shift();
+					if (token.type !== 'punct' && token.token !== '=') throw "Expected = in Q: field";
+					token = tokens.shift();
+					if (token.type !== 'number') throw "Expected tempo in Q: field";
+					tempo.bpm = parseInt(token.token);
+				}
+			} else throw "Unknown value in Q: field";
+			if (tokens.length !== 0) {
+				token = tokens.shift();
+				if (token.type === 'quote') {
+					tempo.postString = token.token;
+					token = tokens.shift();
+				}
+				if (tokens.length !== 0) throw "Unexpected string at end of Q: field";
+			}
+			if (multilineVars.printTempo === false)
+				tempo.suppress = true;
+			return {type: delaySet?'delaySet':'immediate', tempo: tempo};
+		} catch (msg) {
+			warn(msg, line, start);
+			return {type: 'none'};
+		}
+	};
+
+	this.letter_to_inline_header = function(line, i)
+	{
+		var ws = tokenizer.eatWhiteSpace(line, i);
+		i +=ws;
+		if (line.length >= i+5 && line.charAt(i) === '[' && line.charAt(i+2) === ':') {
+			var e = line.indexOf(']', i);
+			switch(line.substring(i, i+3))
+			{
+				case "[I:":
+					var err = window.ABCXJS.parse.parseDirective.addDirective(line.substring(i+3, e));
+					if (err) warn(err, line, i);
+					return [ e-i+1+ws ];
+				case "[M:":
+					var meter = this.setMeter(line.substring(i+3, e));
+					if (tune.hasBeginMusic() && meter)
+						tune.appendStartingElement('meter', multilineVars.currTexLineNum, -1, -1, meter);
+					else
+						multilineVars.meter = meter;
+					return [ e-i+1+ws ];
+				case "[K:":
+                                        // parseKey não precisa conhecer o transposer porque a string da linha já foi transposta integralmente antes deste ponto.
+					var result = window.ABCXJS.parse.parseKeyVoice.parseKey(line.substring(i+3, e) ); // flavio
+					if (result.foundClef && tune.hasBeginMusic())
+						tune.appendStartingElement('clef', multilineVars.currTexLineNum, -1, -1, multilineVars.clef);
+					if (result.foundKey && tune.hasBeginMusic())
+						tune.appendStartingElement('key', multilineVars.currTexLineNum, -1, -1, window.ABCXJS.parse.parseKeyVoice.fixKey(multilineVars.clef, multilineVars.key));
+					return [ e-i+1+ws ];
+				case "[P:":
+					tune.appendElement('part', multilineVars.currTexLineNum, -1, -1, {title: line.substring(i+3, e)});
+					return [ e-i+1+ws ];
+				case "[L:":
+					this.setDefaultLength(line, i+3, e);
+					return [ e-i+1+ws ];
+				case "[Q:":
+					if (e > 0) {
+						var tempo = this.setTempo(line, i+3, e);
+						if (tempo.type === 'delaySet') tune.appendElement('tempo', multilineVars.currTexLineNum, -1, -1, this.calcTempo(tempo.tempo));
+						else if (tempo.type === 'immediate') tune.appendElement('tempo', multilineVars.currTexLineNum, -1, -1, tempo.tempo);
+						return [ e-i+1+ws, line.charAt(i+1), line.substring(i+3, e)];
+					}
+					break;
+				case "[V:":
+					if (e > 0) {
+						window.ABCXJS.parse.parseKeyVoice.parseVoice(line, i+3, e);
+						//startNewLine();
+						return [ e-i+1+ws, line.charAt(i+1), line.substring(i+3, e)];
+					}
+					break;
+
+				default:
+					// TODO: complain about unhandled header
+			}
+		}
+		return [ 0 ];
+	};
+
+	this.letter_to_body_header = function(line, i)
+	{
+		if (line.length >= i+3) {
+			switch(line.substring(i, i+2))
+			{
+				case "I:":
+					var err = window.ABCXJS.parse.parseDirective.addDirective(line.substring(i+2));
+					if (err) warn(err, line, i);
+					return [ line.length ];
+				case "M:":
+					var meter = this.setMeter(line.substring(i+2));
+					if (tune.hasBeginMusic() && meter)
+						tune.appendStartingElement('meter', multilineVars.currTexLineNum, -1, -1, meter);
+					return [ line.length ];
+				case "K:":
+					var result = window.ABCXJS.parse.parseKeyVoice.parseKey(line.substring(i+2), transposer);
+					if (result.foundClef && tune.hasBeginMusic())
+						tune.appendStartingElement('clef', multilineVars.currTexLineNum, -1, -1, multilineVars.clef);
+					if (result.foundKey && tune.hasBeginMusic())
+						tune.appendStartingElement('key', multilineVars.currTexLineNum, -1, -1, window.ABCXJS.parse.parseKeyVoice.fixKey(multilineVars.clef, multilineVars.key));
+					return [ line.length ];
+				case "P:":
+					if (tune.hasBeginMusic())
+						tune.appendElement('part', multilineVars.currTexLineNum, -1, -1, {title: line.substring(i+2)});
+					return [ line.length ];
+				case "L:":
+					this.setDefaultLength(line, i+2, line.length);
+					return [ line.length ];
+				case "Q:":
+					var e = line.indexOf('\x12', i+2);
+					if (e === -1) e = line.length;
+					var tempo = this.setTempo(line, i+2, e);
+					if (tempo.type === 'delaySet') tune.appendElement('tempo', multilineVars.currTexLineNum, -1, -1, this.calcTempo(tempo.tempo));
+					else if (tempo.type === 'immediate') tune.appendElement('tempo', multilineVars.currTexLineNum, -1, -1, tempo.tempo);
+				return [ e, line.charAt(i), window.ABCXJS.parse.strip(line.substring(i+2))];
+				case "V:":
+					window.ABCXJS.parse.parseKeyVoice.parseVoice(line, 2, line.length);
+//						startNewLine();
+					return [ line.length, line.charAt(i), window.ABCXJS.parse(line.substring(i+2))];
+				default:
+					// TODO: complain about unhandled header
+			}
+		}
+		return [ 0 ];
+	};
+
+	var metaTextHeaders = {
+		A: 'author',
+		B: 'book',
+		C: 'composer',
+		D: 'discography',
+		F: 'url',
+		G: 'group',
+		I: 'instruction',
+		N: 'notes',
+		O: 'origin',
+		R: 'rhythm',
+		S: 'source',
+		W: 'unalignedWords',
+		Z: 'transcription',
+                X: 'pieceId'
+	};
+
+	this.parseHeader = function(line, lineNumber ) {
+		if (window.ABCXJS.parse.startsWith(line, '%%')) {
+			var err = window.ABCXJS.parse.parseDirective.addDirective(line.substring(2));
+			if (err) warn(err, line, 2);
+			return {};
+		}
+		line = tokenizer.stripComment(line);
+		if (line.length === 0)
+			return {};
+
+		if (line.length >= 2) {
+			if (line.charAt(1) === ':') {
+				var nextLine = "";
+				if (line.indexOf('\x12') >= 0 && line.charAt(0) !== 'w') {	// w: is the only header field that can have a continuation.
+					nextLine = line.substring(line.indexOf('\x12')+1);
+					line = line.substring(0, line.indexOf('\x12'));	//This handles a continuation mark on a header field
+				}
+				var field = metaTextHeaders[line.charAt(0)];
+				if (field !== undefined) {
+					if (field === 'unalignedWords')
+						tune.addMetaTextArray(field, window.ABCXJS.parse.parseDirective.parseFontChangeLine(tokenizer.translateString(tokenizer.stripComment(line.substring(2)))));
+					else
+						tune.addMetaText(field, tokenizer.translateString(tokenizer.stripComment(line.substring(2))));
+					return {};
+				} else {
+					switch(line.charAt(0))
+					{
+						case  'H':
+							tune.addMetaText("history", tokenizer.translateString(tokenizer.stripComment(line.substring(2))));
+							multilineVars.is_in_history = true;
+							break;
+						case  'K':
+							// since the key is the last thing that can happen in the header, we can resolve the tempo now
+							this.resolveTempo();
+							var result = window.ABCXJS.parse.parseKeyVoice.parseKey( line.substring(2), transposer, line, lineNumber );
+							if (!multilineVars.is_in_header && tune.hasBeginMusic()) {
+								if (result.foundClef) {
+									tune.appendStartingElement('clef', multilineVars.currTexLineNum, -1, -1, multilineVars.clef);
+                                                                    }        
+								if (result.foundKey)
+									tune.appendStartingElement('key', multilineVars.currTexLineNum, -1, -1, window.ABCXJS.parse.parseKeyVoice.fixKey(multilineVars.clef, multilineVars.key));
+							}
+							multilineVars.is_in_header = false;	// The first key signifies the end of the header.
+							break;
+						case  'L':
+							this.setDefaultLength(line, 2, line.length);
+							break;
+						case  'M':
+							multilineVars.origMeter = multilineVars.meter = this.setMeter(line.substring(2));
+							break;
+						case  'P':
+							// TODO-PER: There is more to do with parts, but the writer doesn't care.
+							if (multilineVars.is_in_header)
+								tune.addMetaText("partOrder", tokenizer.translateString(tokenizer.stripComment(line.substring(2))));
+							else
+								multilineVars.partForNextLine = tokenizer.translateString(tokenizer.stripComment(line.substring(2)));
+							break;
+						case  'Q':
+							var tempo = this.setTempo(line, 2, line.length);
+							if (tempo.type === 'delaySet') multilineVars.tempo = tempo.tempo;
+							else if (tempo.type === 'immediate') tune.metaText.tempo = tempo.tempo;
+							break;
+						case  'T':
+							this.setTitle(line.substring(2));
+							break;
+						case 'U':
+							this.addUserDefinition(line, 2, line.length);
+							break;
+						case  'V':
+							window.ABCXJS.parse.parseKeyVoice.parseVoice(line, 2, line.length);
+							if (!multilineVars.is_in_header)
+								return {newline: true};
+							break;
+						case  's':
+							return {symbols: true};
+						case  'b':
+							return {bassfingering: true};
+						case  'f':
+							return {fingering: true};
+						case  'w':
+							return {words: true};
+						case 'E':
+						case 'm':
+							warn("Ignored header", line, 0);
+							break;
+						default:
+							// It wasn't a recognized header value, so parse it as music.
+							if (nextLine.length)
+								nextLine = "\x12" + nextLine;
+							//parseRegularMusicLine(line+nextLine);
+							//nextLine = "";
+							return {regular: true, str: line+nextLine};
+					}
+				}
+				if (nextLine.length > 0)
+					return {recurse: true, str: nextLine};
+				return {};
+			}
+		}
+
+		// If we got this far, we have a regular line of mulsic
+		return {regular: true, str: line};
+	};
+};
+/*global window */
+
+if (!window.ABCXJS)
+	window.ABCXJS = {};
+
+if (!window.ABCXJS.parse)
+	window.ABCXJS.parse = {};
+
+window.ABCXJS.parse.parseKeyVoice = {};
+
+(function() {
+	var tokenizer;
+	var warn;
+	var multilineVars;
+	var tune;
+	window.ABCXJS.parse.parseKeyVoice.initialize = function(tokenizer_, warn_, multilineVars_, tune_) {
+		tokenizer = tokenizer_;
+		warn = warn_;
+		multilineVars = multilineVars_;
+		tune = tune_;
+	};
+
+	window.ABCXJS.parse.parseKeyVoice.standardKey = function(keyName) {
+            
+		var key1sharp = {acc: 'sharp', note: 'f'};
+		var key2sharp = {acc: 'sharp', note: 'c'};
+		var key3sharp = {acc: 'sharp', note: 'g'};
+		var key4sharp = {acc: 'sharp', note: 'd'};
+		var key5sharp = {acc: 'sharp', note: 'A'};
+		var key6sharp = {acc: 'sharp', note: 'e'};
+		var key7sharp = {acc: 'sharp', note: 'B'};
+		var key1flat = {acc: 'flat', note: 'B'};
+		var key2flat = {acc: 'flat', note: 'e'};
+		var key3flat = {acc: 'flat', note: 'A'};
+		var key4flat = {acc: 'flat', note: 'd'};
+		var key5flat = {acc: 'flat', note: 'G'};
+		var key6flat = {acc: 'flat', note: 'c'};
+		var key7flat = {acc: 'flat', note: 'F'};
+
+=======
+>>>>>>> 9c6593ad16e8043a41d0c14dc6bc265a33f90d8a
 		var keys = {
 			'C#': [ key1sharp, key2sharp, key3sharp, key4sharp, key5sharp, key6sharp, key7sharp ],
 			'A#m': [ key1sharp, key2sharp, key3sharp, key4sharp, key5sharp, key6sharp, key7sharp ],
@@ -9505,10 +9960,6913 @@ ABCXJS.write.Printer.prototype.printTune = function(abctune, options) {
     this.paper.initDoc( 'tune', svg_title, estilo, options );
     this.paper.initPage( this.scale );
 
+<<<<<<< HEAD
+            if( this.offset > 0 ) {
+                if( p < elem.pitch ) deltaOctave++;
+            } else {
+                if( p > elem.pitch ) deltaOctave--;
+            }
+            p = this.getPitch(newStaff.note, oct + deltaOctave );
+            if(p < this.lastPitch ){
+                // assumir que o acorde é cadastrado em ordem crescente e
+                // se ao final da conversão de uma nota do acorde, esta for menor que a prévia, somar uma oitava. 
+                deltaOctave++;
+            }
+        } else {
+            deltaOctave = 0;
+        }
+        this.isChord && this.isChord ++; 
+    }
+
+
+    this.lastPitch = pitch = this.getPitch(newStaff.note, oct + deltaOctave );
+    dAcc = this.getAccOffset(newStaff.acc);
+
+    var newElem = {};
+    newElem.pitch = pitch;
+    if(newStaff.acc !== '' ) newElem.accidental = newStaff.acc;
+    
+    // se a nota sair com um acidente (inclusive natural) registrar acidente na barra para o pitch.
+    var dBarAcc = this.getAccOffset( this.baraccidentalsNew[newElem.pitch] );
+    if(dAcc === 0) {
+        if( dBarAcc && dBarAcc !==0 || dKf !== 0) {
+          newElem.accidental = 'natural';
+        }
+    } else {
+        if( dBarAcc && dBarAcc !== 0 ) {
+           if(dBarAcc === dAcc ) delete newElem.accidental;
+        } else if(dKf !== 0) {
+           if(dKf === dAcc ) delete newElem.accidental;
+        }
+    }
+    
+    if( newElem.accidental ) {
+      this.baraccidentalsNew[newElem.pitch] = newElem.accidental;
+    }
+
+    oct = this.extractStaffOctave(pitch);
+    var key = this.numberToKey(this.staffNoteToCromatic(this.extractStaffNote(pitch)), this.offSet);
+    txtAcc = newElem.accidental;
+    abcNote = this.getAbcNote(key, txtAcc, oct);
+    this.updateWorkingLine( abcNote, xi, size/*, abcNote.length */);
+    return newElem;
+};
+
+window.ABCXJS.parse.Transposer.prototype.updateWorkingLine = function( newText, xi, size/*, newSize*/ ) {
+    var p0 = this.changedLines[this.workingLineIdx].text.substr(0, this.newX);
+    var p1 = this.workingLine.substr(this.workingX, xi - this.workingX);
+    var p2 = this.workingLine.substr(xi + size);
+    this.workingX = xi + size;
+    this.changedLines[this.workingLineIdx].text = p0 + p1 + newText;
+    this.newX = this.changedLines[this.workingLineIdx].text.length;
+    this.changedLines[this.workingLineIdx].text += p2;
+};
+
+window.ABCXJS.parse.Transposer.prototype.getAbcNote = function( key, txtAcc, oct) {
+   var cOct = "";
+   if( oct >= 5 ) {
+       key = key.toLowerCase();  
+       cOct = Array(oct-4).join("'");
+   }  else {
+       key = key.toUpperCase();  
+       cOct = Array(4-(oct-1)).join(",");
+   }
+   return this.accNameToABC(txtAcc) + key + cOct;
+};
+
+window.ABCXJS.parse.Transposer.prototype.transposeKey = function ( str, line, lineNumber ) {
+
+    var cKey = this.parseKey( str );
+    
+    this.currKey[this.currKey.length] = cKey;
+    
+    if( Math.abs(this.offSet)%12 === 0 || ! cKey ) return this.tokenizer.tokenize(str, 0, str.length);
+    
+    var newKey = this.keyToNumber( cKey );
+    var cNewKey = this.denormalizeAcc( this.numberToKey(newKey + this.offSet, this.offSet ));
+    
+    this.currKey[this.currKey.length-1] = cNewKey;
+
+    var newStr  = str.replace(cKey, cNewKey );
+    var newLine = line.substr( 0, line.indexOf(str) ) + newStr;
+    
+    this.changedLines[ this.changedLines.length ] = { line:lineNumber, text: newLine };
+
+    this.oldKeyAcc = ABCXJS.parse.parseKeyVoice.standardKey(this.denormalizeAcc(str));
+    this.newKeyAcc = ABCXJS.parse.parseKeyVoice.standardKey(this.denormalizeAcc(newStr));
+    
+    return this.tokenizer.tokenize(newStr, 0, newStr.length);
+};
+
+window.ABCXJS.parse.Transposer.prototype.parseKey = function ( str ) {
+    var cKey = null;
+    var tokens = this.tokenizer.tokenize(str, 0, str.length);
+    var retPitch = this.tokenizer.getKeyPitch(tokens[0].token);
+
+    if (retPitch.len > 0) {
+        // The accidental and mode might be attached to the pitch, so we might want to just remove the first character.
+        cKey = retPitch.token;
+        if (tokens[0].token.length > 1)
+            tokens[0].token = tokens[0].token.substring(1);
+        else
+            tokens.shift();
+        // We got a pitch to start with, so we might also have an accidental and a mode
+        if (tokens.length > 0) {
+            var retAcc = this.tokenizer.getSharpFlat(tokens[0].token);
+            if (retAcc.len > 0) {
+                cKey += retAcc.token;
+            }
+        }
+    }
+    
+    return cKey;
+};
+
+
+window.ABCXJS.parse.Transposer.prototype.deleteTabLine = function ( n ) {
+    this.deletedLines[n] = true;
+};
+
+window.ABCXJS.parse.Transposer.prototype.updateEditor = function ( lines ) {
+    
+    for( i = 0; i < this.changedLines.length; i++ ){
+        lines[this.changedLines[i].line] = this.changedLines[i].text;
+    }
+    
+    var newStr = lines[0]; // supoe q a linha zero nunca sera apagada
+    
+    for( var i = 1; i < lines.length; i++ ){
+        if( ! this.deletedLines[i] ) {
+            newStr += '\n' + lines[i];
+        }
+    }
+    this.deletedLines = [];
+    this.changedLines = [];
+    return newStr+'\n';
+};
+
+window.ABCXJS.parse.Transposer.prototype.getKeyVoice = function ( idx ) {
+return (this.currKey[idx]?this.currKey[idx]:"C");
+};
+
+window.ABCXJS.parse.Transposer.prototype.normalizeAcc = function ( cKey ) {
+    return ABCXJS.parse.normalizeAcc(cKey);
+};
+
+window.ABCXJS.parse.Transposer.prototype.denormalizeAcc = function ( cKey ) {
+    return ABCXJS.parse.denormalizeAcc(cKey);
+};
+
+window.ABCXJS.parse.Transposer.prototype.getKeyAccOffset = function(note, keyAcc)
+// recupera os acidentes da clave e retorna um offset no modelo cromatico
+{
+  for( var a = 0; a < keyAcc.length; a ++) {
+      if( keyAcc[a].note.toLowerCase() === note.toLowerCase() ) {
+          return this.getAccOffset(keyAcc[a].acc);
+      }
+  }
+  return 0;    
+};
+               
+window.ABCXJS.parse.Transposer.prototype.staffNoteToCromatic = function (note) {
+  return note*2 + (note>2?-1:0);
+};
+
+//window.ABCXJS.parse.Transposer.prototype.cromaticToStaffNote = function (note) {
+//  return (note>5?note+1:note)/2;
+//};
+
+window.ABCXJS.parse.Transposer.prototype.extractStaffNote = function(pitch) {
+    pitch = pitch % 7;
+    return pitch<0? pitch+=7:pitch;
+};
+
+window.ABCXJS.parse.Transposer.prototype.extractCromaticOctave = function(pitch) {
+    return Math.floor(pitch/12) ;
+};
+
+window.ABCXJS.parse.Transposer.prototype.extractCromaticNote = function(pitch) {
+    pitch = pitch % 12;
+    return pitch<0? pitch+=12:pitch;
+};
+
+window.ABCXJS.parse.Transposer.prototype.extractStaffOctave = function(pitch) {
+    return Math.floor((28 + pitch) / 7);
+};
+
+window.ABCXJS.parse.Transposer.prototype.numberToKey = function(number, offset) {
+    var r = number;
+    r %= ABCXJS.parse.number2keysharp.length;
+    
+    if( r < 0 ) r += ABCXJS.parse.number2keysharp.length;
+    
+    if( offset > 0 ) {
+        r = ABCXJS.parse.number2keysharp[r];
+    } else {
+        r = ABCXJS.parse.number2keyflat[r];
+    }
+    return r;
+};
+
+window.ABCXJS.parse.Transposer.prototype.keyToNumber = function(key) {
+    key = this.normalizeAcc(key);
+    return ABCXJS.parse.key2number[key];
+};
+
+window.ABCXJS.parse.Transposer.prototype.getAccOffset = function(txtAcc)
+// a partir do nome do acidente, retorna o offset no modelo cromatico
+{
+    var ret = 0;
+
+    switch (txtAcc) {
+        case 'accidentals.dblsharp':
+        case 'dblsharp':
+            ret = 2;
+            break;
+        case 'accidentals.sharp':
+        case 'sharp':
+            ret = 1;
+            break;
+        case 'accidentals.nat':
+        case 'nat':
+        case 'natural':
+            ret = 0;
+            break;
+        case 'accidentals.flat':
+        case 'flat':
+            ret = -1;
+            break;
+        case 'accidentals.dblflat':
+        case 'dblflat':
+            ret = -2;
+            break;
+    }
+    return ret;
+};
+
+window.ABCXJS.parse.Transposer.prototype.accNameToABC = function(txtAcc)
+// a partir do nome do acidente, retorna o offset no modelo cromatico
+{
+    var ret = "";
+
+    switch (txtAcc) {
+        case 'accidentals.dblsharp':
+        case 'dblsharp':
+            ret = "^^";
+            break;
+        case 'accidentals.sharp':
+        case 'sharp':
+            ret = '^';
+            break;
+        case 'accidentals.nat':
+        case 'nat':
+        case 'natural':
+            ret = "=";
+            break;
+        case 'accidentals.flat':
+        case 'flat':
+            ret = '_';
+            break;
+        case 'accidentals.dblflat':
+        case 'dblflat':
+            ret = '__';
+            break;
+    }
+    return ret;
+};
+
+window.ABCXJS.parse.Transposer.prototype.accAbcToName = function(abc)
+// a partir do nome do acidente, retorna o offset no modelo cromatico
+{
+    var ret = "";
+
+    switch (abc) {
+        case '^^':
+            ret = "dblsharp";
+            break;
+        case '^':
+            ret = 'sharp';
+            break;
+        case '=':
+            ret = "natural";
+            break;
+        case '_':
+            ret = 'flat';
+            break;
+        case '__':
+            ret = 'dblflat';
+            break;
+    }
+    return ret;
+};
+
+window.ABCXJS.parse.Transposer.prototype.getAccName = function(offset)
+{
+    var names = ['dblflat','flat','natural','sharp','dblsharp'];
+    return names[offset+2];
+};
+
+window.ABCXJS.parse.Transposer.prototype.getPitch = function( staff, octave) {
+   return this.pitches[staff] + (octave - 4) * 7; 
+};
+
+window.ABCXJS.parse.Transposer.prototype.makeElem = function(abcNote){
+   var pitSyms = "ABCDEFGabcdefg"; // 2
+   var i = 0;
+   while( pitSyms.indexOf(abcNote.charAt(i)) === -1 ) {
+       i++;
+   }
+   var acc = this.accAbcToName(abcNote.substr(0,i));
+   var pitch = this.pitches[abcNote.charAt(i)];
+   while( i < abcNote.length ) {
+      switch ( abcNote.charAt(i) ) {
+          case "'": pitch +=7; break;
+          case "," : pitch -=7; break;
+      }
+      i++;
+   }
+   return ( acc ? { pitch: pitch, accidental: acc } : { pitch: pitch } );
+};
+/*global window, ABCXJS */
+
+if (!window.ABCXJS)
+	window.ABCXJS = {};
+
+if (!window.ABCXJS.write)
+	window.ABCXJS.write = {};
+
+ABCXJS.write.Glyphs = function () {
+    var glyphs = {
+          'n.0': {d: [["M", 4.83, -14.97], ["c", 0.33, -0.03, 1.11, 0, 1.47, 0.06], ["c", 1.68, 0.36, 2.97, 1.59, 3.78, 3.6], ["c", 1.2, 2.97, 0.81, 6.96, -0.9, 9.27], ["c", -0.78, 1.08, -1.71, 1.71, -2.91, 1.95], ["c", -0.45, 0.09, -1.32, 0.09, -1.77, 0], ["c", -0.81, -0.18, -1.47, -0.51, -2.07, -1.02], ["c", -2.34, -2.07, -3.15, -6.72, -1.74, -10.2], ["c", 0.87, -2.16, 2.28, -3.42, 4.14, -3.66], ["z"], ["m", 1.11, 0.87], ["c", -0.21, -0.06, -0.69, -0.09, -0.87, -0.06], ["c", -0.54, 0.12, -0.87, 0.42, -1.17, 0.99], ["c", -0.36, 0.66, -0.51, 1.56, -0.6, 3], ["c", -0.03, 0.75, -0.03, 4.59, -0, 5.31], ["c", 0.09, 1.5, 0.27, 2.4, 0.6, 3.06], ["c", 0.24, 0.48, 0.57, 0.78, 0.96, 0.9], ["c", 0.27, 0.09, 0.78, 0.09, 1.05, -0], ["c", 0.39, -0.12, 0.72, -0.42, 0.96, -0.9], ["c", 0.33, -0.66, 0.51, -1.56, 0.6, -3.06], ["c", 0.03, -0.72, 0.03, -4.56, -0, -5.31], ["c", -0.09, -1.47, -0.27, -2.37, -0.6, -3.03], ["c", -0.24, -0.48, -0.54, -0.78, -0.93, -0.9], ["z"]], w: 10.78, h: 14.959}
+        , 'n.1': {d: [["M", 3.30, -15.06], ["c", 0.06, -0.06, 0.21, -0.03, 0.66, 0.15], ["c", 0.81, 0.39, 1.08, 0.39, 1.83, 0.03], ["c", 0.21, -0.09, 0.39, -0.15, 0.42, -0.15], ["c", 0.12, 0, 0.21, 0.09, 0.27, 0.21], ["c", 0.06, 0.12, 0.06, 0.33, 0.06, 5.94], ["c", 0, 3.93, 0, 5.85, 0.03, 6.03], ["c", 0.06, 0.36, 0.15, 0.69, 0.27, 0.96], ["c", 0.36, 0.75, 0.93, 1.17, 1.68, 1.26], ["c", 0.3, 0.03, 0.39, 0.09, 0.39, 0.3], ["c", 0, 0.15, -0.03, 0.18, -0.09, 0.24], ["c", -0.06, 0.06, -0.09, 0.06, -0.48, 0.06], ["c", -0.42, -0, -0.69, -0.03, -2.1, -0.24], ["c", -0.9, -0.15, -1.77, -0.15, -2.67, -0], ["c", -1.41, 0.21, -1.68, 0.24, -2.1, 0.24], ["c", -0.39, -0, -0.42, -0, -0.48, -0.06], ["c", -0.06, -0.06, -0.06, -0.09, -0.06, -0.24], ["c", 0, -0.21, 0.06, -0.27, 0.36, -0.3], ["c", 0.75, -0.09, 1.32, -0.51, 1.68, -1.26], ["c", 0.12, -0.27, 0.21, -0.6, 0.27, -0.96], ["c", 0.03, -0.18, 0.03, -1.59, 0.03, -4.29], ["c", 0, -3.87, 0, -4.05, -0.06, -4.14], ["c", -0.09, -0.15, -0.18, -0.24, -0.39, -0.24], ["c", -0.12, -0, -0.15, 0.03, -0.21, 0.06], ["c", -0.03, 0.06, -0.45, 0.99, -0.96, 2.13], ["c", -0.48, 1.14, -0.9, 2.1, -0.93, 2.16], ["c", -0.06, 0.15, -0.21, 0.24, -0.33, 0.24], ["c", -0.24, 0, -0.42, -0.18, -0.42, -0.39], ["c", 0, -0.06, 3.27, -7.62, 3.33, -7.74], ["z"]], w: 8.94, h: 15.058}
+        , 'n.2': {d: [["M", 4.23, -14.97], ["c", 0.57, -0.06, 1.68, 0, 2.34, 0.18], ["c", 0.69, 0.18, 1.5, 0.54, 2.01, 0.9], ["c", 1.35, 0.96, 1.95, 2.25, 1.77, 3.81], ["c", -0.15, 1.35, -0.66, 2.34, -1.68, 3.15], ["c", -0.6, 0.48, -1.44, 0.93, -3.12, 1.65], ["c", -1.32, 0.57, -1.8, 0.81, -2.37, 1.14], ["c", -0.57, 0.33, -0.57, 0.33, -0.24, 0.27], ["c", 0.39, -0.09, 1.26, -0.09, 1.68, 0], ["c", 0.72, 0.15, 1.41, 0.45, 2.1, 0.9], ["c", 0.99, 0.63, 1.86, 0.87, 2.55, 0.75], ["c", 0.24, -0.06, 0.42, -0.15, 0.57, -0.3], ["c", 0.12, -0.09, 0.3, -0.42, 0.3, -0.51], ["c", 0, -0.09, 0.12, -0.21, 0.24, -0.24], ["c", 0.18, -0.03, 0.39, 0.12, 0.39, 0.3], ["c", 0, 0.12, -0.15, 0.57, -0.3, 0.87], ["c", -0.54, 1.02, -1.56, 1.74, -2.79, 2.01], ["c", -0.42, 0.09, -1.23, 0.09, -1.62, 0.03], ["c", -0.81, -0.18, -1.32, -0.45, -2.01, -1.11], ["c", -0.45, -0.45, -0.63, -0.57, -0.96, -0.69], ["c", -0.84, -0.27, -1.89, 0.12, -2.25, 0.9], ["c", -0.12, 0.21, -0.21, 0.54, -0.21, 0.72], ["c", 0, 0.12, -0.12, 0.21, -0.27, 0.24], ["c", -0.15, 0, -0.27, -0.03, -0.33, -0.15], ["c", -0.09, -0.21, 0.09, -1.08, 0.33, -1.71], ["c", 0.24, -0.66, 0.66, -1.26, 1.29, -1.89], ["c", 0.45, -0.45, 0.9, -0.81, 1.92, -1.56], ["c", 1.29, -0.93, 1.89, -1.44, 2.34, -1.98], ["c", 0.87, -1.05, 1.26, -2.19, 1.2, -3.63], ["c", -0.06, -1.29, -0.39, -2.31, -0.96, -2.91], ["c", -0.36, -0.33, -0.72, -0.51, -1.17, -0.54], ["c", -0.84, -0.03, -1.53, 0.42, -1.59, 1.05], ["c", -0.03, 0.33, 0.12, 0.6, 0.57, 1.14], ["c", 0.45, 0.54, 0.54, 0.87, 0.42, 1.41], ["c", -0.15, 0.63, -0.54, 1.11, -1.08, 1.38], ["c", -0.63, 0.33, -1.2, 0.33, -1.83, 0], ["c", -0.24, -0.12, -0.33, -0.18, -0.54, -0.39], ["c", -0.18, -0.18, -0.27, -0.3, -0.36, -0.51], ["c", -0.24, -0.45, -0.27, -0.84, -0.21, -1.38], ["c", 0.12, -0.75, 0.45, -1.41, 1.02, -1.98], ["c", 0.72, -0.72, 1.74, -1.17, 2.85, -1.32], ["z"]], w: 10.764, h: 14.993}
+        , 'n.3': {d: [["M", 3.78, -14.97], ["c", 0.3, -0.03, 1.41, 0, 1.83, 0.06], ["c", 2.22, 0.3, 3.51, 1.32, 3.72, 2.91], ["c", 0.03, 0.33, 0.03, 1.26, -0.03, 1.65], ["c", -0.12, 0.84, -0.48, 1.47, -1.05, 1.77], ["c", -0.27, 0.15, -0.36, 0.24, -0.45, 0.39], ["c", -0.09, 0.21, -0.09, 0.36, 0, 0.57], ["c", 0.09, 0.15, 0.18, 0.24, 0.51, 0.39], ["c", 0.75, 0.42, 1.23, 1.14, 1.41, 2.13], ["c", 0.06, 0.42, 0.06, 1.35, 0, 1.71], ["c", -0.18, 0.81, -0.48, 1.38, -1.02, 1.95], ["c", -0.75, 0.72, -1.8, 1.2, -3.18, 1.38], ["c", -0.42, 0.06, -1.56, 0.06, -1.95, 0], ["c", -1.89, -0.33, -3.18, -1.29, -3.51, -2.64], ["c", -0.03, -0.12, -0.03, -0.33, -0.03, -0.6], ["c", 0, -0.36, 0, -0.42, 0.06, -0.63], ["c", 0.12, -0.3, 0.27, -0.51, 0.51, -0.75], ["c", 0.24, -0.24, 0.45, -0.39, 0.75, -0.51], ["c", 0.21, -0.06, 0.27, -0.06, 0.6, -0.06], ["c", 0.33, 0, 0.39, 0, 0.6, 0.06], ["c", 0.3, 0.12, 0.51, 0.27, 0.75, 0.51], ["c", 0.36, 0.33, 0.57, 0.75, 0.6, 1.2], ["c", 0, 0.21, 0, 0.27, -0.06, 0.42], ["c", -0.09, 0.18, -0.12, 0.24, -0.54, 0.54], ["c", -0.51, 0.36, -0.63, 0.54, -0.6, 0.87], ["c", 0.06, 0.54, 0.54, 0.9, 1.38, 0.99], ["c", 0.36, 0.06, 0.72, 0.03, 0.96, -0.06], ["c", 0.81, -0.27, 1.29, -1.23, 1.44, -2.79], ["c", 0.03, -0.45, 0.03, -1.95, -0.03, -2.37], ["c", -0.09, -0.75, -0.33, -1.23, -0.75, -1.44], ["c", -0.33, -0.18, -0.45, -0.18, -1.98, -0.18], ["c", -1.35, 0, -1.41, 0, -1.5, -0.06], ["c", -0.18, -0.12, -0.24, -0.39, -0.12, -0.6], ["c", 0.12, -0.15, 0.15, -0.15, 1.68, -0.15], ["c", 1.5, 0, 1.62, 0, 1.89, -0.15], ["c", 0.18, -0.09, 0.42, -0.36, 0.54, -0.57], ["c", 0.18, -0.42, 0.27, -0.9, 0.3, -1.95], ["c", 0.03, -1.2, -0.06, -1.8, -0.36, -2.37], ["c", -0.24, -0.48, -0.63, -0.81, -1.14, -0.96], ["c", -0.3, -0.06, -1.08, -0.06, -1.38, 0.03], ["c", -0.6, 0.15, -0.9, 0.42, -0.96, 0.84], ["c", -0.03, 0.3, 0.06, 0.45, 0.63, 0.84], ["c", 0.33, 0.24, 0.42, 0.39, 0.45, 0.63], ["c", 0.03, 0.72, -0.57, 1.5, -1.32, 1.65], ["c", -1.05, 0.27, -2.1, -0.57, -2.1, -1.65], ["c", 0, -0.45, 0.15, -0.96, 0.39, -1.38], ["c", 0.12, -0.21, 0.54, -0.63, 0.81, -0.81], ["c", 0.57, -0.42, 1.38, -0.69, 2.25, -0.81], ["z"]], w: 9.735, h: 14.967}
+        , 'n.4': {d: [["M", 8.64, -14.94], ["c", 0.27, -0.09, 0.42, -0.12, 0.54, -0.03], ["c", 0.09, 0.06, 0.15, 0.21, 0.15, 0.3], ["c", -0.03, 0.06, -1.92, 2.31, -4.23, 5.04], ["c", -2.31, 2.73, -4.23, 4.98, -4.26, 5.01], ["c", -0.03, 0.06, 0.12, 0.06, 2.55, 0.06], ["l", 2.61, 0], ["l", 0, -2.37], ["c", 0, -2.19, 0.03, -2.37, 0.06, -2.46], ["c", 0.03, -0.06, 0.21, -0.18, 0.57, -0.42], ["c", 1.08, -0.72, 1.38, -1.08, 1.86, -2.16], ["c", 0.12, -0.3, 0.24, -0.54, 0.27, -0.57], ["c", 0.12, -0.12, 0.39, -0.06, 0.45, 0.12], ["c", 0.06, 0.09, 0.06, 0.57, 0.06, 3.96], ["l", 0, 3.9], ["l", 1.08, 0], ["c", 1.05, 0, 1.11, 0, 1.2, 0.06], ["c", 0.24, 0.15, 0.24, 0.54, 0, 0.69], ["c", -0.09, 0.06, -0.15, 0.06, -1.2, 0.06], ["l", -1.08, 0], ["l", 0, 0.33], ["c", 0, 0.57, 0.09, 1.11, 0.3, 1.53], ["c", 0.36, 0.75, 0.93, 1.17, 1.68, 1.26], ["c", 0.3, 0.03, 0.39, 0.09, 0.39, 0.3], ["c", 0, 0.15, -0.03, 0.18, -0.09, 0.24], ["c", -0.06, 0.06, -0.09, 0.06, -0.48, 0.06], ["c", -0.42, 0, -0.69, -0.03, -2.1, -0.24], ["c", -0.9, -0.15, -1.77, -0.15, -2.67, 0], ["c", -1.41, 0.21, -1.68, 0.24, -2.1, 0.24], ["c", -0.39, 0, -0.42, 0, -0.48, -0.06], ["c", -0.06, -0.06, -0.06, -0.09, -0.06, -0.24], ["c", 0, -0.21, 0.06, -0.27, 0.36, -0.3], ["c", 0.75, -0.09, 1.32, -0.51, 1.68, -1.26], ["c", 0.21, -0.42, 0.3, -0.96, 0.3, -1.53], ["l", 0, -0.33], ["l", -2.7, 0], ["c", -2.91, 0, -2.85, 0, -3.09, -0.15], ["c", -0.18, -0.12, -0.3, -0.39, -0.27, -0.54], ["c", 0.03, -0.06, 0.18, -0.24, 0.33, -0.45], ["c", 0.75, -0.9, 1.59, -2.07, 2.13, -3.03], ["c", 0.33, -0.54, 0.84, -1.62, 1.05, -2.16], ["c", 0.57, -1.41, 0.84, -2.64, 0.9, -4.05], ["c", 0.03, -0.63, 0.06, -0.72, 0.24, -0.81], ["l", 0.12, -0.06], ["l", 0.45, 0.12], ["c", 0.66, 0.18, 1.02, 0.24, 1.47, 0.27], ["c", 0.6, 0.03, 1.23, -0.09, 2.01, -0.33], ["z"]], w: 11.795, h: 14.994}
+        , 'n.5': {d: [["M", 1.02, -14.94], ["c", 0.12, -0.09, 0.03, -0.09, 1.08, 0.06], ["c", 2.49, 0.36, 4.35, 0.36, 6.96, -0.06], ["c", 0.57, -0.09, 0.66, -0.06, 0.81, 0.06], ["c", 0.15, 0.18, 0.12, 0.24, -0.15, 0.51], ["c", -1.29, 1.26, -3.24, 2.04, -5.58, 2.31], ["c", -0.6, 0.09, -1.2, 0.12, -1.71, 0.12], ["c", -0.39, 0, -0.45, 0, -0.57, 0.06], ["c", -0.09, 0.06, -0.15, 0.12, -0.21, 0.21], ["l", -0.06, 0.12], ["l", 0, 1.65], ["l", 0, 1.65], ["l", 0.21, -0.21], ["c", 0.66, -0.57, 1.41, -0.96, 2.19, -1.14], ["c", 0.33, -0.06, 1.41, -0.06, 1.95, 0], ["c", 2.61, 0.36, 4.02, 1.74, 4.26, 4.14], ["c", 0.03, 0.45, 0.03, 1.08, -0.03, 1.44], ["c", -0.18, 1.02, -0.78, 2.01, -1.59, 2.7], ["c", -0.72, 0.57, -1.62, 1.02, -2.49, 1.2], ["c", -1.38, 0.27, -3.03, 0.06, -4.2, -0.54], ["c", -1.08, -0.54, -1.71, -1.32, -1.86, -2.28], ["c", -0.09, -0.69, 0.09, -1.29, 0.57, -1.74], ["c", 0.24, -0.24, 0.45, -0.39, 0.75, -0.51], ["c", 0.21, -0.06, 0.27, -0.06, 0.6, -0.06], ["c", 0.33, 0, 0.39, 0, 0.6, 0.06], ["c", 0.3, 0.12, 0.51, 0.27, 0.75, 0.51], ["c", 0.36, 0.33, 0.57, 0.75, 0.6, 1.2], ["c", 0, 0.21, 0, 0.27, -0.06, 0.42], ["c", -0.09, 0.18, -0.12, 0.24, -0.54, 0.54], ["c", -0.18, 0.12, -0.36, 0.3, -0.42, 0.33], ["c", -0.36, 0.42, -0.18, 0.99, 0.36, 1.26], ["c", 0.51, 0.27, 1.47, 0.36, 2.01, 0.27], ["c", 0.93, -0.21, 1.47, -1.17, 1.65, -2.91], ["c", 0.06, -0.45, 0.06, -1.89, 0, -2.31], ["c", -0.15, -1.2, -0.51, -2.1, -1.05, -2.55], ["c", -0.21, -0.18, -0.54, -0.36, -0.81, -0.39], ["c", -0.3, -0.06, -0.84, -0.03, -1.26, 0.06], ["c", -0.93, 0.18, -1.65, 0.6, -2.16, 1.2], ["c", -0.15, 0.21, -0.27, 0.3, -0.39, 0.3], ["c", -0.15, 0, -0.3, -0.09, -0.36, -0.18], ["c", -0.06, -0.09, -0.06, -0.15, -0.06, -3.66], ["c", 0, -3.39, 0, -3.57, 0.06, -3.66], ["c", 0.03, -0.06, 0.09, -0.15, 0.15, -0.18], ["z"]], w: 10.212, h: 14.997}
+        , 'n.6': {d: [["M", 4.98, -14.97], ["c", 0.36, -0.03, 1.2, 0, 1.59, 0.06], ["c", 0.9, 0.15, 1.68, 0.51, 2.25, 1.05], ["c", 0.57, 0.51, 0.87, 1.23, 0.84, 1.98], ["c", -0.03, 0.51, -0.21, 0.9, -0.6, 1.26], ["c", -0.24, 0.24, -0.45, 0.39, -0.75, 0.51], ["c", -0.21, 0.06, -0.27, 0.06, -0.6, 0.06], ["c", -0.33, 0, -0.39, 0, -0.6, -0.06], ["c", -0.3, -0.12, -0.51, -0.27, -0.75, -0.51], ["c", -0.39, -0.36, -0.57, -0.78, -0.57, -1.26], ["c", 0, -0.27, 0, -0.3, 0.09, -0.42], ["c", 0.03, -0.09, 0.18, -0.21, 0.3, -0.3], ["c", 0.12, -0.09, 0.3, -0.21, 0.39, -0.27], ["c", 0.09, -0.06, 0.21, -0.18, 0.27, -0.24], ["c", 0.06, -0.12, 0.09, -0.15, 0.09, -0.33], ["c", 0, -0.18, -0.03, -0.24, -0.09, -0.36], ["c", -0.24, -0.39, -0.75, -0.6, -1.38, -0.57], ["c", -0.54, 0.03, -0.9, 0.18, -1.23, 0.48], ["c", -0.81, 0.72, -1.08, 2.16, -0.96, 5.37], ["l", 0, 0.63], ["l", 0.3, -0.12], ["c", 0.78, -0.27, 1.29, -0.33, 2.1, -0.27], ["c", 1.47, 0.12, 2.49, 0.54, 3.27, 1.29], ["c", 0.48, 0.51, 0.81, 1.11, 0.96, 1.89], ["c", 0.06, 0.27, 0.06, 0.42, 0.06, 0.93], ["c", 0, 0.54, 0, 0.69, -0.06, 0.96], ["c", -0.15, 0.78, -0.48, 1.38, -0.96, 1.89], ["c", -0.54, 0.51, -1.17, 0.87, -1.98, 1.08], ["c", -1.14, 0.3, -2.4, 0.33, -3.24, 0.03], ["c", -1.5, -0.48, -2.64, -1.89, -3.27, -4.02], ["c", -0.36, -1.23, -0.51, -2.82, -0.42, -4.08], ["c", 0.3, -3.66, 2.28, -6.3, 4.95, -6.66], ["z"], ["m", 0.66, 7.41], ["c", -0.27, -0.09, -0.81, -0.12, -1.08, -0.06], ["c", -0.72, 0.18, -1.08, 0.69, -1.23, 1.71], ["c", -0.06, 0.54, -0.06, 3, 0, 3.54], ["c", 0.18, 1.26, 0.72, 1.77, 1.8, 1.74], ["c", 0.39, -0.03, 0.63, -0.09, 0.9, -0.27], ["c", 0.66, -0.42, 0.9, -1.32, 0.9, -3.24], ["c", 0, -2.22, -0.36, -3.12, -1.29, -3.42], ["z"]], w: 9.956, h: 14.982}
+        , 'n.7': {d: [["M", 0.21, -14.97], ["c", 0.21, -0.06, 0.45, 0, 0.54, 0.15], ["c", 0.06, 0.09, 0.06, 0.15, 0.06, 0.39], ["c", 0, 0.24, 0, 0.33, 0.06, 0.42], ["c", 0.06, 0.12, 0.21, 0.24, 0.27, 0.24], ["c", 0.03, 0, 0.12, -0.12, 0.24, -0.21], ["c", 0.96, -1.2, 2.58, -1.35, 3.99, -0.42], ["c", 0.15, 0.12, 0.42, 0.3, 0.54, 0.45], ["c", 0.48, 0.39, 0.81, 0.57, 1.29, 0.6], ["c", 0.69, 0.03, 1.5, -0.3, 2.13, -0.87], ["c", 0.09, -0.09, 0.27, -0.3, 0.39, -0.45], ["c", 0.12, -0.15, 0.24, -0.27, 0.3, -0.3], ["c", 0.18, -0.06, 0.39, 0.03, 0.51, 0.21], ["c", 0.06, 0.18, 0.06, 0.24, -0.27, 0.72], ["c", -0.18, 0.24, -0.54, 0.78, -0.78, 1.17], ["c", -2.37, 3.54, -3.54, 6.27, -3.87, 9], ["c", -0.03, 0.33, -0.03, 0.66, -0.03, 1.26], ["c", 0, 0.9, 0, 1.08, 0.15, 1.89], ["c", 0.06, 0.45, 0.06, 0.48, 0.03, 0.6], ["c", -0.06, 0.09, -0.21, 0.21, -0.3, 0.21], ["c", -0.03, 0, -0.27, -0.06, -0.54, -0.15], ["c", -0.84, -0.27, -1.11, -0.3, -1.65, -0.3], ["c", -0.57, 0, -0.84, 0.03, -1.56, 0.27], ["c", -0.6, 0.18, -0.69, 0.21, -0.81, 0.15], ["c", -0.12, -0.06, -0.21, -0.18, -0.21, -0.3], ["c", 0, -0.15, 0.6, -1.44, 1.2, -2.61], ["c", 1.14, -2.22, 2.73, -4.68, 5.1, -8.01], ["c", 0.21, -0.27, 0.36, -0.48, 0.33, -0.48], ["c", 0, 0, -0.12, 0.06, -0.27, 0.12], ["c", -0.54, 0.3, -0.99, 0.39, -1.56, 0.39], ["c", -0.75, 0.03, -1.2, -0.18, -1.83, -0.75], ["c", -0.99, -0.9, -1.83, -1.17, -2.31, -0.72], ["c", -0.18, 0.15, -0.36, 0.51, -0.45, 0.84], ["c", -0.06, 0.24, -0.06, 0.33, -0.09, 1.98], ["c", 0, 1.62, -0.03, 1.74, -0.06, 1.8], ["c", -0.15, 0.24, -0.54, 0.24, -0.69, 0], ["c", -0.06, -0.09, -0.06, -0.15, -0.06, -3.57], ["c", 0, -3.42, 0, -3.48, 0.06, -3.57], ["c", 0.03, -0.06, 0.09, -0.12, 0.15, -0.15], ["z"]], w: 10.561, h: 15.093}
+        , 'n.8': {d: [["M", 4.98, -14.97], ["c", 0.33, -0.03, 1.02, -0.03, 1.32, 0], ["c", 1.32, 0.12, 2.49, 0.6, 3.21, 1.32], ["c", 0.39, 0.39, 0.66, 0.81, 0.78, 1.29], ["c", 0.09, 0.36, 0.09, 1.08, 0, 1.44], ["c", -0.21, 0.84, -0.66, 1.59, -1.59, 2.55], ["l", -0.3, 0.3], ["l", 0.27, 0.18], ["c", 1.47, 0.93, 2.31, 2.31, 2.25, 3.75], ["c", -0.03, 0.75, -0.24, 1.35, -0.63, 1.95], ["c", -0.45, 0.66, -1.02, 1.14, -1.83, 1.53], ["c", -1.8, 0.87, -4.2, 0.87, -6, 0.03], ["c", -1.62, -0.78, -2.52, -2.16, -2.46, -3.66], ["c", 0.06, -0.99, 0.54, -1.77, 1.8, -2.97], ["c", 0.54, -0.51, 0.54, -0.54, 0.48, -0.57], ["c", -0.39, -0.27, -0.96, -0.78, -1.2, -1.14], ["c", -0.75, -1.11, -0.87, -2.4, -0.3, -3.6], ["c", 0.69, -1.35, 2.25, -2.25, 4.2, -2.4], ["z"], ["m", 1.53, 0.69], ["c", -0.42, -0.09, -1.11, -0.12, -1.38, -0.06], ["c", -0.3, 0.06, -0.6, 0.18, -0.81, 0.3], ["c", -0.21, 0.12, -0.6, 0.51, -0.72, 0.72], ["c", -0.51, 0.87, -0.42, 1.89, 0.21, 2.52], ["c", 0.21, 0.21, 0.36, 0.3, 1.95, 1.23], ["c", 0.96, 0.54, 1.74, 0.99, 1.77, 1.02], ["c", 0.09, 0, 0.63, -0.6, 0.99, -1.11], ["c", 0.21, -0.36, 0.48, -0.87, 0.57, -1.23], ["c", 0.06, -0.24, 0.06, -0.36, 0.06, -0.72], ["c", 0, -0.45, -0.03, -0.66, -0.15, -0.99], ["c", -0.39, -0.81, -1.29, -1.44, -2.49, -1.68], ["z"], ["m", -1.44, 8.07], ["l", -1.89, -1.08], ["c", -0.03, 0, -0.18, 0.15, -0.39, 0.33], ["c", -1.2, 1.08, -1.65, 1.95, -1.59, 3], ["c", 0.09, 1.59, 1.35, 2.85, 3.21, 3.24], ["c", 0.33, 0.06, 0.45, 0.06, 0.93, 0.06], ["c", 0.63, -0, 0.81, -0.03, 1.29, -0.27], ["c", 0.9, -0.42, 1.47, -1.41, 1.41, -2.4], ["c", -0.06, -0.66, -0.39, -1.29, -0.9, -1.65], ["c", -0.12, -0.09, -1.05, -0.63, -2.07, -1.23], ["z"]], w: 10.926, h: 14.989}
+        , 'n.9': {d: [["M", 4.23, -14.97], ["c", 0.42, -0.03, 1.29, 0, 1.62, 0.06], ["c", 0.51, 0.12, 0.93, 0.3, 1.38, 0.57], ["c", 1.53, 1.02, 2.52, 3.24, 2.73, 5.94], ["c", 0.18, 2.55, -0.48, 4.98, -1.83, 6.57], ["c", -1.05, 1.26, -2.4, 1.89, -3.93, 1.83], ["c", -1.23, -0.06, -2.31, -0.45, -3.03, -1.14], ["c", -0.57, -0.51, -0.87, -1.23, -0.84, -1.98], ["c", 0.03, -0.51, 0.21, -0.9, 0.6, -1.26], ["c", 0.24, -0.24, 0.45, -0.39, 0.75, -0.51], ["c", 0.21, -0.06, 0.27, -0.06, 0.6, -0.06], ["c", 0.33, -0, 0.39, -0, 0.6, 0.06], ["c", 0.3, 0.12, 0.51, 0.27, 0.75, 0.51], ["c", 0.39, 0.36, 0.57, 0.78, 0.57, 1.26], ["c", 0, 0.27, 0, 0.3, -0.09, 0.42], ["c", -0.03, 0.09, -0.18, 0.21, -0.3, 0.3], ["c", -0.12, 0.09, -0.3, 0.21, -0.39, 0.27], ["c", -0.09, 0.06, -0.21, 0.18, -0.27, 0.24], ["c", -0.06, 0.12, -0.06, 0.15, -0.06, 0.33], ["c", 0, 0.18, 0, 0.24, 0.06, 0.36], ["c", 0.24, 0.39, 0.75, 0.6, 1.38, 0.57], ["c", 0.54, -0.03, 0.9, -0.18, 1.23, -0.48], ["c", 0.81, -0.72, 1.08, -2.16, 0.96, -5.37], ["l", 0, -0.63], ["l", -0.3, 0.12], ["c", -0.78, 0.27, -1.29, 0.33, -2.1, 0.27], ["c", -1.47, -0.12, -2.49, -0.54, -3.27, -1.29], ["c", -0.48, -0.51, -0.81, -1.11, -0.96, -1.89], ["c", -0.06, -0.27, -0.06, -0.42, -0.06, -0.96], ["c", 0, -0.51, 0, -0.66, 0.06, -0.93], ["c", 0.15, -0.78, 0.48, -1.38, 0.96, -1.89], ["c", 0.15, -0.12, 0.33, -0.27, 0.42, -0.36], ["c", 0.69, -0.51, 1.62, -0.81, 2.76, -0.93], ["z"], ["m", 1.17, 0.66], ["c", -0.21, -0.06, -0.57, -0.06, -0.81, -0.03], ["c", -0.78, 0.12, -1.26, 0.69, -1.41, 1.74], ["c", -0.12, 0.63, -0.15, 1.95, -0.09, 2.79], ["c", 0.12, 1.71, 0.63, 2.4, 1.77, 2.46], ["c", 1.08, 0.03, 1.62, -0.48, 1.8, -1.74], ["c", 0.06, -0.54, 0.06, -3, 0, -3.54], ["c", -0.15, -1.05, -0.51, -1.53, -1.26, -1.68], ["z"]], w: 9.959, h: 14.986}
+        , 'f': {d: [["M", 9.93, -14.28], ["c", 1.53, -0.18, 2.88, 0.45, 3.12, 1.5], ["c", 0.12, 0.51, 0, 1.32, -0.27, 1.86], ["c", -0.15, 0.3, -0.42, 0.57, -0.63, 0.69], ["c", -0.69, 0.36, -1.56, 0.03, -1.83, -0.69], ["c", -0.09, -0.24, -0.09, -0.69, 0, -0.87], ["c", 0.06, -0.12, 0.21, -0.24, 0.45, -0.42], ["c", 0.42, -0.24, 0.57, -0.45, 0.6, -0.72], ["c", 0.03, -0.33, -0.09, -0.39, -0.63, -0.42], ["c", -0.3, 0, -0.45, 0, -0.6, 0.03], ["c", -0.81, 0.21, -1.35, 0.93, -1.74, 2.46], ["c", -0.06, 0.27, -0.48, 2.25, -0.48, 2.31], ["c", 0, 0.03, 0.39, 0.03, 0.9, 0.03], ["c", 0.72, 0, 0.9, 0, 0.99, 0.06], ["c", 0.42, 0.15, 0.45, 0.72, 0.03, 0.9], ["c", -0.12, 0.06, -0.24, 0.06, -1.17, 0.06], ["l", -1.05, 0], ["l", -0.78, 2.55], ["c", -0.45, 1.41, -0.87, 2.79, -0.96, 3.06], ["c", -0.87, 2.37, -2.37, 4.74, -3.78, 5.91], ["c", -1.05, 0.9, -2.04, 1.23, -3.09, 1.08], ["c", -1.11, -0.18, -1.89, -0.78, -2.04, -1.59], ["c", -0.12, -0.66, 0.15, -1.71, 0.54, -2.19], ["c", 0.69, -0.75, 1.86, -0.54, 2.22, 0.39], ["c", 0.06, 0.15, 0.09, 0.27, 0.09, 0.48], ["c", -0, 0.24, -0.03, 0.27, -0.12, 0.42], ["c", -0.03, 0.09, -0.15, 0.18, -0.27, 0.27], ["c", -0.09, 0.06, -0.27, 0.21, -0.36, 0.27], ["c", -0.24, 0.18, -0.36, 0.36, -0.39, 0.6], ["c", -0.03, 0.33, 0.09, 0.39, 0.63, 0.42], ["c", 0.42, 0, 0.63, -0.03, 0.9, -0.15], ["c", 0.6, -0.3, 0.96, -0.96, 1.38, -2.64], ["c", 0.09, -0.42, 0.63, -2.55, 1.17, -4.77], ["l", 1.02, -4.08], ["c", -0, -0.03, -0.36, -0.03, -0.81, -0.03], ["c", -0.72, 0, -0.81, 0, -0.93, -0.06], ["c", -0.42, -0.18, -0.39, -0.75, 0.03, -0.9], ["c", 0.09, -0.06, 0.27, -0.06, 1.05, -0.06], ["l", 0.96, 0], ["l", 0, -0.09], ["c", 0.06, -0.18, 0.3, -0.72, 0.51, -1.17], ["c", 1.2, -2.46, 3.3, -4.23, 5.34, -4.5], ["z"]], w: 16.155, h: 19.445}
+        , 'm': {d: [["M", 2.79, -8.91], ["c", 0.09, 0, 0.3, -0.03, 0.45, -0.03], ["c", 0.24, 0.03, 0.3, 0.03, 0.45, 0.12], ["c", 0.36, 0.15, 0.63, 0.54, 0.75, 1.02], ["l", 0.03, 0.21], ["l", 0.33, -0.3], ["c", 0.69, -0.69, 1.38, -1.02, 2.07, -1.02], ["c", 0.27, 0, 0.33, 0, 0.48, 0.06], ["c", 0.21, 0.09, 0.48, 0.36, 0.63, 0.6], ["c", 0.03, 0.09, 0.12, 0.27, 0.18, 0.42], ["c", 0.03, 0.15, 0.09, 0.27, 0.12, 0.27], ["c", 0, 0, 0.09, -0.09, 0.18, -0.21], ["c", 0.33, -0.39, 0.87, -0.81, 1.29, -0.99], ["c", 0.78, -0.33, 1.47, -0.21, 2.01, 0.33], ["c", 0.3, 0.33, 0.48, 0.69, 0.6, 1.14], ["c", 0.09, 0.42, 0.06, 0.54, -0.54, 3.06], ["c", -0.33, 1.29, -0.57, 2.4, -0.57, 2.43], ["c", 0, 0.12, 0.09, 0.21, 0.21, 0.21], ["c", 0.24, -0, 0.75, -0.3, 1.2, -0.72], ["c", 0.45, -0.39, 0.6, -0.45, 0.78, -0.27], ["c", 0.18, 0.18, 0.09, 0.36, -0.45, 0.87], ["c", -1.05, 0.96, -1.83, 1.47, -2.58, 1.71], ["c", -0.93, 0.33, -1.53, 0.21, -1.8, -0.33], ["c", -0.06, -0.15, -0.06, -0.21, -0.06, -0.45], ["c", 0, -0.24, 0.03, -0.48, 0.6, -2.82], ["c", 0.42, -1.71, 0.6, -2.64, 0.63, -2.79], ["c", 0.03, -0.57, -0.3, -0.75, -0.84, -0.48], ["c", -0.24, 0.12, -0.54, 0.39, -0.66, 0.63], ["c", -0.03, 0.09, -0.42, 1.38, -0.9, 3], ["c", -0.9, 3.15, -0.84, 3, -1.14, 3.15], ["l", -0.15, 0.09], ["l", -0.78, 0], ["c", -0.6, 0, -0.78, 0, -0.84, -0.06], ["c", -0.09, -0.03, -0.18, -0.18, -0.18, -0.27], ["c", 0, -0.03, 0.36, -1.38, 0.84, -2.97], ["c", 0.57, -2.04, 0.81, -2.97, 0.84, -3.12], ["c", 0.03, -0.54, -0.3, -0.72, -0.84, -0.45], ["c", -0.24, 0.12, -0.57, 0.42, -0.66, 0.63], ["c", -0.06, 0.09, -0.51, 1.44, -1.05, 2.97], ["c", -0.51, 1.56, -0.99, 2.85, -0.99, 2.91], ["c", -0.06, 0.12, -0.21, 0.24, -0.36, 0.3], ["c", -0.12, 0.06, -0.21, 0.06, -0.9, 0.06], ["c", -0.6, 0, -0.78, 0, -0.84, -0.06], ["c", -0.09, -0.03, -0.18, -0.18, -0.18, -0.27], ["c", 0, -0.03, 0.45, -1.38, 0.99, -2.97], ["c", 1.05, -3.18, 1.05, -3.18, 0.93, -3.45], ["c", -0.12, -0.27, -0.39, -0.3, -0.72, -0.15], ["c", -0.54, 0.27, -1.14, 1.17, -1.56, 2.4], ["c", -0.06, 0.15, -0.15, 0.3, -0.18, 0.36], ["c", -0.21, 0.21, -0.57, 0.27, -0.72, 0.09], ["c", -0.09, -0.09, -0.06, -0.21, 0.06, -0.63], ["c", 0.48, -1.26, 1.26, -2.46, 2.01, -3.21], ["c", 0.57, -0.54, 1.2, -0.87, 1.83, -1.02], ["z"]], w: 14.687, h: 9.126}
+        , 'p': {d: [["M", 1.92, -8.7], ["c", 0.27, -0.09, 0.81, -0.06, 1.11, 0.03], ["c", 0.54, 0.18, 0.93, 0.51, 1.17, 0.99], ["c", 0.09, 0.15, 0.15, 0.33, 0.18, 0.36], ["l", -0, 0.12], ["l", 0.3, -0.27], ["c", 0.66, -0.6, 1.35, -1.02, 2.13, -1.2], ["c", 0.21, -0.06, 0.33, -0.06, 0.78, -0.06], ["c", 0.45, 0, 0.51, 0, 0.84, 0.09], ["c", 1.29, 0.33, 2.07, 1.32, 2.25, 2.79], ["c", 0.09, 0.81, -0.09, 2.01, -0.45, 2.79], ["c", -0.54, 1.26, -1.86, 2.55, -3.18, 3.03], ["c", -0.45, 0.18, -0.81, 0.24, -1.29, 0.24], ["c", -0.69, -0.03, -1.35, -0.18, -1.86, -0.45], ["c", -0.3, -0.15, -0.51, -0.18, -0.69, -0.09], ["c", -0.09, 0.03, -0.18, 0.09, -0.18, 0.12], ["c", -0.09, 0.12, -1.05, 2.94, -1.05, 3.06], ["c", 0, 0.24, 0.18, 0.48, 0.51, 0.63], ["c", 0.18, 0.06, 0.54, 0.15, 0.75, 0.15], ["c", 0.21, 0, 0.36, 0.06, 0.42, 0.18], ["c", 0.12, 0.18, 0.06, 0.42, -0.12, 0.54], ["c", -0.09, 0.03, -0.15, 0.03, -0.78, 0], ["c", -1.98, -0.15, -3.81, -0.15, -5.79, 0], ["c", -0.63, 0.03, -0.69, 0.03, -0.78, 0], ["c", -0.24, -0.15, -0.24, -0.57, 0.03, -0.66], ["c", 0.06, -0.03, 0.48, -0.09, 0.99, -0.12], ["c", 0.87, -0.06, 1.11, -0.09, 1.35, -0.21], ["c", 0.18, -0.06, 0.33, -0.18, 0.39, -0.3], ["c", 0.06, -0.12, 3.24, -9.42, 3.27, -9.6], ["c", 0.06, -0.33, 0.03, -0.57, -0.15, -0.69], ["c", -0.09, -0.06, -0.12, -0.06, -0.3, -0.06], ["c", -0.69, 0.06, -1.53, 1.02, -2.28, 2.61], ["c", -0.09, 0.21, -0.21, 0.45, -0.27, 0.51], ["c", -0.09, 0.12, -0.33, 0.24, -0.48, 0.24], ["c", -0.18, 0, -0.36, -0.15, -0.36, -0.3], ["c", 0, -0.24, 0.78, -1.83, 1.26, -2.55], ["c", 0.72, -1.11, 1.47, -1.74, 2.28, -1.92], ["z"], ["m", 5.37, 1.47], ["c", -0.27, -0.12, -0.75, -0.03, -1.14, 0.21], ["c", -0.75, 0.48, -1.47, 1.68, -1.89, 3.15], ["c", -0.45, 1.47, -0.42, 2.34, 0, 2.7], ["c", 0.45, 0.39, 1.26, 0.21, 1.83, -0.36], ["c", 0.51, -0.51, 0.99, -1.68, 1.38, -3.27], ["c", 0.3, -1.17, 0.33, -1.74, 0.15, -2.13], ["c", -0.09, -0.15, -0.15, -0.21, -0.33, -0.3], ["z"]], w: 14.689, h: 13.127}
+        , 'r': {d: [["M", 6.33, -9.12], ["c", 0.27, -0.03, 0.93, 0, 1.2, 0.06], ["c", 0.84, 0.21, 1.23, 0.81, 1.02, 1.53], ["c", -0.24, 0.75, -0.9, 1.17, -1.56, 0.96], ["c", -0.33, -0.09, -0.51, -0.3, -0.66, -0.75], ["c", -0.03, -0.12, -0.09, -0.24, -0.12, -0.3], ["c", -0.09, -0.15, -0.3, -0.24, -0.48, -0.24], ["c", -0.57, 0, -1.38, 0.54, -1.65, 1.08], ["c", -0.06, 0.15, -0.33, 1.17, -0.9, 3.27], ["c", -0.57, 2.31, -0.81, 3.12, -0.87, 3.21], ["c", -0.03, 0.06, -0.12, 0.15, -0.18, 0.21], ["l", -0.12, 0.06], ["l", -0.81, 0.03], ["c", -0.69, 0, -0.81, 0, -0.9, -0.03], ["c", -0.09, -0.06, -0.18, -0.21, -0.18, -0.3], ["c", 0, -0.06, 0.39, -1.62, 0.9, -3.51], ["c", 0.84, -3.24, 0.87, -3.45, 0.87, -3.72], ["c", 0, -0.21, 0, -0.27, -0.03, -0.36], ["c", -0.12, -0.15, -0.21, -0.24, -0.42, -0.24], ["c", -0.24, 0, -0.45, 0.15, -0.78, 0.42], ["c", -0.33, 0.36, -0.45, 0.54, -0.72, 1.14], ["c", -0.03, 0.12, -0.21, 0.24, -0.36, 0.27], ["c", -0.12, 0, -0.15, 0, -0.24, -0.06], ["c", -0.18, -0.12, -0.18, -0.21, -0.06, -0.54], ["c", 0.21, -0.57, 0.42, -0.93, 0.78, -1.32], ["c", 0.54, -0.51, 1.2, -0.81, 1.95, -0.87], ["c", 0.81, -0.03, 1.53, 0.3, 1.92, 0.87], ["l", 0.12, 0.18], ["l", 0.09, -0.09], ["c", 0.57, -0.45, 1.41, -0.84, 2.19, -0.96], ["z"]], w: 9.41, h: 9.132}
+        , 's': {d: [["M", 4.47, -8.73], ["c", 0.09, 0, 0.36, -0.03, 0.57, -0.03], ["c", 0.75, 0.03, 1.29, 0.24, 1.71, 0.63], ["c", 0.51, 0.54, 0.66, 1.26, 0.36, 1.83], ["c", -0.24, 0.42, -0.63, 0.57, -1.11, 0.42], ["c", -0.33, -0.09, -0.6, -0.36, -0.6, -0.57], ["c", 0, -0.03, 0.06, -0.21, 0.15, -0.39], ["c", 0.12, -0.21, 0.15, -0.33, 0.18, -0.48], ["c", 0, -0.24, -0.06, -0.48, -0.15, -0.6], ["c", -0.15, -0.21, -0.42, -0.24, -0.75, -0.15], ["c", -0.27, 0.06, -0.48, 0.18, -0.69, 0.36], ["c", -0.39, 0.39, -0.51, 0.96, -0.33, 1.38], ["c", 0.09, 0.21, 0.42, 0.51, 0.78, 0.72], ["c", 1.11, 0.69, 1.59, 1.11, 1.89, 1.68], ["c", 0.21, 0.39, 0.24, 0.78, 0.15, 1.29], ["c", -0.18, 1.2, -1.17, 2.16, -2.52, 2.52], ["c", -1.02, 0.24, -1.95, 0.12, -2.7, -0.42], ["c", -0.72, -0.51, -0.99, -1.47, -0.6, -2.19], ["c", 0.24, -0.48, 0.72, -0.63, 1.17, -0.42], ["c", 0.33, 0.18, 0.54, 0.45, 0.57, 0.81], ["c", 0, 0.21, -0.03, 0.3, -0.33, 0.51], ["c", -0.33, 0.24, -0.39, 0.42, -0.27, 0.69], ["c", 0.06, 0.15, 0.21, 0.27, 0.45, 0.33], ["c", 0.3, 0.09, 0.87, 0.09, 1.2, -0], ["c", 0.75, -0.21, 1.23, -0.72, 1.29, -1.35], ["c", 0.03, -0.42, -0.15, -0.81, -0.54, -1.2], ["c", -0.24, -0.24, -0.48, -0.42, -1.41, -1.02], ["c", -0.69, -0.42, -1.05, -0.93, -1.05, -1.47], ["c", 0, -0.39, 0.12, -0.87, 0.3, -1.23], ["c", 0.27, -0.57, 0.78, -1.05, 1.38, -1.35], ["c", 0.24, -0.12, 0.63, -0.27, 0.9, -0.3], ["z"]], w: 6.632, h: 8.758}
+        , 'z': {d: [["M", 2.64, -7.95], ["c", 0.36, -0.09, 0.81, -0.03, 1.71, 0.27], ["c", 0.78, 0.21, 0.96, 0.27, 1.74, 0.3], ["c", 0.87, 0.06, 1.02, 0.03, 1.38, -0.21], ["c", 0.21, -0.15, 0.33, -0.15, 0.48, -0.06], ["c", 0.15, 0.09, 0.21, 0.3, 0.15, 0.45], ["c", -0.03, 0.06, -1.26, 1.26, -2.76, 2.67], ["l", -2.73, 2.55], ["l", 0.54, 0.03], ["c", 0.54, 0.03, 0.72, 0.03, 2.01, 0.15], ["c", 0.36, 0.03, 0.9, 0.06, 1.2, 0.09], ["c", 0.66, 0, 0.81, -0.03, 1.02, -0.24], ["c", 0.3, -0.3, 0.39, -0.72, 0.27, -1.23], ["c", -0.06, -0.27, -0.06, -0.27, -0.03, -0.39], ["c", 0.15, -0.3, 0.54, -0.27, 0.69, 0.03], ["c", 0.15, 0.33, 0.27, 1.02, 0.27, 1.5], ["c", 0, 1.47, -1.11, 2.7, -2.52, 2.79], ["c", -0.57, 0.03, -1.02, -0.09, -2.01, -0.51], ["c", -1.02, -0.42, -1.23, -0.48, -2.13, -0.54], ["c", -0.81, -0.06, -0.96, -0.03, -1.26, 0.18], ["c", -0.12, 0.06, -0.24, 0.12, -0.27, 0.12], ["c", -0.27, 0, -0.45, -0.3, -0.36, -0.51], ["c", 0.03, -0.06, 1.32, -1.32, 2.91, -2.79], ["l", 2.88, -2.73], ["c", -0.03, 0, -0.21, 0.03, -0.42, 0.06], ["c", -0.21, 0.03, -0.78, 0.09, -1.23, 0.12], ["c", -1.11, 0.12, -1.23, 0.15, -1.95, 0.27], ["c", -0.72, 0.15, -1.17, 0.18, -1.29, 0.09], ["c", -0.27, -0.18, -0.21, -0.75, 0.12, -1.26], ["c", 0.39, -0.6, 0.93, -1.02, 1.59, -1.2], ["z"]], w: 8.573, h: 8.743}
+        , '+': {d: [["M", 3.48, -11.19], ["c", 0.18, -0.09, 0.36, -0.09, 0.54, 0], ["c", 0.18, 0.09, 0.24, 0.15, 0.33, 0.3], ["l", 0.06, 0.15], ["l", 0, 1.29], ["l", 0, 1.29], ["l", 1.29, 0], ["c", 1.23, 0, 1.29, 0, 1.41, 0.06], ["c", 0.06, 0.03, 0.15, 0.09, 0.18, 0.12], ["c", 0.12, 0.09, 0.21, 0.33, 0.21, 0.48], ["c", 0, 0.15, -0.09, 0.39, -0.21, 0.48], ["c", -0.03, 0.03, -0.12, 0.09, -0.18, 0.12], ["c", -0.12, 0.06, -0.18, 0.06, -1.41, 0.06], ["l", -1.29, 0], ["l", 0, 1.29], ["c", 0, 1.23, 0, 1.29, -0.06, 1.41], ["c", -0.09, 0.18, -0.15, 0.24, -0.3, 0.33], ["c", -0.21, 0.09, -0.39, 0.09, -0.57, 0], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["c", -0.06, -0.12, -0.06, -0.18, -0.06, -1.41], ["l", 0, -1.29], ["l", -1.29, 0], ["c", -1.23, 0, -1.29, 0, -1.41, -0.06], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["c", -0.09, -0.18, -0.09, -0.36, 0, -0.54], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["l", 0.15, -0.06], ["l", 1.26, 0], ["l", 1.29, 0], ["l", 0, -1.29], ["c", 0, -1.23, 0, -1.29, 0.06, -1.41], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["z"]], w: 7.507, h: 7.515}
+        , ',': {d: [["M", 1.32, -3.36], ["c", 0.57, -0.15, 1.17, 0.03, 1.59, 0.45], ["c", 0.45, 0.45, 0.6, 0.96, 0.51, 1.89], ["c", -0.09, 1.23, -0.42, 2.46, -0.99, 3.93], ["c", -0.3, 0.72, -0.72, 1.62, -0.78, 1.68], ["c", -0.18, 0.21, -0.51, 0.18, -0.66, -0.06], ["c", -0.03, -0.06, -0.06, -0.15, -0.06, -0.18], ["c", 0, -0.06, 0.12, -0.33, 0.24, -0.63], ["c", 0.84, -1.8, 1.02, -2.61, 0.69, -3.24], ["c", -0.12, -0.24, -0.27, -0.36, -0.75, -0.6], ["c", -0.36, -0.15, -0.42, -0.21, -0.6, -0.39], ["c", -0.69, -0.69, -0.69, -1.71, 0, -2.4], ["c", 0.21, -0.21, 0.51, -0.39, 0.81, -0.45], ["z"]], w: 3.452, h: 8.143}
+        , '-': {d: [["M", 0.18, -5.34], ["c", 0.09, -0.06, 0.15, -0.06, 2.31, -0.06], ["c", 2.46, 0, 2.37, 0, 2.46, 0.21], ["c", 0.12, 0.21, 0.03, 0.42, -0.15, 0.54], ["c", -0.09, 0.06, -0.15, 0.06, -2.28, 0.06], ["c", -2.16, 0, -2.22, 0, -2.31, -0.06], ["c", -0.27, -0.15, -0.27, -0.54, -0.03, -0.69], ["z"]], w: 5.001, h: 0.81}
+        , '.': {d: [["M", 1.32, -3.36], ["c", 1.05, -0.27, 2.1, 0.57, 2.1, 1.65], ["c", 0, 1.08, -1.05, 1.92, -2.1, 1.65], ["c", -0.9, -0.21, -1.5, -1.14, -1.26, -2.04], ["c", 0.12, -0.63, 0.63, -1.11, 1.26, -1.26], ["z"]], w: 3.413, h: 3.402}
+        , 'accidentals.nat': {d: [["M", 0.204, -11.4], ["c", 0.24, -0.06, 0.78, 0, 0.99, 0.15], ["c", 0.03, 0.03, 0.03, 0.48, 0, 2.61], ["c", -0.03, 1.44, -0.03, 2.61, -0.03, 2.61], ["c", 0, 0.03, 0.75, -0.09, 1.68, -0.24], ["c", 0.96, -0.18, 1.71, -0.27, 1.74, -0.27], ["c", 0.15, 0.03, 0.27, 0.15, 0.36, 0.3], ["l", 0.06, 0.12], ["l", 0.09, 8.67], ["c", 0.09, 6.96, 0.12, 8.67, 0.09, 8.67], ["c", -0.03, 0.03, -0.12, 0.06, -0.21, 0.09], ["c", -0.24, 0.09, -0.72, 0.09, -0.96, 0], ["c", -0.09, -0.03, -0.18, -0.06, -0.21, -0.09], ["c", -0.03, -0.03, -0.03, -0.48, 0, -2.61], ["c", 0.03, -1.44, 0.03, -2.61, 0.03, -2.61], ["c", 0, -0.03, -0.75, 0.09, -1.68, 0.24], ["c", -0.96, 0.18, -1.71, 0.27, -1.74, 0.27], ["c", -0.15, -0.03, -0.27, -0.15, -0.36, -0.3], ["l", -0.06, -0.15], ["l", -0.09, -7.53], ["c", -0.06, -4.14, -0.09, -8.04, -0.12, -8.67], ["l", 0, -1.11], ["l", 0.15, -0.06], ["c", 0.09, -0.03, 0.21, -0.06, 0.27, -0.09], ["z"], ["m", 3.75, 8.4], ["c", 0, -0.33, 0, -0.42, -0.03, -0.42], ["c", -0.12, 0, -2.79, 0.45, -2.79, 0.48], ["c", -0.03, 0, -0.09, 6.3, -0.09, 6.33], ["c", 0.03, 0, 2.79, -0.45, 2.82, -0.48], ["c", 0, 0, 0.09, -4.53, 0.09, -5.91], ["z"]], w: 5.411, h: 22.8}
+        , 'accidentals.sharp': {d: [["M", 5.73, -11.19], ["c", 0.21, -0.12, 0.54, -0.03, 0.66, 0.24], ["c", 0.06, 0.12, 0.06, 0.21, 0.06, 2.31], ["c", 0, 1.23, 0, 2.22, 0.03, 2.22], ["c", 0, -0, 0.27, -0.12, 0.6, -0.24], ["c", 0.69, -0.27, 0.78, -0.3, 0.96, -0.15], ["c", 0.21, 0.15, 0.21, 0.18, 0.21, 1.38], ["c", 0, 1.02, 0, 1.11, -0.06, 1.2], ["c", -0.03, 0.06, -0.09, 0.12, -0.12, 0.15], ["c", -0.06, 0.03, -0.42, 0.21, -0.84, 0.36], ["l", -0.75, 0.33], ["l", -0.03, 2.43], ["c", 0, 1.32, 0, 2.43, 0.03, 2.43], ["c", 0, -0, 0.27, -0.12, 0.6, -0.24], ["c", 0.69, -0.27, 0.78, -0.3, 0.96, -0.15], ["c", 0.21, 0.15, 0.21, 0.18, 0.21, 1.38], ["c", 0, 1.02, 0, 1.11, -0.06, 1.2], ["c", -0.03, 0.06, -0.09, 0.12, -0.12, 0.15], ["c", -0.06, 0.03, -0.42, 0.21, -0.84, 0.36], ["l", -0.75, 0.33], ["l", -0.03, 2.52], ["c", 0, 2.28, -0.03, 2.55, -0.06, 2.64], ["c", -0.21, 0.36, -0.72, 0.36, -0.93, -0], ["c", -0.03, -0.09, -0.06, -0.33, -0.06, -2.43], ["l", 0, -2.31], ["l", -1.29, 0.51], ["l", -1.26, 0.51], ["l", 0, 2.43], ["c", 0, 2.58, 0, 2.52, -0.15, 2.67], ["c", -0.06, 0.09, -0.27, 0.18, -0.36, 0.18], ["c", -0.12, -0, -0.33, -0.09, -0.39, -0.18], ["c", -0.15, -0.15, -0.15, -0.09, -0.15, -2.43], ["c", 0, -1.23, 0, -2.22, -0.03, -2.22], ["c", 0, -0, -0.27, 0.12, -0.6, 0.24], ["c", -0.69, 0.27, -0.78, 0.3, -0.96, 0.15], ["c", -0.21, -0.15, -0.21, -0.18, -0.21, -1.38], ["c", 0, -1.02, 0, -1.11, 0.06, -1.2], ["c", 0.03, -0.06, 0.09, -0.12, 0.12, -0.15], ["c", 0.06, -0.03, 0.42, -0.21, 0.84, -0.36], ["l", 0.78, -0.33], ["l", 0, -2.43], ["c", 0, -1.32, 0, -2.43, -0.03, -2.43], ["c", 0, -0, -0.27, 0.12, -0.6, 0.24], ["c", -0.69, 0.27, -0.78, 0.3, -0.96, 0.15], ["c", -0.21, -0.15, -0.21, -0.18, -0.21, -1.38], ["c", 0, -1.02, 0, -1.11, 0.06, -1.2], ["c", 0.03, -0.06, 0.09, -0.12, 0.12, -0.15], ["c", 0.06, -0.03, 0.42, -0.21, 0.84, -0.36], ["l", 0.78, -0.33], ["l", 0, -2.52], ["c", 0, -2.28, 0.03, -2.55, 0.06, -2.64], ["c", 0.21, -0.36, 0.72, -0.36, 0.93, 0], ["c", 0.03, 0.09, 0.06, 0.33, 0.06, 2.43], ["l", 0.03, 2.31], ["l", 1.26, -0.51], ["l", 1.26, -0.51], ["l", 0, -2.43], ["c", 0, -2.28, 0, -2.43, 0.06, -2.55], ["c", 0.06, -0.12, 0.12, -0.18, 0.27, -0.24], ["z"], ["m", -0.33, 10.65], ["l", 0, -2.43], ["l", -1.29, 0.51], ["l", -1.26, 0.51], ["l", 0, 2.46], ["l", 0, 2.43], ["l", 0.09, -0.03], ["c", 0.06, -0.03, 0.63, -0.27, 1.29, -0.51], ["l", 1.17, -0.48], ["l", 0, -2.46], ["z"]], w: 8.25, h: 22.462}
+        , 'accidentals.flat': {d: [["M", -0.36, -14.07], ["c", 0.33, -0.06, 0.87, 0, 1.08, 0.15], ["c", 0.06, 0.03, 0.06, 0.36, -0.03, 5.25], ["c", -0.06, 2.85, -0.09, 5.19, -0.09, 5.19], ["c", 0, 0.03, 0.12, -0.03, 0.24, -0.12], ["c", 0.63, -0.42, 1.41, -0.66, 2.19, -0.72], ["c", 0.81, -0.03, 1.47, 0.21, 2.04, 0.78], ["c", 0.57, 0.54, 0.87, 1.26, 0.93, 2.04], ["c", 0.03, 0.57, -0.09, 1.08, -0.36, 1.62], ["c", -0.42, 0.81, -1.02, 1.38, -2.82, 2.61], ["c", -1.14, 0.78, -1.44, 1.02, -1.8, 1.44], ["c", -0.18, 0.18, -0.39, 0.39, -0.45, 0.42], ["c", -0.27, 0.18, -0.57, 0.15, -0.81, -0.06], ["c", -0.06, -0.09, -0.12, -0.18, -0.15, -0.27], ["c", -0.03, -0.06, -0.09, -3.27, -0.18, -8.34], ["c", -0.09, -4.53, -0.15, -8.58, -0.18, -9.03], ["l", 0, -0.78], ["l", 0.12, -0.06], ["c", 0.06, -0.03, 0.18, -0.09, 0.27, -0.12], ["z"], ["m", 3.18, 11.01], ["c", -0.21, -0.12, -0.54, -0.15, -0.81, -0.06], ["c", -0.54, 0.15, -0.99, 0.63, -1.17, 1.26], ["c", -0.06, 0.3, -0.12, 2.88, -0.06, 3.87], ["c", 0.03, 0.42, 0.03, 0.81, 0.06, 0.9], ["l", 0.03, 0.12], ["l", 0.45, -0.39], ["c", 0.63, -0.54, 1.26, -1.17, 1.56, -1.59], ["c", 0.3, -0.42, 0.6, -0.99, 0.72, -1.41], ["c", 0.18, -0.69, 0.09, -1.47, -0.18, -2.07], ["c", -0.15, -0.3, -0.33, -0.51, -0.6, -0.63], ["z"]], w: 6.75, h: 18.801}
+        , 'accidentals.halfsharp': {d: [["M", 2.43, -10.05], ["c", 0.21, -0.12, 0.54, -0.03, 0.66, 0.24], ["c", 0.06, 0.12, 0.06, 0.21, 0.06, 2.01], ["c", 0, 1.05, 0, 1.89, 0.03, 1.89], ["l", 0.72, -0.48], ["c", 0.69, -0.48, 0.69, -0.51, 0.87, -0.51], ["c", 0.15, 0, 0.18, 0.03, 0.27, 0.09], ["c", 0.21, 0.15, 0.21, 0.18, 0.21, 1.41], ["c", 0, 1.11, -0.03, 1.14, -0.09, 1.23], ["c", -0.03, 0.03, -0.48, 0.39, -1.02, 0.75], ["l", -0.99, 0.66], ["l", 0, 2.37], ["c", 0, 1.32, 0, 2.37, 0.03, 2.37], ["l", 0.72, -0.48], ["c", 0.69, -0.48, 0.69, -0.51, 0.87, -0.51], ["c", 0.15, 0, 0.18, 0.03, 0.27, 0.09], ["c", 0.21, 0.15, 0.21, 0.18, 0.21, 1.41], ["c", 0, 1.11, -0.03, 1.14, -0.09, 1.23], ["c", -0.03, 0.03, -0.48, 0.39, -1.02, 0.75], ["l", -0.99, 0.66], ["l", 0, 2.25], ["c", 0, 1.95, 0, 2.28, -0.06, 2.37], ["c", -0.06, 0.12, -0.12, 0.21, -0.24, 0.27], ["c", -0.27, 0.12, -0.54, 0.03, -0.69, -0.24], ["c", -0.06, -0.12, -0.06, -0.21, -0.06, -2.01], ["c", 0, -1.05, 0, -1.89, -0.03, -1.89], ["l", -0.72, 0.48], ["c", -0.69, 0.48, -0.69, 0.48, -0.87, 0.48], ["c", -0.15, 0, -0.18, 0, -0.27, -0.06], ["c", -0.21, -0.15, -0.21, -0.18, -0.21, -1.41], ["c", 0, -1.11, 0.03, -1.14, 0.09, -1.23], ["c", 0.03, -0.03, 0.48, -0.39, 1.02, -0.75], ["l", 0.99, -0.66], ["l", 0, -2.37], ["c", 0, -1.32, 0, -2.37, -0.03, -2.37], ["l", -0.72, 0.48], ["c", -0.69, 0.48, -0.69, 0.48, -0.87, 0.48], ["c", -0.15, 0, -0.18, 0, -0.27, -0.06], ["c", -0.21, -0.15, -0.21, -0.18, -0.21, -1.41], ["c", 0, -1.11, 0.03, -1.14, 0.09, -1.23], ["c", 0.03, -0.03, 0.48, -0.39, 1.02, -0.75], ["l", 0.99, -0.66], ["l", 0, -2.25], ["c", 0, -2.13, 0, -2.28, 0.06, -2.4], ["c", 0.06, -0.12, 0.12, -0.18, 0.27, -0.24], ["z"]], w: 5.25, h: 20.174}
+        , 'accidentals.dblsharp': {d: [["M", -0.186, -3.96], ["c", 0.06, -0.03, 0.12, -0.06, 0.15, -0.06], ["c", 0.09, 0, 2.76, 0.27, 2.79, 0.3], ["c", 0.12, 0.03, 0.15, 0.12, 0.15, 0.51], ["c", 0.06, 0.96, 0.24, 1.59, 0.57, 2.1], ["c", 0.06, 0.09, 0.15, 0.21, 0.18, 0.24], ["l", 0.09, 0.06], ["l", 0.09, -0.06], ["c", 0.03, -0.03, 0.12, -0.15, 0.18, -0.24], ["c", 0.33, -0.51, 0.51, -1.14, 0.57, -2.1], ["c", 0, -0.39, 0.03, -0.45, 0.12, -0.51], ["c", 0.03, 0, 0.66, -0.09, 1.44, -0.15], ["c", 1.47, -0.15, 1.5, -0.15, 1.56, -0.03], ["c", 0.03, 0.06, 0, 0.42, -0.09, 1.44], ["c", -0.09, 0.72, -0.15, 1.35, -0.15, 1.38], ["c", 0, 0.03, -0.03, 0.09, -0.06, 0.12], ["c", -0.06, 0.06, -0.12, 0.09, -0.51, 0.09], ["c", -1.08, 0.06, -1.8, 0.3, -2.28, 0.75], ["l", -0.12, 0.09], ["l", 0.09, 0.09], ["c", 0.12, 0.15, 0.39, 0.33, 0.63, 0.45], ["c", 0.42, 0.18, 0.96, 0.27, 1.68, 0.33], ["c", 0.39, -0, 0.45, 0.03, 0.51, 0.09], ["c", 0.03, 0.03, 0.06, 0.09, 0.06, 0.12], ["c", 0, 0.03, 0.06, 0.66, 0.15, 1.38], ["c", 0.09, 1.02, 0.12, 1.38, 0.09, 1.44], ["c", -0.06, 0.12, -0.09, 0.12, -1.56, -0.03], ["c", -0.78, -0.06, -1.41, -0.15, -1.44, -0.15], ["c", -0.09, -0.06, -0.12, -0.12, -0.12, -0.54], ["c", -0.06, -0.93, -0.24, -1.56, -0.57, -2.07], ["c", -0.06, -0.09, -0.15, -0.21, -0.18, -0.24], ["l", -0.09, -0.06], ["l", -0.09, 0.06], ["c", -0.03, 0.03, -0.12, 0.15, -0.18, 0.24], ["c", -0.33, 0.51, -0.51, 1.14, -0.57, 2.07], ["c", 0, 0.42, -0.03, 0.48, -0.12, 0.54], ["c", -0.03, 0, -0.66, 0.09, -1.44, 0.15], ["c", -1.47, 0.15, -1.5, 0.15, -1.56, 0.03], ["c", -0.03, -0.06, 0, -0.42, 0.09, -1.44], ["c", 0.09, -0.72, 0.15, -1.35, 0.15, -1.38], ["c", 0, -0.03, 0.03, -0.09, 0.06, -0.12], ["c", 0.06, -0.06, 0.12, -0.09, 0.51, -0.09], ["c", 0.72, -0.06, 1.26, -0.15, 1.68, -0.33], ["c", 0.24, -0.12, 0.51, -0.3, 0.63, -0.45], ["l", 0.09, -0.09], ["l", -0.12, -0.09], ["c", -0.48, -0.45, -1.2, -0.69, -2.28, -0.75], ["c", -0.39, 0, -0.45, -0.03, -0.51, -0.09], ["c", -0.03, -0.03, -0.06, -0.09, -0.06, -0.12], ["c", 0, -0.03, -0.06, -0.63, -0.12, -1.38], ["c", -0.09, -0.72, -0.15, -1.35, -0.15, -1.38], ["z"]], w: 7.961, h: 7.977}
+        , 'accidentals.halfflat': {d: [["M", 4.83, -14.07], ["c", 0.33, -0.06, 0.87, 0, 1.08, 0.15], ["c", 0.06, 0.03, 0.06, 0.6, -0.12, 9.06], ["c", -0.09, 5.55, -0.15, 9.06, -0.18, 9.12], ["c", -0.03, 0.09, -0.09, 0.18, -0.15, 0.27], ["c", -0.24, 0.21, -0.54, 0.24, -0.81, 0.06], ["c", -0.06, -0.03, -0.27, -0.24, -0.45, -0.42], ["c", -0.36, -0.42, -0.66, -0.66, -1.8, -1.44], ["c", -1.23, -0.84, -1.83, -1.32, -2.25, -1.77], ["c", -0.66, -0.78, -0.96, -1.56, -0.93, -2.46], ["c", 0.09, -1.41, 1.11, -2.58, 2.4, -2.79], ["c", 0.3, -0.06, 0.84, -0.03, 1.23, 0.06], ["c", 0.54, 0.12, 1.08, 0.33, 1.53, 0.63], ["c", 0.12, 0.09, 0.24, 0.15, 0.24, 0.12], ["c", 0, 0, -0.12, -8.37, -0.18, -9.75], ["l", 0, -0.66], ["l", 0.12, -0.06], ["c", 0.06, -0.03, 0.18, -0.09, 0.27, -0.12], ["z"], ["m", -1.65, 10.95], ["c", -0.6, -0.18, -1.08, 0.09, -1.38, 0.69], ["c", -0.27, 0.6, -0.36, 1.38, -0.18, 2.07], ["c", 0.12, 0.42, 0.42, 0.99, 0.72, 1.41], ["c", 0.3, 0.42, 0.93, 1.05, 1.56, 1.59], ["l", 0.48, 0.39], ["l", 0, -0.12], ["c", 0.03, -0.09, 0.03, -0.48, 0.06, -0.9], ["c", 0.03, -0.57, 0.03, -1.08, 0, -2.22], ["c", -0.03, -1.62, -0.03, -1.62, -0.24, -2.07], ["c", -0.21, -0.42, -0.6, -0.75, -1.02, -0.84], ["z"]], w: 6.728, h: 18.801}
+        , 'accidentals.dblflat': {d: [["M", -0.36, -14.07], ["c", 0.33, -0.06, 0.87, 0, 1.08, 0.15], ["c", 0.06, 0.03, 0.06, 0.33, -0.03, 4.89], ["c", -0.06, 2.67, -0.09, 5.01, -0.09, 5.22], ["l", 0, 0.36], ["l", 0.15, -0.15], ["c", 0.36, -0.3, 0.75, -0.51, 1.2, -0.63], ["c", 0.33, -0.09, 0.96, -0.09, 1.26, -0.03], ["c", 0.27, 0.09, 0.63, 0.27, 0.87, 0.45], ["l", 0.21, 0.15], ["l", 0, -0.27], ["c", 0, -0.15, -0.03, -2.43, -0.09, -5.1], ["c", -0.09, -4.56, -0.09, -4.86, -0.03, -4.89], ["c", 0.15, -0.12, 0.39, -0.15, 0.72, -0.15], ["c", 0.3, 0, 0.54, 0.03, 0.69, 0.15], ["c", 0.06, 0.03, 0.06, 0.33, -0.03, 4.95], ["c", -0.06, 2.7, -0.09, 5.04, -0.09, 5.22], ["l", 0.03, 0.3], ["l", 0.21, -0.15], ["c", 0.69, -0.48, 1.44, -0.69, 2.28, -0.69], ["c", 0.51, 0, 0.78, 0.03, 1.2, 0.21], ["c", 1.32, 0.63, 2.01, 2.28, 1.53, 3.69], ["c", -0.21, 0.57, -0.51, 1.02, -1.05, 1.56], ["c", -0.42, 0.42, -0.81, 0.72, -1.92, 1.5], ["c", -1.26, 0.87, -1.5, 1.08, -1.86, 1.5], ["c", -0.39, 0.45, -0.54, 0.54, -0.81, 0.51], ["c", -0.18, 0, -0.21, 0, -0.33, -0.06], ["l", -0.21, -0.21], ["l", -0.06, -0.12], ["l", -0.03, -0.99], ["c", -0.03, -0.54, -0.03, -1.29, -0.06, -1.68], ["l", 0, -0.69], ["l", -0.21, 0.24], ["c", -0.36, 0.42, -0.75, 0.75, -1.8, 1.62], ["c", -1.02, 0.84, -1.2, 0.99, -1.44, 1.38], ["c", -0.36, 0.51, -0.54, 0.6, -0.9, 0.51], ["c", -0.15, -0.03, -0.39, -0.27, -0.42, -0.42], ["c", -0.03, -0.06, -0.09, -3.27, -0.18, -8.34], ["c", -0.09, -4.53, -0.15, -8.58, -0.18, -9.03], ["l", 0, -0.78], ["l", 0.12, -0.06], ["c", 0.06, -0.03, 0.18, -0.09, 0.27, -0.12], ["z"], ["m", 2.52, 10.98], ["c", -0.18, -0.09, -0.48, -0.12, -0.66, -0.06], ["c", -0.39, 0.15, -0.69, 0.54, -0.84, 1.14], ["c", -0.06, 0.24, -0.06, 0.39, -0.09, 1.74], ["c", -0.03, 1.44, 0, 2.73, 0.06, 3.18], ["l", 0.03, 0.15], ["l", 0.27, -0.27], ["c", 0.93, -0.96, 1.5, -1.95, 1.74, -3.06], ["c", 0.06, -0.27, 0.06, -0.39, 0.06, -0.96], ["c", 0, -0.54, 0, -0.69, -0.06, -0.93], ["c", -0.09, -0.51, -0.27, -0.81, -0.51, -0.93], ["z"], ["m", 5.43, 0], ["c", -0.18, -0.09, -0.51, -0.12, -0.72, -0.06], ["c", -0.54, 0.12, -0.96, 0.63, -1.17, 1.26], ["c", -0.06, 0.3, -0.12, 2.88, -0.06, 3.9], ["c", 0.03, 0.42, 0.03, 0.81, 0.06, 0.9], ["l", 0.03, 0.12], ["l", 0.36, -0.3], ["c", 0.42, -0.36, 1.02, -0.96, 1.29, -1.29], ["c", 0.36, -0.45, 0.66, -0.99, 0.81, -1.41], ["c", 0.42, -1.23, 0.15, -2.76, -0.6, -3.12], ["z"]], w: 11.613, h: 18.804}
+        , 'clefs.C': {d: [["M", 0.06, -14.94], ["l", 0.09, -0.06], ["l", 1.92, 0], ["l", 1.92, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 14.85], ["l", 0, 14.82], ["l", -0.06, 0.09], ["l", -0.09, 0.06], ["l", -1.92, 0], ["l", -1.92, 0], ["l", -0.09, -0.06], ["l", -0.06, -0.09], ["l", 0, -14.82], ["l", 0, -14.85], ["z"], ["m", 5.37, 0], ["c", 0.09, -0.06, 0.09, -0.06, 0.57, -0.06], ["c", 0.45, 0, 0.45, 0, 0.54, 0.06], ["l", 0.06, 0.09], ["l", 0, 7.14], ["l", 0, 7.11], ["l", 0.09, -0.06], ["c", 0.18, -0.18, 0.72, -0.84, 0.96, -1.2], ["c", 0.3, -0.45, 0.66, -1.17, 0.84, -1.65], ["c", 0.36, -0.9, 0.57, -1.83, 0.6, -2.79], ["c", 0.03, -0.48, 0.03, -0.54, 0.09, -0.63], ["c", 0.12, -0.18, 0.36, -0.21, 0.54, -0.12], ["c", 0.18, 0.09, 0.21, 0.15, 0.24, 0.66], ["c", 0.06, 0.87, 0.21, 1.56, 0.57, 2.22], ["c", 0.51, 1.02, 1.26, 1.68, 2.22, 1.92], ["c", 0.21, 0.06, 0.33, 0.06, 0.78, 0.06], ["c", 0.45, -0, 0.57, -0, 0.84, -0.06], ["c", 0.45, -0.12, 0.81, -0.33, 1.08, -0.6], ["c", 0.57, -0.57, 0.87, -1.41, 0.99, -2.88], ["c", 0.06, -0.54, 0.06, -3, 0, -3.57], ["c", -0.21, -2.58, -0.84, -3.87, -2.16, -4.5], ["c", -0.48, -0.21, -1.17, -0.36, -1.77, -0.36], ["c", -0.69, 0, -1.29, 0.27, -1.5, 0.72], ["c", -0.06, 0.15, -0.06, 0.21, -0.06, 0.42], ["c", 0, 0.24, 0, 0.3, 0.06, 0.45], ["c", 0.12, 0.24, 0.24, 0.39, 0.63, 0.66], ["c", 0.42, 0.3, 0.57, 0.48, 0.69, 0.72], ["c", 0.06, 0.15, 0.06, 0.21, 0.06, 0.48], ["c", 0, 0.39, -0.03, 0.63, -0.21, 0.96], ["c", -0.3, 0.6, -0.87, 1.08, -1.5, 1.26], ["c", -0.27, 0.06, -0.87, 0.06, -1.14, 0], ["c", -0.78, -0.24, -1.44, -0.87, -1.65, -1.68], ["c", -0.12, -0.42, -0.09, -1.17, 0.09, -1.71], ["c", 0.51, -1.65, 1.98, -2.82, 3.81, -3.09], ["c", 0.84, -0.09, 2.46, 0.03, 3.51, 0.27], ["c", 2.22, 0.57, 3.69, 1.8, 4.44, 3.75], ["c", 0.36, 0.93, 0.57, 2.13, 0.57, 3.36], ["c", -0, 1.44, -0.48, 2.73, -1.38, 3.81], ["c", -1.26, 1.5, -3.27, 2.43, -5.28, 2.43], ["c", -0.48, -0, -0.51, -0, -0.75, -0.09], ["c", -0.15, -0.03, -0.48, -0.21, -0.78, -0.36], ["c", -0.69, -0.36, -0.87, -0.42, -1.26, -0.42], ["c", -0.27, -0, -0.3, -0, -0.51, 0.09], ["c", -0.57, 0.3, -0.81, 0.9, -0.81, 2.1], ["c", -0, 1.23, 0.24, 1.83, 0.81, 2.13], ["c", 0.21, 0.09, 0.24, 0.09, 0.51, 0.09], ["c", 0.39, -0, 0.57, -0.06, 1.26, -0.42], ["c", 0.3, -0.15, 0.63, -0.33, 0.78, -0.36], ["c", 0.24, -0.09, 0.27, -0.09, 0.75, -0.09], ["c", 2.01, -0, 4.02, 0.93, 5.28, 2.4], ["c", 0.9, 1.11, 1.38, 2.4, 1.38, 3.84], ["c", -0, 1.5, -0.3, 2.88, -0.84, 3.96], ["c", -0.78, 1.59, -2.19, 2.64, -4.17, 3.15], ["c", -1.05, 0.24, -2.67, 0.36, -3.51, 0.27], ["c", -1.83, -0.27, -3.3, -1.44, -3.81, -3.09], ["c", -0.18, -0.54, -0.21, -1.29, -0.09, -1.74], ["c", 0.15, -0.6, 0.63, -1.2, 1.23, -1.47], ["c", 0.36, -0.18, 0.57, -0.21, 0.99, -0.21], ["c", 0.42, 0, 0.63, 0.03, 1.02, 0.21], ["c", 0.42, 0.21, 0.84, 0.63, 1.05, 1.05], ["c", 0.18, 0.36, 0.21, 0.6, 0.21, 0.96], ["c", -0, 0.3, -0, 0.36, -0.06, 0.51], ["c", -0.12, 0.24, -0.27, 0.42, -0.69, 0.72], ["c", -0.57, 0.42, -0.69, 0.63, -0.69, 1.08], ["c", -0, 0.24, -0, 0.3, 0.06, 0.45], ["c", 0.12, 0.21, 0.3, 0.39, 0.57, 0.54], ["c", 0.42, 0.18, 0.87, 0.21, 1.53, 0.15], ["c", 1.08, -0.15, 1.8, -0.57, 2.34, -1.32], ["c", 0.54, -0.75, 0.84, -1.83, 0.99, -3.51], ["c", 0.06, -0.57, 0.06, -3.03, -0, -3.57], ["c", -0.12, -1.47, -0.42, -2.31, -0.99, -2.88], ["c", -0.27, -0.27, -0.63, -0.48, -1.08, -0.6], ["c", -0.27, -0.06, -0.39, -0.06, -0.84, -0.06], ["c", -0.45, 0, -0.57, 0, -0.78, 0.06], ["c", -1.14, 0.27, -2.01, 1.17, -2.46, 2.49], ["c", -0.21, 0.57, -0.3, 0.99, -0.33, 1.65], ["c", -0.03, 0.51, -0.06, 0.57, -0.24, 0.66], ["c", -0.12, 0.06, -0.27, 0.06, -0.39, 0], ["c", -0.21, -0.09, -0.21, -0.15, -0.24, -0.75], ["c", -0.09, -1.92, -0.78, -3.72, -2.01, -5.19], ["c", -0.18, -0.21, -0.36, -0.42, -0.39, -0.45], ["l", -0.09, -0.06], ["l", -0, 7.11], ["l", -0, 7.14], ["l", -0.06, 0.09], ["c", -0.09, 0.06, -0.09, 0.06, -0.54, 0.06], ["c", -0.48, 0, -0.48, 0, -0.57, -0.06], ["l", -0.06, -0.09], ["l", -0, -14.82], ["l", -0, -14.85], ["z"]], w: 20.31, h: 29.97}
+        , 'clefs.F': {d: [["M", 6.3, -7.8], ["c", 0.36, -0.03, 1.65, 0, 2.13, 0.03], ["c", 3.6, 0.42, 6.03, 2.1, 6.93, 4.86], ["c", 0.27, 0.84, 0.36, 1.5, 0.36, 2.58], ["c", 0, 0.9, -0.03, 1.35, -0.18, 2.16], ["c", -0.78, 3.78, -3.54, 7.08, -8.37, 9.96], ["c", -1.74, 1.05, -3.87, 2.13, -6.18, 3.12], ["c", -0.39, 0.18, -0.75, 0.33, -0.81, 0.36], ["c", -0.06, 0.03, -0.15, 0.06, -0.18, 0.06], ["c", -0.15, 0, -0.33, -0.18, -0.33, -0.33], ["c", 0, -0.15, 0.06, -0.21, 0.51, -0.48], ["c", 3, -1.77, 5.13, -3.21, 6.84, -4.74], ["c", 0.51, -0.45, 1.59, -1.5, 1.95, -1.95], ["c", 1.89, -2.19, 2.88, -4.32, 3.15, -6.78], ["c", 0.06, -0.42, 0.06, -1.77, 0, -2.19], ["c", -0.24, -2.01, -0.93, -3.63, -2.04, -4.71], ["c", -0.63, -0.63, -1.29, -1.02, -2.07, -1.2], ["c", -1.62, -0.39, -3.36, 0.15, -4.56, 1.44], ["c", -0.54, 0.6, -1.05, 1.47, -1.32, 2.22], ["l", -0.09, 0.21], ["l", 0.24, -0.12], ["c", 0.39, -0.21, 0.63, -0.24, 1.11, -0.24], ["c", 0.3, 0, 0.45, 0, 0.66, 0.06], ["c", 1.92, 0.48, 2.85, 2.55, 1.95, 4.38], ["c", -0.45, 0.99, -1.41, 1.62, -2.46, 1.71], ["c", -1.47, 0.09, -2.91, -0.87, -3.39, -2.25], ["c", -0.18, -0.57, -0.21, -1.32, -0.03, -2.28], ["c", 0.39, -2.25, 1.83, -4.2, 3.81, -5.19], ["c", 0.69, -0.36, 1.59, -0.6, 2.37, -0.69], ["z"], ["m", 11.58, 2.52], ["c", 0.84, -0.21, 1.71, 0.3, 1.89, 1.14], ["c", 0.3, 1.17, -0.72, 2.19, -1.89, 1.89], ["c", -0.99, -0.21, -1.5, -1.32, -1.02, -2.25], ["c", 0.18, -0.39, 0.6, -0.69, 1.02, -0.78], ["z"], ["m", 0, 7.5], ["c", 0.84, -0.21, 1.71, 0.3, 1.89, 1.14], ["c", 0.21, 0.87, -0.3, 1.71, -1.14, 1.89], ["c", -0.87, 0.21, -1.71, -0.3, -1.89, -1.14], ["c", -0.21, -0.84, 0.3, -1.71, 1.14, -1.89], ["z"]], w: 20.153, h: 23.142}
+        , 'clefs.G': {d: [["M", 9.69, -37.41], ["c", 0.09, -0.09, 0.24, -0.06, 0.36, 0], ["c", 0.12, 0.09, 0.57, 0.6, 0.96, 1.11], ["c", 1.77, 2.34, 3.21, 5.85, 3.57, 8.73], ["c", 0.21, 1.56, 0.03, 3.27, -0.45, 4.86], ["c", -0.69, 2.31, -1.92, 4.47, -4.23, 7.44], ["c", -0.3, 0.39, -0.57, 0.72, -0.6, 0.75], ["c", -0.03, 0.06, 0, 0.15, 0.18, 0.78], ["c", 0.54, 1.68, 1.38, 4.44, 1.68, 5.49], ["l", 0.09, 0.42], ["l", 0.39, -0], ["c", 1.47, 0.09, 2.76, 0.51, 3.96, 1.29], ["c", 1.83, 1.23, 3.06, 3.21, 3.39, 5.52], ["c", 0.09, 0.45, 0.12, 1.29, 0.06, 1.74], ["c", -0.09, 1.02, -0.33, 1.83, -0.75, 2.73], ["c", -0.84, 1.71, -2.28, 3.06, -4.02, 3.72], ["l", -0.33, 0.12], ["l", 0.03, 1.26], ["c", 0, 1.74, -0.06, 3.63, -0.21, 4.62], ["c", -0.45, 3.06, -2.19, 5.49, -4.47, 6.21], ["c", -0.57, 0.18, -0.9, 0.21, -1.59, 0.21], ["c", -0.69, -0, -1.02, -0.03, -1.65, -0.21], ["c", -1.14, -0.27, -2.13, -0.84, -2.94, -1.65], ["c", -0.99, -0.99, -1.56, -2.16, -1.71, -3.54], ["c", -0.09, -0.81, 0.06, -1.53, 0.45, -2.13], ["c", 0.63, -0.99, 1.83, -1.56, 3, -1.53], ["c", 1.5, 0.09, 2.64, 1.32, 2.73, 2.94], ["c", 0.06, 1.47, -0.93, 2.7, -2.37, 2.97], ["c", -0.45, 0.06, -0.84, 0.03, -1.29, -0.09], ["l", -0.21, -0.09], ["l", 0.09, 0.12], ["c", 0.39, 0.54, 0.78, 0.93, 1.32, 1.26], ["c", 1.35, 0.87, 3.06, 1.02, 4.35, 0.36], ["c", 1.44, -0.72, 2.52, -2.28, 2.97, -4.35], ["c", 0.15, -0.66, 0.24, -1.5, 0.3, -3.03], ["c", 0.03, -0.84, 0.03, -2.94, -0, -3], ["c", -0.03, -0, -0.18, -0, -0.36, 0.03], ["c", -0.66, 0.12, -0.99, 0.12, -1.83, 0.12], ["c", -1.05, -0, -1.71, -0.06, -2.61, -0.3], ["c", -4.02, -0.99, -7.11, -4.35, -7.8, -8.46], ["c", -0.12, -0.66, -0.12, -0.99, -0.12, -1.83], ["c", -0, -0.84, -0, -1.14, 0.15, -1.92], ["c", 0.36, -2.28, 1.41, -4.62, 3.3, -7.29], ["l", 2.79, -3.6], ["c", 0.54, -0.66, 0.96, -1.2, 0.96, -1.23], ["c", -0, -0.03, -0.09, -0.33, -0.18, -0.69], ["c", -0.96, -3.21, -1.41, -5.28, -1.59, -7.68], ["c", -0.12, -1.38, -0.15, -3.09, -0.06, -3.96], ["c", 0.33, -2.67, 1.38, -5.07, 3.12, -7.08], ["c", 0.36, -0.42, 0.99, -1.05, 1.17, -1.14], ["z"], ["m", 2.01, 4.71], ["c", -0.15, -0.3, -0.3, -0.54, -0.3, -0.54], ["c", -0.03, 0, -0.18, 0.09, -0.3, 0.21], ["c", -2.4, 1.74, -3.87, 4.2, -4.26, 7.11], ["c", -0.06, 0.54, -0.06, 1.41, -0.03, 1.89], ["c", 0.09, 1.29, 0.48, 3.12, 1.08, 5.22], ["c", 0.15, 0.42, 0.24, 0.78, 0.24, 0.81], ["c", 0, 0.03, 0.84, -1.11, 1.23, -1.68], ["c", 1.89, -2.73, 2.88, -5.07, 3.15, -7.53], ["c", 0.09, -0.57, 0.12, -1.74, 0.06, -2.37], ["c", -0.09, -1.23, -0.27, -1.92, -0.87, -3.12], ["z"], ["m", -2.94, 20.7], ["c", -0.21, -0.72, -0.39, -1.32, -0.42, -1.32], ["c", 0, 0, -1.2, 1.47, -1.86, 2.37], ["c", -2.79, 3.63, -4.02, 6.3, -4.35, 9.3], ["c", -0.03, 0.21, -0.03, 0.69, -0.03, 1.08], ["c", 0, 0.69, 0, 0.75, 0.06, 1.11], ["c", 0.12, 0.54, 0.27, 0.99, 0.51, 1.47], ["c", 0.69, 1.38, 1.83, 2.55, 3.42, 3.42], ["c", 0.96, 0.54, 2.07, 0.9, 3.21, 1.08], ["c", 0.78, 0.12, 2.04, 0.12, 2.94, -0.03], ["c", 0.51, -0.06, 0.45, -0.03, 0.42, -0.3], ["c", -0.24, -3.33, -0.72, -6.33, -1.62, -10.08], ["c", -0.09, -0.39, -0.18, -0.75, -0.18, -0.78], ["c", -0.03, -0.03, -0.42, -0, -0.81, 0.09], ["c", -0.9, 0.18, -1.65, 0.57, -2.22, 1.14], ["c", -0.72, 0.72, -1.08, 1.65, -1.05, 2.64], ["c", 0.06, 0.96, 0.48, 1.83, 1.23, 2.58], ["c", 0.36, 0.36, 0.72, 0.63, 1.17, 0.9], ["c", 0.33, 0.18, 0.36, 0.21, 0.42, 0.33], ["c", 0.18, 0.42, -0.18, 0.9, -0.6, 0.87], ["c", -0.18, -0.03, -0.84, -0.36, -1.26, -0.63], ["c", -0.78, -0.51, -1.38, -1.11, -1.86, -1.83], ["c", -1.77, -2.7, -0.99, -6.42, 1.71, -8.19], ["c", 0.3, -0.21, 0.81, -0.48, 1.17, -0.63], ["c", 0.3, -0.09, 1.02, -0.3, 1.14, -0.3], ["c", 0.06, -0, 0.09, -0, 0.09, -0.03], ["c", 0.03, -0.03, -0.51, -1.92, -1.23, -4.26], ["z"], ["m", 3.78, 7.41], ["c", -0.18, -0.03, -0.36, -0.06, -0.39, -0.06], ["c", -0.03, 0, 0, 0.21, 0.18, 1.02], ["c", 0.75, 3.18, 1.26, 6.3, 1.5, 9.09], ["c", 0.06, 0.72, 0, 0.69, 0.51, 0.42], ["c", 0.78, -0.36, 1.44, -0.96, 1.98, -1.77], ["c", 1.08, -1.62, 1.2, -3.69, 0.3, -5.55], ["c", -0.81, -1.62, -2.31, -2.79, -4.08, -3.15], ["z"]], w: 19.051, h: 57.057}
+        , 'clefs.perc': {d: [["M", 5.07, -7.44], ["l", 0.09, -0.06], ["l", 1.53, 0], ["l", 1.53, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 7.35], ["l", 0, 7.32], ["l", -0.06, 0.09], ["l", -0.09, 0.06], ["l", -1.53, -0], ["l", -1.53, -0], ["l", -0.09, -0.06], ["l", -0.06, -0.09], ["l", 0, -7.32], ["l", 0, -7.35], ["z"], ["m", 6.63, 0], ["l", 0.09, -0.06], ["l", 1.53, 0], ["l", 1.53, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 7.35], ["l", 0, 7.32], ["l", -0.06, 0.09], ["l", -0.09, 0.06], ["l", -1.53, -0], ["l", -1.53, -0], ["l", -0.09, -0.06], ["l", -0.06, -0.09], ["l", 0, -7.32], ["l", 0, -7.35], ["z"]], w: 9.99, h: 14.97}
+        , 'clefs.tab': {d: [["M", 26.88, -28.88], ["c", 0.32, -0.12, 0.88, 0.12, 1.04, 0.48], ["c", 0.12, 0.28, 0.12, 0.32, -0.24, 0.72], ["c", -1.04, 1.08, -2.48, 1.92, -3.92, 2.28], ["c", -1.16, 0.32, -2.28, 0.32, -3.4, 0.04], ["l", -0.08, -0.04], ["l", -0.24, 1.32], ["c", -0.44, 2.64, -1, 5.68, -1.28, 6.72], ["c", -0.56, 2.2, -1.68, 4.24, -3.04, 5.52], ["c", -0.76, 0.76, -1.56, 1.2, -2.48, 1.44], ["c", -0.24, 0.08, -0.44, 0.08, -0.88, 0.08], ["c", -0.72, 0, -1.04, -0.04, -1.64, -0.36], ["c", -0.52, -0.24, -0.88, -0.52, -1.84, -1.32], ["c", -0.4, -0.32, -0.88, -0.68, -1, -0.76], ["c", -0.28, -0.2, -0.36, -0.32, -0.32, -0.6], ["c", 0.08, -0.36, 0.48, -0.8, 0.8, -0.88], ["c", 0.24, -0.04, 0.44, 0.08, 1.2, 0.76], ["c", 0.64, 0.56, 0.96, 0.76, 1.24, 0.92], ["c", 0.88, 0.44, 1.84, 0.28, 2.6, -0.48], ["c", 0.84, -0.8, 1.4, -2.16, 1.64, -4], ["c", 0.04, -0.24, 0.12, -0.88, 0.12, -1.48], ["c", 0.12, -2.08, 0.44, -5.08, 0.76, -7.32], ["c", 0.08, -0.44, 0.12, -0.84, 0.12, -0.84], ["c", -0.04, -0.04, -1.08, -0.16, -1.36, -0.16], ["c", -0.76, 0, -1.76, 0.16, -2.4, 0.44], ["c", -1.16, 0.4, -1.8, 1.04, -2, 1.88], ["c", -0.24, 0.84, 0.12, 1.68, 0.88, 2.2], ["c", 0.16, 0.08, 0.2, 0.16, 0.24, 0.32], ["c", 0.12, 0.36, 0.08, 0.76, -0.12, 1], ["c", -0.04, 0.08, -0.16, 0.12, -0.36, 0.2], ["c", -0.96, 0.28, -1.92, 0.2, -2.8, -0.24], ["c", -0.72, -0.36, -1.28, -0.88, -1.6, -1.52], ["c", -0.52, -1, -0.44, -2.32, 0.2, -3.36], ["c", 0.36, -0.56, 1.12, -1.24, 1.88, -1.64], ["c", 1.56, -0.76, 3.84, -1.2, 6.4, -1.2], ["c", 0.92, 0, 1.04, 0, 1.44, 0.08], ["c", 0.6, 0.12, 1.48, 0.4, 2.76, 0.8], ["c", 1.96, 0.64, 2.44, 0.76, 3.4, 0.72], ["c", 1.36, -0.08, 2.72, -0.6, 3.92, -1.48], ["c", 0.16, -0.12, 0.32, -0.24, 0.36, -0.24], ["z"], ["m", -7.84, 17.4], ["c", 0.28, -0.04, 1.08, 0, 1.44, 0.08], ["c", 0.64, 0.16, 1.2, 0.56, 1.32, 0.92], ["c", 0.04, 0.12, 0.04, 0.2, 0, 0.36], ["c", 0, 0.12, -0.04, 0.76, -0.08, 1.44], ["c", -0.12, 2.92, -0.32, 7.68, -0.52, 11.04], ["c", -0.08, 2.04, -0.08, 2.36, 0.04, 2.68], ["c", 0.12, 0.24, 0.2, 0.32, 0.4, 0.4], ["c", 0.32, 0.16, 0.72, 0.08, 1.64, -0.36], ["c", 0.76, -0.36, 0.88, -0.4, 1, -0.32], ["c", 0.12, 0.08, 0.24, 0.4, 0.24, 0.6], ["c", 0, 0.44, -0.2, 0.68, -0.6, 0.84], ["c", -0.16, 0.04, -0.52, 0.2, -0.8, 0.36], ["c", -1.56, 0.8, -1.84, 0.92, -2.4, 0.96], ["c", -0.6, 0.04, -1.04, -0.12, -1.44, -0.52], ["c", -0.52, -0.56, -0.88, -1.6, -1.36, -4.16], ["c", -0.32, -1.64, -0.48, -2.76, -0.72, -5], ["l", 0, -0.24], ["l", -0.48, 0.6], ["c", -0.8, 1, -1.76, 2.12, -2.6, 3], ["c", -0.2, 0.24, -0.36, 0.4, -0.36, 0.44], ["c", 0, 0, 0.08, 0.12, 0.2, 0.24], ["c", 0.32, 0.44, 0.8, 0.76, 1.4, 0.92], ["c", 0.24, 0.08, 0.4, 0.08, 0.92, 0.08], ["l", 0.64, 0.04], ["l", 0.08, 0.16], ["c", 0.2, 0.36, 0.04, 0.96, -0.28, 1.2], ["c", -0.24, 0.16, -1.24, 0.36, -1.88, 0.36], ["c", -1.12, 0, -2.12, -0.4, -2.64, -1.12], ["l", -0.16, -0.2], ["l", -0.6, 0.56], ["c", -1.32, 1.16, -2.04, 1.76, -2.88, 2.32], ["c", -1.04, 0.68, -2, 1.12, -2.8, 1.24], ["c", -0.92, 0.16, -1.6, 0.04, -2.6, -0.56], ["c", -0.28, -0.16, -0.68, -0.36, -0.88, -0.48], ["c", -0.32, -0.16, -0.4, -0.24, -0.44, -0.32], ["c", -0.16, -0.36, 0.2, -1.04, 0.6, -1.24], ["c", 0.32, -0.16, 0.44, -0.12, 1.2, 0.24], ["c", 0.8, 0.4, 1.12, 0.52, 1.6, 0.48], ["c", 1.16, -0.12, 2.36, -0.92, 4.32, -3.08], ["c", 3.56, -3.8, 6.12, -7.92, 7.6, -12.2], ["c", 0.2, -0.6, 0.32, -0.84, 0.56, -1.08], ["c", 0.28, -0.32, 0.8, -0.6, 1.32, -0.68], ["z"], ["m", -5.32, 21.4], ["c", 0.24, 0, 0.92, -0.04, 1.56, 0], ["c", 4.36, 0.04, 7.16, 1, 8, 2.76], ["c", 0.6, 1.32, 0.16, 3.2, -1.08, 4.56], ["c", -0.32, 0.36, -0.76, 0.76, -1.12, 1], ["c", -0.12, 0.08, -0.24, 0.12, -0.24, 0.16], ["c", 0, 0, 0.24, 0.04, 0.56, 0.12], ["c", 1.64, 0.4, 2.68, 1.08, 3.16, 2.12], ["c", 0.36, 0.72, 0.4, 1.76, 0.12, 2.8], ["c", -0.16, 0.48, -0.6, 1.4, -0.92, 1.8], ["c", -1.16, 1.56, -2.8, 2.56, -4.72, 3], ["c", -0.48, 0.08, -0.64, 0.08, -1.28, 0.08], ["c", -0.6, 0, -0.88, 0, -1.12, -0.04], ["c", -1.12, -0.24, -1.96, -0.68, -2.76, -1.48], ["c", -0.44, -0.44, -0.6, -0.68, -0.6, -0.84], ["c", 0, -0.08, 0.04, -0.2, 0.08, -0.32], ["c", 0.24, -0.44, 0.92, -0.8, 1.24, -0.64], ["c", 0.04, 0.04, 0.2, 0.16, 0.36, 0.32], ["c", 0.52, 0.56, 1.32, 0.76, 2.16, 0.6], ["c", 1.4, -0.28, 2.64, -1.36, 3.08, -2.68], ["c", 0.64, -2.04, -0.64, -3.4, -3.44, -3.56], ["c", -0.28, 0, -0.48, -0.04, -0.56, -0.08], ["c", -0.2, -0.12, -0.28, -0.68, -0.08, -1.04], ["c", 0.16, -0.36, 0.32, -0.44, 0.8, -0.48], ["c", 0.76, -0.08, 1.48, -0.56, 2, -1.32], ["c", 0.64, -0.96, 0.72, -2.12, 0.24, -3.08], ["c", -0.16, -0.28, -0.6, -0.72, -0.92, -0.92], ["c", -0.44, -0.28, -1.24, -0.6, -1.8, -0.68], ["l", -0.16, -0.04], ["l", -0.08, 0.64], ["c", -0.72, 3.92, -1.52, 8.32, -1.72, 9], ["c", -0.44, 1.8, -1.24, 3.48, -2.2, 4.8], ["c", -0.4, 0.48, -1.08, 1.2, -1.52, 1.52], ["c", -0.4, 0.32, -1.12, 0.64, -1.52, 0.76], ["c", -0.44, 0.12, -1.28, 0.12, -1.68, 0.04], ["c", -0.6, -0.16, -1.16, -0.52, -2.04, -1.28], ["c", -0.32, -0.2, -0.68, -0.52, -0.84, -0.64], ["c", -0.4, -0.28, -0.44, -0.44, -0.28, -0.84], ["c", 0.16, -0.24, 0.36, -0.48, 0.56, -0.6], ["c", 0.36, -0.16, 0.48, -0.12, 1.16, 0.44], ["c", 1.04, 0.8, 1.44, 1, 2.2, 0.96], ["c", 0.6, -0.04, 1.08, -0.28, 1.56, -0.72], ["c", 1.16, -1.2, 1.84, -3.8, 1.84, -7.16], ["c", 0, -0.8, 0.04, -1.48, 0.16, -2.72], ["c", 0.08, -0.92, 0.32, -2.68, 0.44, -3.44], ["c", 0.08, -0.32, 0.08, -0.56, 0.08, -0.56], ["c", 0, 0, -0.16, 0.04, -0.28, 0.12], ["c", -1.92, 0.76, -2.88, 2.2, -2.32, 3.4], ["c", 0.12, 0.2, 0.24, 0.32, 0.36, 0.44], ["c", 0.32, 0.28, 0.4, 0.36, 0.44, 0.52], ["c", 0.08, 0.32, 0, 0.84, -0.2, 1.04], ["c", -0.12, 0.16, -0.72, 0.28, -1.28, 0.32], ["c", -1.36, 0.04, -2.68, -0.64, -3.24, -1.76], ["c", -0.28, -0.6, -0.36, -1.2, -0.2, -1.92], ["c", 0.08, -0.36, 0.28, -0.88, 0.52, -1.24], ["c", 1.16, -1.72, 4, -2.96, 7.52, -3.24], ["z"]], w: 26.191, h: 57.767}
+        , 'dots.dot': {d: [["M", 1.32, -1.68], ["c", 0.09, -0.03, 0.27, -0.06, 0.39, -0.06], ["c", 0.96, 0, 1.74, 0.78, 1.74, 1.71], ["c", 0, 0.96, -0.78, 1.74, -1.71, 1.74], ["c", -0.96, 0, -1.74, -0.78, -1.74, -1.71], ["c", 0, -0.78, 0.54, -1.5, 1.32, -1.68], ["z"]], w: 3.45, h: 3.45}
+        , 'flags.d8th': {d: [["M", 5.67, -21.63], ["c", 0.24, -0.12, 0.54, -0.06, 0.69, 0.15], ["c", 0.06, 0.06, 0.21, 0.36, 0.39, 0.66], ["c", 0.84, 1.77, 1.26, 3.36, 1.32, 5.1], ["c", 0.03, 1.29, -0.21, 2.37, -0.81, 3.63], ["c", -0.6, 1.23, -1.26, 2.13, -3.21, 4.38], ["c", -1.35, 1.53, -1.86, 2.19, -2.4, 2.97], ["c", -0.63, 0.93, -1.11, 1.92, -1.38, 2.79], ["c", -0.15, 0.54, -0.27, 1.35, -0.27, 1.8], ["l", 0, 0.15], ["l", -0.21, -0], ["l", -0.21, -0], ["l", 0, -3.75], ["l", 0, -3.75], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0.48, -0.3], ["c", 1.83, -1.11, 3.12, -2.1, 4.17, -3.12], ["c", 0.78, -0.81, 1.32, -1.53, 1.71, -2.31], ["c", 0.45, -0.93, 0.6, -1.74, 0.51, -2.88], ["c", -0.12, -1.56, -0.63, -3.18, -1.47, -4.68], ["c", -0.12, -0.21, -0.15, -0.33, -0.06, -0.51], ["c", 0.06, -0.15, 0.15, -0.24, 0.33, -0.33], ["z"]], w: 8.492, h: 21.691}
+        , 'flags.d16th': {d: [["M", 6.84, -22.53], ["c", 0.27, -0.12, 0.57, -0.06, 0.72, 0.15], ["c", 0.15, 0.15, 0.33, 0.87, 0.45, 1.56], ["c", 0.06, 0.33, 0.06, 1.35, 0, 1.65], ["c", -0.06, 0.33, -0.15, 0.78, -0.27, 1.11], ["c", -0.12, 0.33, -0.45, 0.96, -0.66, 1.32], ["l", -0.18, 0.27], ["l", 0.09, 0.18], ["c", 0.48, 1.02, 0.72, 2.25, 0.69, 3.3], ["c", -0.06, 1.23, -0.42, 2.28, -1.26, 3.45], ["c", -0.57, 0.87, -0.99, 1.32, -3, 3.39], ["c", -1.56, 1.56, -2.22, 2.4, -2.76, 3.45], ["c", -0.42, 0.84, -0.66, 1.8, -0.66, 2.55], ["l", 0, 0.15], ["l", -0.21, -0], ["l", -0.21, -0], ["l", 0, -7.5], ["l", 0, -7.5], ["l", 0.21, -0], ["l", 0.21, -0], ["l", 0, 1.14], ["l", 0, 1.11], ["l", 0.27, -0.15], ["c", 1.11, -0.57, 1.77, -0.99, 2.52, -1.47], ["c", 2.37, -1.56, 3.69, -3.15, 4.05, -4.83], ["c", 0.03, -0.18, 0.03, -0.39, 0.03, -0.78], ["c", 0, -0.6, -0.03, -0.93, -0.24, -1.5], ["c", -0.06, -0.18, -0.12, -0.39, -0.15, -0.45], ["c", -0.03, -0.24, 0.12, -0.48, 0.36, -0.6], ["z"], ["m", -0.63, 7.5], ["c", -0.06, -0.18, -0.15, -0.36, -0.15, -0.36], ["c", -0.03, 0, -0.03, 0.03, -0.06, 0.06], ["c", -0.06, 0.12, -0.96, 1.02, -1.95, 1.98], ["c", -0.63, 0.57, -1.26, 1.17, -1.44, 1.35], ["c", -1.53, 1.62, -2.28, 2.85, -2.55, 4.32], ["c", -0.03, 0.18, -0.03, 0.54, -0.06, 0.99], ["l", 0, 0.69], ["l", 0.18, -0.09], ["c", 0.93, -0.54, 2.1, -1.29, 2.82, -1.83], ["c", 0.69, -0.51, 1.02, -0.81, 1.53, -1.29], ["c", 1.86, -1.89, 2.37, -3.66, 1.68, -5.82], ["z"]], w: 8.475, h: 22.591}
+        , 'flags.d32nd': {d: [["M", 6.794, -29.13], ["c", 0.27, -0.12, 0.57, -0.06, 0.72, 0.15], ["c", 0.12, 0.12, 0.27, 0.63, 0.36, 1.11], ["c", 0.33, 1.59, 0.06, 3.06, -0.81, 4.47], ["l", -0.18, 0.27], ["l", 0.09, 0.15], ["c", 0.12, 0.24, 0.33, 0.69, 0.45, 1.05], ["c", 0.63, 1.83, 0.45, 3.57, -0.57, 5.22], ["l", -0.18, 0.3], ["l", 0.15, 0.27], ["c", 0.42, 0.87, 0.6, 1.71, 0.57, 2.61], ["c", -0.06, 1.29, -0.48, 2.46, -1.35, 3.78], ["c", -0.54, 0.81, -0.93, 1.29, -2.46, 3], ["c", -0.51, 0.54, -1.05, 1.17, -1.26, 1.41], ["c", -1.56, 1.86, -2.25, 3.36, -2.37, 5.01], ["l", 0, 0.33], ["l", -0.21, -0], ["l", -0.21, -0], ["l", 0, -11.25], ["l", 0, -11.25], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0, 1.35], ["l", 0.03, 1.35], ["l", 0.78, -0.39], ["c", 1.38, -0.69, 2.34, -1.26, 3.24, -1.92], ["c", 1.38, -1.02, 2.28, -2.13, 2.64, -3.21], ["c", 0.15, -0.48, 0.18, -0.72, 0.18, -1.29], ["c", 0, -0.57, -0.06, -0.9, -0.24, -1.47], ["c", -0.06, -0.18, -0.12, -0.39, -0.15, -0.45], ["c", -0.03, -0.24, 0.12, -0.48, 0.36, -0.6], ["z"], ["m", -0.63, 7.2], ["c", -0.09, -0.18, -0.12, -0.21, -0.12, -0.15], ["c", -0.03, 0.09, -1.02, 1.08, -2.04, 2.04], ["c", -1.17, 1.08, -1.65, 1.56, -2.07, 2.04], ["c", -0.84, 0.96, -1.38, 1.86, -1.68, 2.76], ["c", -0.21, 0.57, -0.27, 0.99, -0.3, 1.65], ["l", 0, 0.54], ["l", 0.66, -0.33], ["c", 3.57, -1.86, 5.49, -3.69, 5.94, -5.7], ["c", 0.06, -0.39, 0.06, -1.2, -0.03, -1.65], ["c", -0.06, -0.39, -0.24, -0.9, -0.36, -1.2], ["z"], ["m", -0.06, 7.2], ["c", -0.06, -0.15, -0.12, -0.33, -0.15, -0.45], ["l", -0.06, -0.18], ["l", -0.18, 0.21], ["l", -1.83, 1.83], ["c", -0.87, 0.9, -1.77, 1.8, -1.95, 2.01], ["c", -1.08, 1.29, -1.62, 2.31, -1.89, 3.51], ["c", -0.06, 0.3, -0.06, 0.51, -0.09, 0.93], ["l", 0, 0.57], ["l", 0.09, -0.06], ["c", 0.75, -0.45, 1.89, -1.26, 2.52, -1.74], ["c", 0.81, -0.66, 1.74, -1.53, 2.22, -2.16], ["c", 1.26, -1.53, 1.68, -3.06, 1.32, -4.47], ["z"]], w: 8.475, h: 29.191}
+        , 'flags.d64th': {d: [["M", 7.08, -32.88], ["c", 0.3, -0.12, 0.66, -0.03, 0.78, 0.24], ["c", 0.18, 0.33, 0.27, 2.1, 0.15, 2.64], ["c", -0.09, 0.39, -0.21, 0.78, -0.39, 1.08], ["l", -0.15, 0.3], ["l", 0.09, 0.27], ["c", 0.03, 0.12, 0.09, 0.45, 0.12, 0.69], ["c", 0.27, 1.44, 0.18, 2.55, -0.3, 3.6], ["l", -0.12, 0.33], ["l", 0.06, 0.42], ["c", 0.27, 1.35, 0.33, 2.82, 0.21, 3.63], ["c", -0.12, 0.6, -0.3, 1.23, -0.57, 1.8], ["l", -0.15, 0.27], ["l", 0.03, 0.42], ["c", 0.06, 1.02, 0.06, 2.7, 0.03, 3.06], ["c", -0.15, 1.47, -0.66, 2.76, -1.74, 4.41], ["c", -0.45, 0.69, -0.75, 1.11, -1.74, 2.37], ["c", -1.05, 1.38, -1.5, 1.98, -1.95, 2.73], ["c", -0.93, 1.5, -1.38, 2.82, -1.44, 4.2], ["l", 0, 0.42], ["l", -0.21, -0], ["l", -0.21, -0], ["l", 0, -15], ["l", 0, -15], ["l", 0.21, -0], ["l", 0.21, -0], ["l", 0, 1.86], ["l", 0, 1.89], ["c", 0, -0, 0.21, -0.03, 0.45, -0.09], ["c", 2.22, -0.39, 4.08, -1.11, 5.19, -2.01], ["c", 0.63, -0.54, 1.02, -1.14, 1.2, -1.8], ["c", 0.06, -0.3, 0.06, -1.14, -0.03, -1.65], ["c", -0.03, -0.18, -0.06, -0.39, -0.09, -0.48], ["c", -0.03, -0.24, 0.12, -0.48, 0.36, -0.6], ["z"], ["m", -0.45, 6.15], ["c", -0.03, -0.18, -0.06, -0.42, -0.06, -0.54], ["l", -0.03, -0.18], ["l", -0.33, 0.3], ["c", -0.42, 0.36, -0.87, 0.72, -1.68, 1.29], ["c", -1.98, 1.38, -2.25, 1.59, -2.85, 2.16], ["c", -0.75, 0.69, -1.23, 1.44, -1.47, 2.19], ["c", -0.15, 0.45, -0.18, 0.63, -0.21, 1.35], ["l", 0, 0.66], ["l", 0.39, -0.18], ["c", 1.83, -0.9, 3.45, -1.95, 4.47, -2.91], ["c", 0.93, -0.9, 1.53, -1.83, 1.74, -2.82], ["c", 0.06, -0.33, 0.06, -0.87, 0.03, -1.32], ["z"], ["m", -0.27, 4.86], ["c", -0.03, -0.21, -0.06, -0.36, -0.06, -0.36], ["c", 0, -0.03, -0.12, 0.09, -0.24, 0.24], ["c", -0.39, 0.48, -0.99, 1.08, -2.16, 2.19], ["c", -1.47, 1.38, -1.92, 1.83, -2.46, 2.49], ["c", -0.66, 0.87, -1.08, 1.74, -1.29, 2.58], ["c", -0.09, 0.42, -0.15, 0.87, -0.15, 1.44], ["l", 0, 0.54], ["l", 0.48, -0.33], ["c", 1.5, -1.02, 2.58, -1.89, 3.51, -2.82], ["c", 1.47, -1.47, 2.25, -2.85, 2.4, -4.26], ["c", 0.03, -0.39, 0.03, -1.17, -0.03, -1.71], ["z"], ["m", -0.66, 7.68], ["c", 0.03, -0.15, 0.03, -0.6, 0.03, -0.99], ["l", 0, -0.72], ["l", -0.27, 0.33], ["l", -1.74, 1.98], ["c", -1.77, 1.92, -2.43, 2.76, -2.97, 3.9], ["c", -0.51, 1.02, -0.72, 1.77, -0.75, 2.91], ["c", 0, 0.63, 0, 0.63, 0.06, 0.6], ["c", 0.03, -0.03, 0.3, -0.27, 0.63, -0.54], ["c", 0.66, -0.6, 1.86, -1.8, 2.31, -2.31], ["c", 1.65, -1.89, 2.52, -3.54, 2.7, -5.16], ["z"]], w: 8.485, h: 32.932}
+        , 'flags.dgrace': {d: [["M", -6.06, -15.93], ["c", 0.18, -0.09, 0.33, -0.12, 0.48, -0.06], ["c", 0.18, 0.09, 14.01, 8.04, 14.1, 8.1], ["c", 0.12, 0.12, 0.18, 0.33, 0.18, 0.51], ["c", -0.03, 0.21, -0.15, 0.39, -0.36, 0.48], ["c", -0.18, 0.09, -0.33, 0.12, -0.48, 0.06], ["c", -0.18, -0.09, -14.01, -8.04, -14.1, -8.1], ["c", -0.12, -0.12, -0.18, -0.33, -0.18, -0.51], ["c", 0.03, -0.21, 0.15, -0.39, 0.36, -0.48], ["z"]], w: 15.12, h: 9.212}
+        , 'flags.u8th': {d: [["M", -0.42, 3.75], ["l", 0, -3.75], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0, 0.18], ["c", 0, 0.3, 0.06, 0.84, 0.12, 1.23], ["c", 0.24, 1.53, 0.9, 3.12, 2.13, 5.16], ["l", 0.99, 1.59], ["c", 0.87, 1.44, 1.38, 2.34, 1.77, 3.09], ["c", 0.81, 1.68, 1.2, 3.06, 1.26, 4.53], ["c", 0.03, 1.53, -0.21, 3.27, -0.75, 5.01], ["c", -0.21, 0.69, -0.51, 1.5, -0.6, 1.59], ["c", -0.09, 0.12, -0.27, 0.21, -0.42, 0.21], ["c", -0.15, 0, -0.42, -0.12, -0.51, -0.21], ["c", -0.15, -0.18, -0.18, -0.42, -0.09, -0.66], ["c", 0.15, -0.33, 0.45, -1.2, 0.57, -1.62], ["c", 0.42, -1.38, 0.6, -2.58, 0.6, -3.9], ["c", 0, -0.66, 0, -0.81, -0.06, -1.11], ["c", -0.39, -2.07, -1.8, -4.26, -4.59, -7.14], ["l", -0.42, -0.45], ["l", -0.21, 0], ["l", -0.21, 0], ["l", 0, -3.75], ["z"]], w: 6.692, h: 22.59}
+        , 'flags.u16th': {d: [["M", -0.42, 7.5], ["l", 0, -7.5], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0, 0.39], ["c", 0.06, 1.08, 0.39, 2.19, 0.99, 3.39], ["c", 0.45, 0.9, 0.87, 1.59, 1.95, 3.12], ["c", 1.29, 1.86, 1.77, 2.64, 2.22, 3.57], ["c", 0.45, 0.93, 0.72, 1.8, 0.87, 2.64], ["c", 0.06, 0.51, 0.06, 1.5, 0, 1.92], ["c", -0.12, 0.6, -0.3, 1.2, -0.54, 1.71], ["l", -0.09, 0.24], ["l", 0.18, 0.45], ["c", 0.51, 1.2, 0.72, 2.22, 0.69, 3.42], ["c", -0.06, 1.53, -0.39, 3.03, -0.99, 4.53], ["c", -0.3, 0.75, -0.36, 0.81, -0.57, 0.9], ["c", -0.15, 0.09, -0.33, 0.06, -0.48, -0], ["c", -0.18, -0.09, -0.27, -0.18, -0.33, -0.33], ["c", -0.09, -0.18, -0.06, -0.3, 0.12, -0.75], ["c", 0.66, -1.41, 1.02, -2.88, 1.08, -4.32], ["c", 0, -0.6, -0.03, -1.05, -0.18, -1.59], ["c", -0.3, -1.2, -0.99, -2.4, -2.25, -3.87], ["c", -0.42, -0.48, -1.53, -1.62, -2.19, -2.22], ["l", -0.45, -0.42], ["l", -0.03, 1.11], ["l", 0, 1.11], ["l", -0.21, -0], ["l", -0.21, -0], ["l", 0, -7.5], ["z"], ["m", 1.65, 0.09], ["c", -0.3, -0.3, -0.69, -0.72, -0.9, -0.87], ["l", -0.33, -0.33], ["l", 0, 0.15], ["c", 0, 0.3, 0.06, 0.81, 0.15, 1.26], ["c", 0.27, 1.29, 0.87, 2.61, 2.04, 4.29], ["c", 0.15, 0.24, 0.6, 0.87, 0.96, 1.38], ["l", 1.08, 1.53], ["l", 0.42, 0.63], ["c", 0.03, 0, 0.12, -0.36, 0.21, -0.72], ["c", 0.06, -0.33, 0.06, -1.2, 0, -1.62], ["c", -0.33, -1.71, -1.44, -3.48, -3.63, -5.7], ["z"]], w: 6.693, h: 26.337}
+        , 'flags.u32nd': {d: [["M", -0.42, 11.247], ["l", 0, -11.25], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0, 0.36], ["c", 0.09, 1.68, 0.69, 3.27, 2.07, 5.46], ["l", 0.87, 1.35], ["c", 1.02, 1.62, 1.47, 2.37, 1.86, 3.18], ["c", 0.48, 1.02, 0.78, 1.92, 0.93, 2.88], ["c", 0.06, 0.48, 0.06, 1.5, 0, 1.89], ["c", -0.09, 0.42, -0.21, 0.87, -0.36, 1.26], ["l", -0.12, 0.3], ["l", 0.15, 0.39], ["c", 0.69, 1.56, 0.84, 2.88, 0.54, 4.38], ["c", -0.09, 0.45, -0.27, 1.08, -0.45, 1.47], ["l", -0.12, 0.24], ["l", 0.18, 0.36], ["c", 0.33, 0.72, 0.57, 1.56, 0.69, 2.34], ["c", 0.12, 1.02, -0.06, 2.52, -0.42, 3.84], ["c", -0.27, 0.93, -0.75, 2.13, -0.93, 2.31], ["c", -0.18, 0.15, -0.45, 0.18, -0.66, 0.09], ["c", -0.18, -0.09, -0.27, -0.18, -0.33, -0.33], ["c", -0.09, -0.18, -0.06, -0.3, 0.06, -0.6], ["c", 0.21, -0.36, 0.42, -0.9, 0.57, -1.38], ["c", 0.51, -1.41, 0.69, -3.06, 0.48, -4.08], ["c", -0.15, -0.81, -0.57, -1.68, -1.2, -2.55], ["c", -0.72, -0.99, -1.83, -2.13, -3.3, -3.33], ["l", -0.48, -0.42], ["l", -0.03, 1.53], ["l", 0, 1.56], ["l", -0.21, 0], ["l", -0.21, 0], ["l", 0, -11.25], ["z"], ["m", 1.26, -3.96], ["c", -0.27, -0.3, -0.54, -0.6, -0.66, -0.72], ["l", -0.18, -0.21], ["l", 0, 0.42], ["c", 0.06, 0.87, 0.24, 1.74, 0.66, 2.67], ["c", 0.36, 0.87, 0.96, 1.86, 1.92, 3.18], ["c", 0.21, 0.33, 0.63, 0.87, 0.87, 1.23], ["c", 0.27, 0.39, 0.6, 0.84, 0.75, 1.08], ["l", 0.27, 0.39], ["l", 0.03, -0.12], ["c", 0.12, -0.45, 0.15, -1.05, 0.09, -1.59], ["c", -0.27, -1.86, -1.38, -3.78, -3.75, -6.33], ["z"], ["m", -0.27, 6.09], ["c", -0.27, -0.21, -0.48, -0.42, -0.51, -0.45], ["c", -0.06, -0.03, -0.06, -0.03, -0.06, 0.21], ["c", 0, 0.9, 0.3, 2.04, 0.81, 3.09], ["c", 0.48, 1.02, 0.96, 1.77, 2.37, 3.63], ["c", 0.6, 0.78, 1.05, 1.44, 1.29, 1.77], ["c", 0.06, 0.12, 0.15, 0.21, 0.15, 0.18], ["c", 0.03, -0.03, 0.18, -0.57, 0.24, -0.87], ["c", 0.06, -0.45, 0.06, -1.32, -0.03, -1.74], ["c", -0.09, -0.48, -0.24, -0.9, -0.51, -1.44], ["c", -0.66, -1.35, -1.83, -2.7, -3.75, -4.38], ["z"]], w: 6.697, h: 32.145}
+        , 'flags.u64th': {d: [["M", -0.42, 15], ["l", 0, -15], ["l", 0.21, 0], ["l", 0.21, 0], ["l", 0, 0.36], ["c", 0.06, 1.2, 0.39, 2.37, 1.02, 3.66], ["c", 0.39, 0.81, 0.84, 1.56, 1.8, 3.09], ["c", 0.81, 1.26, 1.05, 1.68, 1.35, 2.22], ["c", 0.87, 1.5, 1.35, 2.79, 1.56, 4.08], ["c", 0.06, 0.54, 0.06, 1.56, -0.03, 2.04], ["c", -0.09, 0.48, -0.21, 0.99, -0.36, 1.35], ["l", -0.12, 0.27], ["l", 0.12, 0.27], ["c", 0.09, 0.15, 0.21, 0.45, 0.27, 0.66], ["c", 0.69, 1.89, 0.63, 3.66, -0.18, 5.46], ["l", -0.18, 0.39], ["l", 0.15, 0.33], ["c", 0.3, 0.66, 0.51, 1.44, 0.63, 2.1], ["c", 0.06, 0.48, 0.06, 1.35, 0, 1.71], ["c", -0.15, 0.57, -0.42, 1.2, -0.78, 1.68], ["l", -0.21, 0.27], ["l", 0.18, 0.33], ["c", 0.57, 1.05, 0.93, 2.13, 1.02, 3.18], ["c", 0.06, 0.72, 0, 1.83, -0.21, 2.79], ["c", -0.18, 1.02, -0.63, 2.34, -1.02, 3.09], ["c", -0.15, 0.33, -0.48, 0.45, -0.78, 0.3], ["c", -0.18, -0.09, -0.27, -0.18, -0.33, -0.33], ["c", -0.09, -0.18, -0.06, -0.3, 0.03, -0.54], ["c", 0.75, -1.5, 1.23, -3.45, 1.17, -4.89], ["c", -0.06, -1.02, -0.42, -2.01, -1.17, -3.15], ["c", -0.48, -0.72, -1.02, -1.35, -1.89, -2.22], ["c", -0.57, -0.57, -1.56, -1.5, -1.92, -1.77], ["l", -0.12, -0.09], ["l", 0, 1.68], ["l", 0, 1.68], ["l", -0.21, 0], ["l", -0.21, 0], ["l", 0, -15], ["z"], ["m", 0.93, -8.07], ["c", -0.27, -0.3, -0.48, -0.54, -0.51, -0.54], ["c", -0, 0, -0, 0.69, 0.03, 1.02], ["c", 0.15, 1.47, 0.75, 2.94, 2.04, 4.83], ["l", 1.08, 1.53], ["c", 0.39, 0.57, 0.84, 1.2, 0.99, 1.44], ["c", 0.15, 0.24, 0.3, 0.45, 0.3, 0.45], ["c", -0, 0, 0.03, -0.09, 0.06, -0.21], ["c", 0.36, -1.59, -0.15, -3.33, -1.47, -5.4], ["c", -0.63, -0.93, -1.35, -1.83, -2.52, -3.12], ["z"], ["m", 0.06, 6.72], ["c", -0.24, -0.21, -0.48, -0.42, -0.51, -0.45], ["l", -0.06, -0.06], ["l", 0, 0.33], ["c", 0, 1.2, 0.3, 2.34, 0.93, 3.6], ["c", 0.45, 0.9, 0.96, 1.68, 2.25, 3.51], ["c", 0.39, 0.54, 0.84, 1.17, 1.02, 1.44], ["c", 0.21, 0.33, 0.33, 0.51, 0.33, 0.48], ["c", 0.06, -0.09, 0.21, -0.63, 0.3, -0.99], ["c", 0.06, -0.33, 0.06, -0.45, 0.06, -0.96], ["c", -0, -0.6, -0.03, -0.84, -0.18, -1.35], ["c", -0.3, -1.08, -1.02, -2.28, -2.13, -3.57], ["c", -0.39, -0.45, -1.44, -1.47, -2.01, -1.98], ["z"], ["m", 0, 6.72], ["c", -0.24, -0.21, -0.48, -0.39, -0.51, -0.42], ["l", -0.06, -0.06], ["l", 0, 0.33], ["c", 0, 1.41, 0.45, 2.82, 1.38, 4.35], ["c", 0.42, 0.72, 0.72, 1.14, 1.86, 2.73], ["c", 0.36, 0.45, 0.75, 0.99, 0.87, 1.2], ["c", 0.15, 0.21, 0.3, 0.36, 0.3, 0.36], ["c", 0.06, 0, 0.3, -0.48, 0.39, -0.75], ["c", 0.09, -0.36, 0.12, -0.63, 0.12, -1.05], ["c", -0.06, -1.05, -0.45, -2.04, -1.2, -3.18], ["c", -0.57, -0.87, -1.11, -1.53, -2.07, -2.49], ["c", -0.36, -0.33, -0.84, -0.78, -1.08, -1.02], ["z"]], w: 6.682, h: 39.694}
+        , 'flags.ugrace': {d: [["M", 6.03, 6.93], ["c", 0.15, -0.09, 0.33, -0.06, 0.51, 0], ["c", 0.15, 0.09, 0.21, 0.15, 0.3, 0.33], ["c", 0.09, 0.18, 0.06, 0.39, -0.03, 0.54], ["c", -0.06, 0.15, -10.89, 8.88, -11.07, 8.97], ["c", -0.15, 0.09, -0.33, 0.06, -0.48, 0], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["c", -0.09, -0.18, -0.06, -0.39, 0.03, -0.54], ["c", 0.06, -0.15, 10.89, -8.88, 11.07, -8.97], ["z"]], w: 12.019, h: 9.954}
+        , 'noteheads.dbl': {d: [["M", -0.69, -4.02], ["c", 0.18, -0.09, 0.36, -0.09, 0.54, 0], ["c", 0.18, 0.09, 0.24, 0.15, 0.33, 0.3], ["c", 0.06, 0.15, 0.06, 0.18, 0.06, 1.41], ["l", -0, 1.23], ["l", 0.12, -0.18], ["c", 0.72, -1.26, 2.64, -2.31, 4.86, -2.64], ["c", 0.81, -0.15, 1.11, -0.15, 2.13, -0.15], ["c", 0.99, 0, 1.29, 0, 2.1, 0.15], ["c", 0.75, 0.12, 1.38, 0.27, 2.04, 0.54], ["c", 1.35, 0.51, 2.34, 1.26, 2.82, 2.1], ["l", 0.12, 0.18], ["l", 0, -1.23], ["c", 0, -1.2, 0, -1.26, 0.06, -1.38], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["c", 0.18, -0.09, 0.36, -0.09, 0.54, 0], ["c", 0.18, 0.09, 0.24, 0.15, 0.33, 0.3], ["l", 0.06, 0.15], ["l", 0, 3.54], ["l", 0, 3.54], ["l", -0.06, 0.15], ["c", -0.09, 0.18, -0.15, 0.24, -0.33, 0.33], ["c", -0.18, 0.09, -0.36, 0.09, -0.54, 0], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["c", -0.06, -0.12, -0.06, -0.18, -0.06, -1.38], ["l", 0, -1.23], ["l", -0.12, 0.18], ["c", -0.48, 0.84, -1.47, 1.59, -2.82, 2.1], ["c", -0.84, 0.33, -1.71, 0.54, -2.85, 0.66], ["c", -0.45, 0.06, -2.16, 0.06, -2.61, 0], ["c", -1.14, -0.12, -2.01, -0.33, -2.85, -0.66], ["c", -1.35, -0.51, -2.34, -1.26, -2.82, -2.1], ["l", -0.12, -0.18], ["l", 0, 1.23], ["c", 0, 1.23, 0, 1.26, -0.06, 1.38], ["c", -0.09, 0.18, -0.15, 0.24, -0.33, 0.33], ["c", -0.18, 0.09, -0.36, 0.09, -0.54, 0], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["l", -0.06, -0.15], ["l", 0, -3.54], ["c", 0, -3.48, 0, -3.54, 0.06, -3.66], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["z"], ["m", 7.71, 0.63], ["c", -0.36, -0.06, -0.9, -0.06, -1.14, 0], ["c", -0.3, 0.03, -0.66, 0.24, -0.87, 0.42], ["c", -0.6, 0.54, -0.9, 1.62, -0.75, 2.82], ["c", 0.12, 0.93, 0.51, 1.68, 1.11, 2.31], ["c", 0.75, 0.72, 1.83, 1.2, 2.85, 1.26], ["c", 1.05, 0.06, 1.83, -0.54, 2.1, -1.65], ["c", 0.21, -0.9, 0.12, -1.95, -0.24, -2.82], ["c", -0.36, -0.81, -1.08, -1.53, -1.95, -1.95], ["c", -0.3, -0.15, -0.78, -0.3, -1.11, -0.39], ["z"]], w: 16.83, h: 8.145}
+        , 'noteheads.whole': {d: [["M", 6.51, -4.05], ["c", 0.51, -0.03, 2.01, 0, 2.52, 0.03], ["c", 1.41, 0.18, 2.64, 0.51, 3.72, 1.08], ["c", 1.2, 0.63, 1.95, 1.41, 2.19, 2.31], ["c", 0.09, 0.33, 0.09, 0.9, -0, 1.23], ["c", -0.24, 0.9, -0.99, 1.68, -2.19, 2.31], ["c", -1.08, 0.57, -2.28, 0.9, -3.75, 1.08], ["c", -0.66, 0.06, -2.31, 0.06, -2.97, 0], ["c", -1.47, -0.18, -2.67, -0.51, -3.75, -1.08], ["c", -1.2, -0.63, -1.95, -1.41, -2.19, -2.31], ["c", -0.09, -0.33, -0.09, -0.9, -0, -1.23], ["c", 0.24, -0.9, 0.99, -1.68, 2.19, -2.31], ["c", 1.2, -0.63, 2.61, -0.99, 4.23, -1.11], ["z"], ["m", 0.57, 0.66], ["c", -0.87, -0.15, -1.53, 0, -2.04, 0.51], ["c", -0.15, 0.15, -0.24, 0.27, -0.33, 0.48], ["c", -0.24, 0.51, -0.36, 1.08, -0.33, 1.77], ["c", 0.03, 0.69, 0.18, 1.26, 0.42, 1.77], ["c", 0.6, 1.17, 1.74, 1.98, 3.18, 2.22], ["c", 1.11, 0.21, 1.95, -0.15, 2.34, -0.99], ["c", 0.24, -0.51, 0.36, -1.08, 0.33, -1.8], ["c", -0.06, -1.11, -0.45, -2.04, -1.17, -2.76], ["c", -0.63, -0.63, -1.47, -1.05, -2.4, -1.2], ["z"]], w: 14.985, h: 8.097}
+        , 'noteheads.half': {d: [["M", 7.44, -4.05], ["c", 0.06, -0.03, 0.27, -0.03, 0.48, -0.03], ["c", 1.05, 0, 1.71, 0.24, 2.1, 0.81], ["c", 0.42, 0.6, 0.45, 1.35, 0.18, 2.4], ["c", -0.42, 1.59, -1.14, 2.73, -2.16, 3.39], ["c", -1.41, 0.93, -3.18, 1.44, -5.4, 1.53], ["c", -1.17, 0.03, -1.89, -0.21, -2.28, -0.81], ["c", -0.42, -0.6, -0.45, -1.35, -0.18, -2.4], ["c", 0.42, -1.59, 1.14, -2.73, 2.16, -3.39], ["c", 0.63, -0.42, 1.23, -0.72, 1.98, -0.96], ["c", 0.9, -0.3, 1.65, -0.42, 3.12, -0.54], ["z"], ["m", 1.29, 0.87], ["c", -0.27, -0.09, -0.63, -0.12, -0.9, -0.03], ["c", -0.72, 0.24, -1.53, 0.69, -3.27, 1.8], ["c", -2.34, 1.5, -3.3, 2.25, -3.57, 2.79], ["c", -0.36, 0.72, -0.06, 1.5, 0.66, 1.77], ["c", 0.24, 0.12, 0.69, 0.09, 0.99, 0], ["c", 0.84, -0.3, 1.92, -0.93, 4.14, -2.37], ["c", 1.62, -1.08, 2.37, -1.71, 2.61, -2.19], ["c", 0.36, -0.72, 0.06, -1.5, -0.66, -1.77], ["z"]], w: 10.37, h: 8.132}
+        , 'noteheads.quarter': {d: [["M", 6.09, -4.05], ["c", 0.36, -0.03, 1.2, 0, 1.53, 0.06], ["c", 1.17, 0.24, 1.89, 0.84, 2.16, 1.83], ["c", 0.06, 0.18, 0.06, 0.3, 0.06, 0.66], ["c", 0, 0.45, 0, 0.63, -0.15, 1.08], ["c", -0.66, 2.04, -3.06, 3.93, -5.52, 4.38], ["c", -0.54, 0.09, -1.44, 0.09, -1.83, 0.03], ["c", -1.23, -0.27, -1.98, -0.87, -2.25, -1.86], ["c", -0.06, -0.18, -0.06, -0.3, -0.06, -0.66], ["c", 0, -0.45, 0, -0.63, 0.15, -1.08], ["c", 0.24, -0.78, 0.75, -1.53, 1.44, -2.22], ["c", 1.2, -1.2, 2.85, -2.01, 4.47, -2.22], ["z"]], w: 9.81, h: 8.094}
+        , 'rests.whole': {d: [["M", 0.06, 0.03], ["l", 0.09, -0.06], ["l", 5.46, 0], ["l", 5.49, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 2.19], ["l", 0, 2.19], ["l", -0.06, 0.09], ["l", -0.09, 0.06], ["l", -5.49, 0], ["l", -5.46, 0], ["l", -0.09, -0.06], ["l", -0.06, -0.09], ["l", 0, -2.19], ["l", 0, -2.19], ["z"]], w: 11.25, h: 4.68}
+        , 'rests.half': {d: [["M", 0.06, -4.62], ["l", 0.09, -0.06], ["l", 5.46, 0], ["l", 5.49, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 2.19], ["l", 0, 2.19], ["l", -0.06, 0.09], ["l", -0.09, 0.06], ["l", -5.49, 0], ["l", -5.46, 0], ["l", -0.09, -0.06], ["l", -0.06, -0.09], ["l", 0, -2.19], ["l", 0, -2.19], ["z"]], w: 11.25, h: 4.68}
+        , 'rests.quarter': {d: [["M", 1.89, -11.82], ["c", 0.12, -0.06, 0.24, -0.06, 0.36, -0.03], ["c", 0.09, 0.06, 4.74, 5.58, 4.86, 5.82], ["c", 0.21, 0.39, 0.15, 0.78, -0.15, 1.26], ["c", -0.24, 0.33, -0.72, 0.81, -1.62, 1.56], ["c", -0.45, 0.36, -0.87, 0.75, -0.96, 0.84], ["c", -0.93, 0.99, -1.14, 2.49, -0.6, 3.63], ["c", 0.18, 0.39, 0.27, 0.48, 1.32, 1.68], ["c", 1.92, 2.25, 1.83, 2.16, 1.83, 2.34], ["c", -0, 0.18, -0.18, 0.36, -0.36, 0.39], ["c", -0.15, -0, -0.27, -0.06, -0.48, -0.27], ["c", -0.75, -0.75, -2.46, -1.29, -3.39, -1.08], ["c", -0.45, 0.09, -0.69, 0.27, -0.9, 0.69], ["c", -0.12, 0.3, -0.21, 0.66, -0.24, 1.14], ["c", -0.03, 0.66, 0.09, 1.35, 0.3, 2.01], ["c", 0.15, 0.42, 0.24, 0.66, 0.45, 0.96], ["c", 0.18, 0.24, 0.18, 0.33, 0.03, 0.42], ["c", -0.12, 0.06, -0.18, 0.03, -0.45, -0.3], ["c", -1.08, -1.38, -2.07, -3.36, -2.4, -4.83], ["c", -0.27, -1.05, -0.15, -1.77, 0.27, -2.07], ["c", 0.21, -0.12, 0.42, -0.15, 0.87, -0.15], ["c", 0.87, 0.06, 2.1, 0.39, 3.3, 0.9], ["l", 0.39, 0.18], ["l", -1.65, -1.95], ["c", -2.52, -2.97, -2.61, -3.09, -2.7, -3.27], ["c", -0.09, -0.24, -0.12, -0.48, -0.03, -0.75], ["c", 0.15, -0.48, 0.57, -0.96, 1.83, -2.01], ["c", 0.45, -0.36, 0.84, -0.72, 0.93, -0.78], ["c", 0.69, -0.75, 1.02, -1.8, 0.9, -2.79], ["c", -0.06, -0.33, -0.21, -0.84, -0.39, -1.11], ["c", -0.09, -0.15, -0.45, -0.6, -0.81, -1.05], ["c", -0.36, -0.42, -0.69, -0.81, -0.72, -0.87], ["c", -0.09, -0.18, -0, -0.42, 0.21, -0.51], ["z"]], w: 7.888, h: 21.435}
+        , 'rests.8th': {d: [["M", 1.68, -6.12], ["c", 0.66, -0.09, 1.23, 0.09, 1.68, 0.51], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.12, 0.27, 0.33, 0.45, 0.6, 0.48], ["c", 0.12, 0, 0.18, 0, 0.33, -0.09], ["c", 0.39, -0.18, 1.32, -1.29, 1.68, -1.98], ["c", 0.09, -0.21, 0.24, -0.3, 0.39, -0.3], ["c", 0.12, 0, 0.27, 0.09, 0.33, 0.18], ["c", 0.03, 0.06, -0.27, 1.11, -1.86, 6.42], ["c", -1.02, 3.48, -1.89, 6.39, -1.92, 6.42], ["c", 0, 0.03, -0.12, 0.12, -0.24, 0.15], ["c", -0.18, 0.09, -0.21, 0.09, -0.45, 0.09], ["c", -0.24, 0, -0.3, 0, -0.48, -0.06], ["c", -0.09, -0.06, -0.21, -0.12, -0.21, -0.15], ["c", -0.06, -0.03, 0.15, -0.57, 1.68, -4.92], ["c", 0.96, -2.67, 1.74, -4.89, 1.71, -4.89], ["l", -0.51, 0.15], ["c", -1.08, 0.36, -1.74, 0.48, -2.55, 0.48], ["c", -0.66, 0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.33, -0.45, 0.84, -0.81, 1.38, -0.9], ["z"]], w: 7.534, h: 13.883}
+        , 'rests.16th': {d: [["M", 3.33, -6.12], ["c", 0.66, -0.09, 1.23, 0.09, 1.68, 0.51], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.15, 0.39, 0.57, 0.57, 0.87, 0.42], ["c", 0.39, -0.18, 1.2, -1.23, 1.62, -2.07], ["c", 0.06, -0.15, 0.24, -0.24, 0.36, -0.24], ["c", 0.12, 0, 0.27, 0.09, 0.33, 0.18], ["c", 0.03, 0.06, -0.45, 1.86, -2.67, 10.17], ["c", -1.5, 5.55, -2.73, 10.14, -2.76, 10.17], ["c", -0.03, 0.03, -0.12, 0.12, -0.24, 0.15], ["c", -0.18, 0.09, -0.21, 0.09, -0.45, 0.09], ["c", -0.24, 0, -0.3, 0, -0.48, -0.06], ["c", -0.09, -0.06, -0.21, -0.12, -0.21, -0.15], ["c", -0.06, -0.03, 0.12, -0.57, 1.44, -4.92], ["c", 0.81, -2.67, 1.47, -4.86, 1.47, -4.89], ["c", -0.03, 0, -0.27, 0.06, -0.54, 0.15], ["c", -1.08, 0.36, -1.77, 0.48, -2.58, 0.48], ["c", -0.66, 0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.72, -1.05, 2.22, -1.23, 3.06, -0.42], ["c", 0.3, 0.33, 0.42, 0.6, 0.6, 1.38], ["c", 0.09, 0.45, 0.21, 0.78, 0.33, 0.9], ["c", 0.09, 0.09, 0.27, 0.18, 0.45, 0.21], ["c", 0.12, 0, 0.18, 0, 0.33, -0.09], ["c", 0.33, -0.15, 1.02, -0.93, 1.41, -1.59], ["c", 0.12, -0.21, 0.18, -0.39, 0.39, -1.08], ["c", 0.66, -2.1, 1.17, -3.84, 1.17, -3.87], ["c", 0, 0, -0.21, 0.06, -0.42, 0.15], ["c", -0.51, 0.15, -1.2, 0.33, -1.68, 0.42], ["c", -0.33, 0.06, -0.51, 0.06, -0.96, 0.06], ["c", -0.66, 0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.33, -0.45, 0.84, -0.81, 1.38, -0.9], ["z"]], w: 9.724, h: 21.383}
+        , 'rests.32nd': {d: [["M", 4.23, -13.62], ["c", 0.66, -0.09, 1.23, 0.09, 1.68, 0.51], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.12, 0.27, 0.33, 0.45, 0.6, 0.48], ["c", 0.12, 0, 0.18, 0, 0.27, -0.06], ["c", 0.33, -0.21, 0.99, -1.11, 1.44, -1.98], ["c", 0.09, -0.24, 0.21, -0.33, 0.39, -0.33], ["c", 0.12, 0, 0.27, 0.09, 0.33, 0.18], ["c", 0.03, 0.06, -0.57, 2.67, -3.21, 13.89], ["c", -1.8, 7.62, -3.3, 13.89, -3.3, 13.92], ["c", -0.03, 0.06, -0.12, 0.12, -0.24, 0.18], ["c", -0.21, 0.09, -0.24, 0.09, -0.48, 0.09], ["c", -0.24, -0, -0.3, -0, -0.48, -0.06], ["c", -0.09, -0.06, -0.21, -0.12, -0.21, -0.15], ["c", -0.06, -0.03, 0.09, -0.57, 1.23, -4.92], ["c", 0.69, -2.67, 1.26, -4.86, 1.29, -4.89], ["c", 0, -0.03, -0.12, -0.03, -0.48, 0.12], ["c", -1.17, 0.39, -2.22, 0.57, -3, 0.54], ["c", -0.42, -0.03, -0.75, -0.12, -1.11, -0.3], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.72, -1.05, 2.22, -1.23, 3.06, -0.42], ["c", 0.3, 0.33, 0.42, 0.6, 0.6, 1.38], ["c", 0.09, 0.45, 0.21, 0.78, 0.33, 0.9], ["c", 0.12, 0.09, 0.3, 0.18, 0.48, 0.21], ["c", 0.12, -0, 0.18, -0, 0.3, -0.09], ["c", 0.42, -0.21, 1.29, -1.29, 1.56, -1.89], ["c", 0.03, -0.12, 1.23, -4.59, 1.23, -4.65], ["c", 0, -0.03, -0.18, 0.03, -0.39, 0.12], ["c", -0.63, 0.18, -1.2, 0.36, -1.74, 0.45], ["c", -0.39, 0.06, -0.54, 0.06, -1.02, 0.06], ["c", -0.66, -0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.72, -1.05, 2.22, -1.23, 3.06, -0.42], ["c", 0.3, 0.33, 0.42, 0.6, 0.6, 1.38], ["c", 0.09, 0.45, 0.21, 0.78, 0.33, 0.9], ["c", 0.18, 0.18, 0.51, 0.27, 0.72, 0.15], ["c", 0.3, -0.12, 0.69, -0.57, 1.08, -1.17], ["c", 0.42, -0.6, 0.39, -0.51, 1.05, -3.03], ["c", 0.33, -1.26, 0.6, -2.31, 0.6, -2.34], ["c", 0, -0, -0.21, 0.03, -0.45, 0.12], ["c", -0.57, 0.18, -1.14, 0.33, -1.62, 0.42], ["c", -0.33, 0.06, -0.51, 0.06, -0.96, 0.06], ["c", -0.66, -0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.33, -0.45, 0.84, -0.81, 1.38, -0.9], ["z"]], w: 11.373, h: 28.883}
+        , 'rests.64th': {d: [["M", 5.13, -13.62], ["c", 0.66, -0.09, 1.23, 0.09, 1.68, 0.51], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.15, 0.63, 0.21, 0.81, 0.33, 0.96], ["c", 0.18, 0.21, 0.54, 0.3, 0.75, 0.18], ["c", 0.24, -0.12, 0.63, -0.66, 1.08, -1.56], ["c", 0.33, -0.66, 0.39, -0.72, 0.6, -0.72], ["c", 0.12, 0, 0.27, 0.09, 0.33, 0.18], ["c", 0.03, 0.06, -0.69, 3.66, -3.54, 17.64], ["c", -1.95, 9.66, -3.57, 17.61, -3.57, 17.64], ["c", -0.03, 0.06, -0.12, 0.12, -0.24, 0.18], ["c", -0.21, 0.09, -0.24, 0.09, -0.48, 0.09], ["c", -0.24, 0, -0.3, 0, -0.48, -0.06], ["c", -0.09, -0.06, -0.21, -0.12, -0.21, -0.15], ["c", -0.06, -0.03, 0.06, -0.57, 1.05, -4.95], ["c", 0.6, -2.7, 1.08, -4.89, 1.08, -4.92], ["c", 0, 0, -0.24, 0.06, -0.51, 0.15], ["c", -0.66, 0.24, -1.2, 0.36, -1.77, 0.48], ["c", -0.42, 0.06, -0.57, 0.06, -1.05, 0.06], ["c", -0.69, 0, -0.87, -0.03, -1.35, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.72, -1.05, 2.22, -1.23, 3.06, -0.42], ["c", 0.3, 0.33, 0.42, 0.6, 0.6, 1.38], ["c", 0.09, 0.45, 0.21, 0.78, 0.33, 0.9], ["c", 0.09, 0.09, 0.27, 0.18, 0.45, 0.21], ["c", 0.21, 0.03, 0.39, -0.09, 0.72, -0.42], ["c", 0.45, -0.45, 1.02, -1.26, 1.17, -1.65], ["c", 0.03, -0.09, 0.27, -1.14, 0.54, -2.34], ["c", 0.27, -1.2, 0.48, -2.19, 0.51, -2.22], ["c", 0, -0.03, -0.09, -0.03, -0.48, 0.12], ["c", -1.17, 0.39, -2.22, 0.57, -3, 0.54], ["c", -0.42, -0.03, -0.75, -0.12, -1.11, -0.3], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.15, 0.39, 0.57, 0.57, 0.9, 0.42], ["c", 0.36, -0.18, 1.2, -1.26, 1.47, -1.89], ["c", 0.03, -0.09, 0.3, -1.2, 0.57, -2.43], ["l", 0.51, -2.28], ["l", -0.54, 0.18], ["c", -1.11, 0.36, -1.8, 0.48, -2.61, 0.48], ["c", -0.66, 0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.15, 0.63, 0.21, 0.81, 0.33, 0.96], ["c", 0.21, 0.21, 0.54, 0.3, 0.75, 0.18], ["c", 0.36, -0.18, 0.93, -0.93, 1.29, -1.68], ["c", 0.12, -0.24, 0.18, -0.48, 0.63, -2.55], ["l", 0.51, -2.31], ["c", 0, -0.03, -0.18, 0.03, -0.39, 0.12], ["c", -1.14, 0.36, -2.1, 0.54, -2.82, 0.51], ["c", -0.42, -0.03, -0.75, -0.12, -1.11, -0.3], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.33, -0.45, 0.84, -0.81, 1.38, -0.9], ["z"]], w: 12.453, h: 36.383}
+        , 'rests.128th': {d: [["M", 6.03, -21.12], ["c", 0.66, -0.09, 1.23, 0.09, 1.68, 0.51], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.12, 0.27, 0.33, 0.45, 0.6, 0.48], ["c", 0.21, 0, 0.33, -0.06, 0.54, -0.36], ["c", 0.15, -0.21, 0.54, -0.93, 0.78, -1.47], ["c", 0.15, -0.33, 0.18, -0.39, 0.3, -0.48], ["c", 0.18, -0.09, 0.45, 0, 0.51, 0.15], ["c", 0.03, 0.09, -7.11, 42.75, -7.17, 42.84], ["c", -0.03, 0.03, -0.15, 0.09, -0.24, 0.15], ["c", -0.18, 0.06, -0.24, 0.06, -0.45, 0.06], ["c", -0.24, -0, -0.3, -0, -0.48, -0.06], ["c", -0.09, -0.06, -0.21, -0.12, -0.21, -0.15], ["c", -0.06, -0.03, 0.03, -0.57, 0.84, -4.98], ["c", 0.51, -2.7, 0.93, -4.92, 0.9, -4.92], ["c", 0, -0, -0.15, 0.06, -0.36, 0.12], ["c", -0.78, 0.27, -1.62, 0.48, -2.31, 0.57], ["c", -0.15, 0.03, -0.54, 0.03, -0.81, 0.03], ["c", -0.66, -0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.12, 0.27, 0.33, 0.45, 0.63, 0.48], ["c", 0.12, -0, 0.18, -0, 0.3, -0.09], ["c", 0.42, -0.21, 1.14, -1.11, 1.5, -1.83], ["c", 0.12, -0.27, 0.12, -0.27, 0.54, -2.52], ["c", 0.24, -1.23, 0.42, -2.25, 0.39, -2.25], ["c", 0, -0, -0.24, 0.06, -0.51, 0.18], ["c", -1.26, 0.39, -2.25, 0.57, -3.06, 0.54], ["c", -0.42, -0.03, -0.75, -0.12, -1.11, -0.3], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.15, 0.63, 0.21, 0.81, 0.33, 0.96], ["c", 0.18, 0.21, 0.51, 0.3, 0.75, 0.18], ["c", 0.36, -0.15, 1.05, -0.99, 1.41, -1.77], ["l", 0.15, -0.3], ["l", 0.42, -2.25], ["c", 0.21, -1.26, 0.42, -2.28, 0.39, -2.28], ["l", -0.51, 0.15], ["c", -1.11, 0.39, -1.89, 0.51, -2.7, 0.51], ["c", -0.66, -0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.15, 0.63, 0.21, 0.81, 0.33, 0.96], ["c", 0.18, 0.18, 0.48, 0.27, 0.72, 0.21], ["c", 0.33, -0.12, 1.14, -1.26, 1.41, -1.95], ["c", 0, -0.09, 0.21, -1.11, 0.45, -2.34], ["c", 0.21, -1.2, 0.39, -2.22, 0.39, -2.28], ["c", 0.03, -0.03, 0, -0.03, -0.45, 0.12], ["c", -0.57, 0.18, -1.2, 0.33, -1.71, 0.42], ["c", -0.3, 0.06, -0.51, 0.06, -0.93, 0.06], ["c", -0.66, -0, -0.84, -0.03, -1.32, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.36, -0.54, 0.96, -0.87, 1.65, -0.93], ["c", 0.54, -0.03, 1.02, 0.15, 1.41, 0.54], ["c", 0.27, 0.3, 0.39, 0.54, 0.57, 1.26], ["c", 0.09, 0.33, 0.18, 0.66, 0.21, 0.72], ["c", 0.12, 0.27, 0.33, 0.45, 0.6, 0.48], ["c", 0.18, -0, 0.36, -0.09, 0.57, -0.33], ["c", 0.33, -0.36, 0.78, -1.14, 0.93, -1.56], ["c", 0.03, -0.12, 0.24, -1.2, 0.45, -2.4], ["c", 0.24, -1.2, 0.42, -2.22, 0.42, -2.28], ["c", 0.03, -0.03, 0, -0.03, -0.39, 0.09], ["c", -1.05, 0.36, -1.8, 0.48, -2.58, 0.48], ["c", -0.63, -0, -0.84, -0.03, -1.29, -0.27], ["c", -1.32, -0.63, -1.77, -2.16, -1.02, -3.3], ["c", 0.33, -0.45, 0.84, -0.81, 1.38, -0.9], ["z"]], w: 12.992, h: 43.883}
+        , 'scripts.lbrace': {d:[["M", -20, -515], ["v", -2],["c", 35, -16, 53, -48, 53, -91],["c", 0, -34, -11, -84, -35, -150],["c", -13, -41, -18, -76, -18, -109], ["c", 0, -69, 29, -121, 87, -160], ["c", -44, 35, -63, 77, -63, 125], ["c", 0, 26, 8, 56, 21, 91], ["c", 27, 71, 37, 130, 37, 174], ["c", 0, 62, -26, 105, -77, 121], ["c", 52, 16, 77, 63, 77, 126], ["c", 0, 46, -10, 102, -37, 172], ["c", -13, 35, -21, 68, -21, 94], ["c", 0, 48, 19, 89, 63, 124], ["c", -58, -39, -87, -91, -87, -160], ["c", 0, -33, 5, -68, 18, -109], ["c", 24, -66, 35, -116, 35, -150], ["c", 0, -44, -18, -80, -53, -96], ["z"]], w:40, h:1027 }
+        , 'scripts.ufermata': {d: [["M", -0.75, -10.77], ["c", 0.12, 0, 0.45, -0.03, 0.69, -0.03], ["c", 2.91, -0.03, 5.55, 1.53, 7.41, 4.35], ["c", 1.17, 1.71, 1.95, 3.72, 2.43, 6.03], ["c", 0.12, 0.51, 0.12, 0.57, 0.03, 0.69], ["c", -0.12, 0.21, -0.48, 0.27, -0.69, 0.12], ["c", -0.12, -0.09, -0.18, -0.24, -0.27, -0.69], ["c", -0.78, -3.63, -3.42, -6.54, -6.78, -7.38], ["c", -0.78, -0.21, -1.2, -0.24, -2.07, -0.24], ["c", -0.63, -0, -0.84, -0, -1.2, 0.06], ["c", -1.83, 0.27, -3.42, 1.08, -4.8, 2.37], ["c", -1.41, 1.35, -2.4, 3.21, -2.85, 5.19], ["c", -0.09, 0.45, -0.15, 0.6, -0.27, 0.69], ["c", -0.21, 0.15, -0.57, 0.09, -0.69, -0.12], ["c", -0.09, -0.12, -0.09, -0.18, 0.03, -0.69], ["c", 0.33, -1.62, 0.78, -3, 1.47, -4.38], ["c", 1.77, -3.54, 4.44, -5.67, 7.56, -5.97], ["z"], ["m", 0.33, 7.47], ["c", 1.38, -0.3, 2.58, 0.9, 2.31, 2.25], ["c", -0.15, 0.72, -0.78, 1.35, -1.47, 1.5], ["c", -1.38, 0.27, -2.58, -0.93, -2.31, -2.31], ["c", 0.15, -0.69, 0.78, -1.29, 1.47, -1.44], ["z"]], w: 19.748, h: 11.289}
+        , 'scripts.dfermata': {d: [["M", -9.63, -0.42], ["c", 0.15, -0.09, 0.36, -0.06, 0.51, 0.03], ["c", 0.12, 0.09, 0.18, 0.24, 0.27, 0.66], ["c", 0.78, 3.66, 3.42, 6.57, 6.78, 7.41], ["c", 0.78, 0.21, 1.2, 0.24, 2.07, 0.24], ["c", 0.63, -0, 0.84, -0, 1.2, -0.06], ["c", 1.83, -0.27, 3.42, -1.08, 4.8, -2.37], ["c", 1.41, -1.35, 2.4, -3.21, 2.85, -5.22], ["c", 0.09, -0.42, 0.15, -0.57, 0.27, -0.66], ["c", 0.21, -0.15, 0.57, -0.09, 0.69, 0.12], ["c", 0.09, 0.12, 0.09, 0.18, -0.03, 0.69], ["c", -0.33, 1.62, -0.78, 3, -1.47, 4.38], ["c", -1.92, 3.84, -4.89, 6, -8.31, 6], ["c", -3.42, 0, -6.39, -2.16, -8.31, -6], ["c", -0.48, -0.96, -0.84, -1.92, -1.14, -2.97], ["c", -0.18, -0.69, -0.42, -1.74, -0.42, -1.92], ["c", 0, -0.12, 0.09, -0.27, 0.24, -0.33], ["z"], ["m", 9.21, 0], ["c", 1.2, -0.27, 2.34, 0.63, 2.34, 1.86], ["c", -0, 0.9, -0.66, 1.68, -1.5, 1.89], ["c", -1.38, 0.27, -2.58, -0.93, -2.31, -2.31], ["c", 0.15, -0.69, 0.78, -1.29, 1.47, -1.44], ["z"]], w: 19.744, h: 11.274}
+        , 'scripts.sforzato': {d: [["M", -6.45, -3.69], ["c", 0.06, -0.03, 0.15, -0.06, 0.18, -0.06], ["c", 0.06, 0, 2.85, 0.72, 6.24, 1.59], ["l", 6.33, 1.65], ["c", 0.33, 0.06, 0.45, 0.21, 0.45, 0.51], ["c", 0, 0.3, -0.12, 0.45, -0.45, 0.51], ["l", -6.33, 1.65], ["c", -3.39, 0.87, -6.18, 1.59, -6.21, 1.59], ["c", -0.21, -0, -0.48, -0.24, -0.51, -0.45], ["c", 0, -0.15, 0.06, -0.36, 0.18, -0.45], ["c", 0.09, -0.06, 0.87, -0.27, 3.84, -1.05], ["c", 2.04, -0.54, 3.84, -0.99, 4.02, -1.02], ["c", 0.15, -0.06, 1.14, -0.24, 2.22, -0.42], ["c", 1.05, -0.18, 1.92, -0.36, 1.92, -0.36], ["c", 0, -0, -0.87, -0.18, -1.92, -0.36], ["c", -1.08, -0.18, -2.07, -0.36, -2.22, -0.42], ["c", -0.18, -0.03, -1.98, -0.48, -4.02, -1.02], ["c", -2.97, -0.78, -3.75, -0.99, -3.84, -1.05], ["c", -0.12, -0.09, -0.18, -0.3, -0.18, -0.45], ["c", 0.03, -0.15, 0.15, -0.3, 0.3, -0.39], ["z"]], w: 13.5, h: 7.5}
+        , 'scripts.staccato': {d: [["M", -0.36, -1.47], ["c", 0.93, -0.21, 1.86, 0.51, 1.86, 1.47], ["c", -0, 0.93, -0.87, 1.65, -1.8, 1.47], ["c", -0.54, -0.12, -1.02, -0.57, -1.14, -1.08], ["c", -0.21, -0.81, 0.27, -1.65, 1.08, -1.86], ["z"]], w: 2.989, h: 3.004}
+        , 'scripts.tenuto': {d: [["M", -4.2, -0.48], ["l", 0.12, -0.06], ["l", 4.08, 0], ["l", 4.08, 0], ["l", 0.12, 0.06], ["c", 0.39, 0.21, 0.39, 0.75, 0, 0.96], ["l", -0.12, 0.06], ["l", -4.08, 0], ["l", -4.08, 0], ["l", -0.12, -0.06], ["c", -0.39, -0.21, -0.39, -0.75, 0, -0.96], ["z"]], w: 8.985, h: 1.08}
+        , 'scripts.umarcato': {d: [["M", -0.15, -8.19], ["c", 0.15, -0.12, 0.36, -0.03, 0.45, 0.15], ["c", 0.21, 0.42, 3.45, 7.65, 3.45, 7.71], ["c", -0, 0.12, -0.12, 0.27, -0.21, 0.3], ["c", -0.03, 0.03, -0.51, 0.03, -1.14, 0.03], ["c", -1.05, 0, -1.08, 0, -1.17, -0.06], ["c", -0.09, -0.06, -0.24, -0.36, -1.17, -2.4], ["c", -0.57, -1.29, -1.05, -2.34, -1.08, -2.34], ["c", -0, -0.03, -0.51, 1.02, -1.08, 2.34], ["c", -0.93, 2.07, -1.08, 2.34, -1.14, 2.4], ["c", -0.06, 0.03, -0.15, 0.06, -0.18, 0.06], ["c", -0.15, 0, -0.33, -0.18, -0.33, -0.33], ["c", -0, -0.06, 3.24, -7.32, 3.45, -7.71], ["c", 0.03, -0.06, 0.09, -0.15, 0.15, -0.15], ["z"]], w: 7.5, h: 8.245}
+        , 'scripts.dmarcato': {d: [["M", -3.57, 0.03], ["c", 0.03, 0, 0.57, -0.03, 1.17, -0.03], ["c", 1.05, 0, 1.08, 0, 1.17, 0.06], ["c", 0.09, 0.06, 0.24, 0.36, 1.17, 2.4], ["c", 0.57, 1.29, 1.05, 2.34, 1.08, 2.34], ["c", 0, 0.03, 0.51, -1.02, 1.08, -2.34], ["c", 0.93, -2.07, 1.08, -2.34, 1.14, -2.4], ["c", 0.06, -0.03, 0.15, -0.06, 0.18, -0.06], ["c", 0.15, 0, 0.33, 0.18, 0.33, 0.33], ["c", 0, 0.09, -3.45, 7.74, -3.54, 7.83], ["c", -0.12, 0.12, -0.3, 0.12, -0.42, 0], ["c", -0.09, -0.09, -3.54, -7.74, -3.54, -7.83], ["c", 0, -0.09, 0.12, -0.27, 0.18, -0.3], ["z"]], w: 7.5, h: 8.25}
+        , 'scripts.stopped': {d: [["M", -0.27, -4.08], ["c", 0.18, -0.09, 0.36, -0.09, 0.54, 0], ["c", 0.18, 0.09, 0.24, 0.15, 0.33, 0.3], ["l", 0.06, 0.15], ["l", -0, 1.5], ["l", -0, 1.47], ["l", 1.47, 0], ["l", 1.5, 0], ["l", 0.15, 0.06], ["c", 0.15, 0.09, 0.21, 0.15, 0.3, 0.33], ["c", 0.09, 0.18, 0.09, 0.36, -0, 0.54], ["c", -0.09, 0.18, -0.15, 0.24, -0.33, 0.33], ["c", -0.12, 0.06, -0.18, 0.06, -1.62, 0.06], ["l", -1.47, 0], ["l", -0, 1.47], ["l", -0, 1.47], ["l", -0.06, 0.15], ["c", -0.09, 0.18, -0.15, 0.24, -0.33, 0.33], ["c", -0.18, 0.09, -0.36, 0.09, -0.54, 0], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["l", -0.06, -0.15], ["l", -0, -1.47], ["l", -0, -1.47], ["l", -1.47, 0], ["c", -1.44, 0, -1.5, 0, -1.62, -0.06], ["c", -0.18, -0.09, -0.24, -0.15, -0.33, -0.33], ["c", -0.09, -0.18, -0.09, -0.36, -0, -0.54], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["l", 0.15, -0.06], ["l", 1.47, 0], ["l", 1.47, 0], ["l", -0, -1.47], ["c", -0, -1.44, -0, -1.5, 0.06, -1.62], ["c", 0.09, -0.18, 0.15, -0.24, 0.33, -0.33], ["z"]], w: 8.295, h: 8.295}
+        , 'scripts.upbow': {d: [["M", -4.65, -15.54], ["c", 0.12, -0.09, 0.36, -0.06, 0.48, 0.03], ["c", 0.03, 0.03, 0.09, 0.09, 0.12, 0.15], ["c", 0.03, 0.06, 0.66, 2.13, 1.41, 4.62], ["c", 1.35, 4.41, 1.38, 4.56, 2.01, 6.96], ["l", 0.63, 2.46], ["l", 0.63, -2.46], ["c", 0.63, -2.4, 0.66, -2.55, 2.01, -6.96], ["c", 0.75, -2.49, 1.38, -4.56, 1.41, -4.62], ["c", 0.06, -0.15, 0.18, -0.21, 0.36, -0.24], ["c", 0.15, 0, 0.3, 0.06, 0.39, 0.18], ["c", 0.15, 0.21, 0.24, -0.18, -2.1, 7.56], ["c", -1.2, 3.96, -2.22, 7.32, -2.25, 7.41], ["c", 0, 0.12, -0.06, 0.27, -0.09, 0.3], ["c", -0.12, 0.21, -0.6, 0.21, -0.72, 0], ["c", -0.03, -0.03, -0.09, -0.18, -0.09, -0.3], ["c", -0.03, -0.09, -1.05, -3.45, -2.25, -7.41], ["c", -2.34, -7.74, -2.25, -7.35, -2.1, -7.56], ["c", 0.03, -0.03, 0.09, -0.09, 0.15, -0.12], ["z"]], w: 9.73, h: 15.608}
+        , 'scripts.downbow': {d: [["M", -5.55, -9.93], ["l", 0.09, -0.06], ["l", 5.46, 0], ["l", 5.46, 0], ["l", 0.09, 0.06], ["l", 0.06, 0.09], ["l", 0, 4.77], ["c", 0, 5.28, 0, 4.89, -0.18, 5.01], ["c", -0.18, 0.12, -0.42, 0.06, -0.54, -0.12], ["c", -0.06, -0.09, -0.06, -0.18, -0.06, -2.97], ["l", 0, -2.85], ["l", -4.83, 0], ["l", -4.83, 0], ["l", 0, 2.85], ["c", 0, 2.79, 0, 2.88, -0.06, 2.97], ["c", -0.15, 0.24, -0.51, 0.24, -0.66, 0], ["c", -0.06, -0.09, -0.06, -0.21, -0.06, -4.89], ["l", 0, -4.77], ["z"]], w: 11.22, h: 9.992}
+        , 'scripts.turn': {d: [["M", -4.77, -3.9], ["c", 0.36, -0.06, 1.05, -0.06, 1.44, 0.03], ["c", 0.78, 0.15, 1.5, 0.51, 2.34, 1.14], ["c", 0.6, 0.45, 1.05, 0.87, 2.22, 2.01], ["c", 1.11, 1.08, 1.62, 1.5, 2.22, 1.86], ["c", 0.6, 0.36, 1.32, 0.57, 1.92, 0.57], ["c", 0.9, -0, 1.71, -0.57, 1.89, -1.35], ["c", 0.24, -0.93, -0.39, -1.89, -1.35, -2.1], ["l", -0.15, -0.06], ["l", -0.09, 0.15], ["c", -0.03, 0.09, -0.15, 0.24, -0.24, 0.33], ["c", -0.72, 0.72, -2.04, 0.54, -2.49, -0.36], ["c", -0.48, -0.93, 0.03, -1.86, 1.17, -2.19], ["c", 0.3, -0.09, 1.02, -0.09, 1.35, -0], ["c", 0.99, 0.27, 1.74, 0.87, 2.25, 1.83], ["c", 0.69, 1.41, 0.63, 3, -0.21, 4.26], ["c", -0.21, 0.3, -0.69, 0.81, -0.99, 1.02], ["c", -0.3, 0.21, -0.84, 0.45, -1.17, 0.54], ["c", -1.23, 0.36, -2.49, 0.15, -3.72, -0.6], ["c", -0.75, -0.48, -1.41, -1.02, -2.85, -2.46], ["c", -1.11, -1.08, -1.62, -1.5, -2.22, -1.86], ["c", -0.6, -0.36, -1.32, -0.57, -1.92, -0.57], ["c", -0.9, 0, -1.71, 0.57, -1.89, 1.35], ["c", -0.24, 0.93, 0.39, 1.89, 1.35, 2.1], ["l", 0.15, 0.06], ["l", 0.09, -0.15], ["c", 0.03, -0.09, 0.15, -0.24, 0.24, -0.33], ["c", 0.72, -0.72, 2.04, -0.54, 2.49, 0.36], ["c", 0.48, 0.93, -0.03, 1.86, -1.17, 2.19], ["c", -0.3, 0.09, -1.02, 0.09, -1.35, 0], ["c", -0.99, -0.27, -1.74, -0.87, -2.25, -1.83], ["c", -0.69, -1.41, -0.63, -3, 0.21, -4.26], ["c", 0.21, -0.3, 0.69, -0.81, 0.99, -1.02], ["c", 0.48, -0.33, 1.11, -0.57, 1.74, -0.66], ["z"]], w: 16.366, h: 7.893}
+        , 'scripts.trill': {d: [["M", -0.51, -16.02], ["c", 0.12, -0.09, 0.21, -0.18, 0.21, -0.18], ["l", -0.81, 4.02], ["l", -0.81, 4.02], ["c", 0.03, 0, 0.51, -0.27, 1.08, -0.6], ["c", 0.6, -0.3, 1.14, -0.63, 1.26, -0.66], ["c", 1.14, -0.54, 2.31, -0.6, 3.09, -0.18], ["c", 0.27, 0.15, 0.54, 0.36, 0.6, 0.51], ["l", 0.06, 0.12], ["l", 0.21, -0.21], ["c", 0.9, -0.81, 2.22, -0.99, 3.12, -0.42], ["c", 0.6, 0.42, 0.9, 1.14, 0.78, 2.07], ["c", -0.15, 1.29, -1.05, 2.31, -1.95, 2.25], ["c", -0.48, -0.03, -0.78, -0.3, -0.96, -0.81], ["c", -0.09, -0.27, -0.09, -0.9, -0.03, -1.2], ["c", 0.21, -0.75, 0.81, -1.23, 1.59, -1.32], ["l", 0.24, -0.03], ["l", -0.09, -0.12], ["c", -0.51, -0.66, -1.62, -0.63, -2.31, 0.03], ["c", -0.39, 0.42, -0.3, 0.09, -1.23, 4.77], ["l", -0.81, 4.14], ["c", -0.03, 0, -0.12, -0.03, -0.21, -0.09], ["c", -0.33, -0.15, -0.54, -0.18, -0.99, -0.18], ["c", -0.42, 0, -0.66, 0.03, -1.05, 0.18], ["c", -0.12, 0.06, -0.21, 0.09, -0.21, 0.09], ["c", 0, -0.03, 0.36, -1.86, 0.81, -4.11], ["c", 0.9, -4.47, 0.87, -4.26, 0.69, -4.53], ["c", -0.21, -0.36, -0.66, -0.51, -1.17, -0.36], ["c", -0.15, 0.06, -2.22, 1.14, -2.58, 1.38], ["c", -0.12, 0.09, -0.12, 0.09, -0.21, 0.6], ["l", -0.09, 0.51], ["l", 0.21, 0.24], ["c", 0.63, 0.75, 1.02, 1.47, 1.2, 2.19], ["c", 0.06, 0.27, 0.06, 0.36, 0.06, 0.81], ["c", 0, 0.42, 0, 0.54, -0.06, 0.78], ["c", -0.15, 0.54, -0.33, 0.93, -0.63, 1.35], ["c", -0.18, 0.24, -0.57, 0.63, -0.81, 0.78], ["c", -0.24, 0.15, -0.63, 0.36, -0.84, 0.42], ["c", -0.27, 0.06, -0.66, 0.06, -0.87, 0.03], ["c", -0.81, -0.18, -1.32, -1.05, -1.38, -2.46], ["c", -0.03, -0.6, 0.03, -0.99, 0.33, -2.46], ["c", 0.21, -1.08, 0.24, -1.32, 0.21, -1.29], ["c", -1.2, 0.48, -2.4, 0.75, -3.21, 0.72], ["c", -0.69, -0.06, -1.17, -0.3, -1.41, -0.72], ["c", -0.39, -0.75, -0.12, -1.8, 0.66, -2.46], ["c", 0.24, -0.18, 0.69, -0.42, 1.02, -0.51], ["c", 0.69, -0.18, 1.53, -0.15, 2.31, 0.09], ["c", 0.3, 0.09, 0.75, 0.3, 0.99, 0.45], ["c", 0.12, 0.09, 0.15, 0.09, 0.15, 0.03], ["c", 0.03, -0.03, 0.33, -1.59, 0.72, -3.45], ["c", 0.36, -1.86, 0.66, -3.42, 0.69, -3.45], ["c", 0, -0.03, 0.03, -0.03, 0.21, 0.03], ["c", 0.21, 0.06, 0.27, 0.06, 0.48, 0.06], ["c", 0.42, -0.03, 0.78, -0.18, 1.26, -0.48], ["c", 0.15, -0.12, 0.36, -0.27, 0.48, -0.39], ["z"], ["m", -5.73, 7.68], ["c", -0.27, -0.03, -0.96, -0.06, -1.2, -0.03], ["c", -0.81, 0.12, -1.35, 0.57, -1.5, 1.2], ["c", -0.18, 0.66, 0.12, 1.14, 0.75, 1.29], ["c", 0.66, 0.12, 1.92, -0.12, 3.18, -0.66], ["l", 0.33, -0.15], ["l", 0.09, -0.39], ["c", 0.06, -0.21, 0.09, -0.42, 0.09, -0.45], ["c", 0, -0.03, -0.45, -0.3, -0.75, -0.45], ["c", -0.27, -0.15, -0.66, -0.27, -0.99, -0.36], ["z"], ["m", 4.29, 3.63], ["c", -0.24, -0.39, -0.51, -0.75, -0.51, -0.69], ["c", -0.06, 0.12, -0.39, 1.92, -0.45, 2.28], ["c", -0.09, 0.54, -0.12, 1.14, -0.06, 1.38], ["c", 0.06, 0.42, 0.21, 0.6, 0.51, 0.57], ["c", 0.39, -0.06, 0.75, -0.48, 0.93, -1.14], ["c", 0.09, -0.33, 0.09, -1.05, -0, -1.38], ["c", -0.09, -0.39, -0.24, -0.69, -0.42, -1.02], ["z"]], w: 17.963, h: 16.49}
+        , 'scripts.segno': {d: [["M", -1, -11.22], ["c", 0.78, -0.09, 1.59, 0.03, 2.31, 0.42], ["c", 1.2, 0.6, 2.01, 1.71, 2.31, 3.09], ["c", 0.09, 0.42, 0.09, 1.2, 0.03, 1.5], ["c", -0.15, 0.45, -0.39, 0.81, -0.66, 0.93], ["c", -0.33, 0.18, -0.84, 0.21, -1.23, 0.15], ["c", -0.81, -0.18, -1.32, -0.93, -1.26, -1.89], ["c", 0.03, -0.36, 0.09, -0.57, 0.24, -0.9], ["c", 0.15, -0.33, 0.45, -0.6, 0.72, -0.75], ["c", 0.12, -0.06, 0.18, -0.09, 0.18, -0.12], ["c", 0, -0.03, -0.03, -0.15, -0.09, -0.24], ["c", -0.18, -0.45, -0.54, -0.87, -0.96, -1.08], ["c", -1.11, -0.57, -2.34, -0.18, -2.88, 0.9], ["c", -0.24, 0.51, -0.33, 1.11, -0.24, 1.83], ["c", 0.27, 1.92, 1.5, 3.54, 3.93, 5.13], ["c", 0.48, 0.33, 1.26, 0.78, 1.29, 0.78], ["c", 0.03, 0, 1.35, -2.19, 2.94, -4.89], ["l", 2.88, -4.89], ["l", 0.84, 0], ["l", 0.87, 0], ["l", -0.03, 0.06], ["c", -0.15, 0.21, -6.15, 10.41, -6.15, 10.44], ["c", 0, 0, 0.21, 0.15, 0.48, 0.27], ["c", 2.61, 1.47, 4.35, 3.03, 5.13, 4.65], ["c", 1.14, 2.34, 0.51, 5.07, -1.44, 6.39], ["c", -0.66, 0.42, -1.32, 0.63, -2.13, 0.69], ["c", -2.01, 0.09, -3.81, -1.41, -4.26, -3.54], ["c", -0.09, -0.42, -0.09, -1.2, -0.03, -1.5], ["c", 0.15, -0.45, 0.39, -0.81, 0.66, -0.93], ["c", 0.33, -0.18, 0.84, -0.21, 1.23, -0.15], ["c", 0.81, 0.18, 1.32, 0.93, 1.26, 1.89], ["c", -0.03, 0.36, -0.09, 0.57, -0.24, 0.9], ["c", -0.15, 0.33, -0.45, 0.6, -0.72, 0.75], ["c", -0.12, 0.06, -0.18, 0.09, -0.18, 0.12], ["c", 0, 0.03, 0.03, 0.15, 0.09, 0.24], ["c", 0.18, 0.45, 0.54, 0.87, 0.96, 1.08], ["c", 1.11, 0.57, 2.34, 0.18, 2.88, -0.9], ["c", 0.24, -0.51, 0.33, -1.11, 0.24, -1.83], ["c", -0.27, -1.92, -1.5, -3.54, -3.93, -5.13], ["c", -0.48, -0.33, -1.26, -0.78, -1.29, -0.78], ["c", -0.03, 0, -1.35, 2.19, -2.91, 4.89], ["l", -2.88, 4.89], ["l", -0.87, 0], ["l", -0.87, 0], ["l", 0.03, -0.06], ["c", 0.15, -0.21, 6.15, -10.41, 6.15, -10.44], ["c", 0, 0, -0.21, -0.15, -0.48, -0.3], ["c", -2.61, -1.44, -4.35, -3, -5.13, -4.62], ["c", -0.9, -1.89, -0.72, -4.02, 0.48, -5.52], ["c", 0.69, -0.84, 1.68, -1.41, 2.73, -1.53], ["z"], ["m", 8.76, 9.09], ["c", 0.03, -0.03, 0.15, -0.03, 0.27, -0.03], ["c", 0.33, 0.03, 0.57, 0.18, 0.72, 0.48], ["c", 0.09, 0.18, 0.09, 0.57, 0, 0.75], ["c", -0.09, 0.18, -0.21, 0.3, -0.36, 0.39], ["c", -0.15, 0.06, -0.21, 0.06, -0.39, 0.06], ["c", -0.21, 0, -0.27, 0, -0.39, -0.06], ["c", -0.3, -0.15, -0.48, -0.45, -0.48, -0.75], ["c", 0, -0.39, 0.24, -0.72, 0.63, -0.84], ["z"], ["m", -10.53, 2.61], ["c", 0.03, -0.03, 0.15, -0.03, 0.27, -0.03], ["c", 0.33, 0.03, 0.57, 0.18, 0.72, 0.48], ["c", 0.09, 0.18, 0.09, 0.57, 0, 0.75], ["c", -0.09, 0.18, -0.21, 0.3, -0.36, 0.39], ["c", -0.15, 0.06, -0.21, 0.06, -0.39, 0.06], ["c", -0.21, 0, -0.27, 0, -0.39, -0.06], ["c", -0.3, -0.15, -0.48, -0.45, -0.48, -0.75], ["c", 0, -0.39, 0.24, -0.72, 0.63, -0.84], ["z"]], w: 15, h: 22.504}
+        , 'scripts.coda': {d: [["M", -0.21, -13], ["c", 0.18, -0.12, 0.42, -0.06, 0.54, 0.12], ["c", 0.06, 0.09, 0.06, 0.18, 0.06, 1.5], ["l", 0, 1.38], ["l", 0.18, 0], ["c", 0.39, 0.06, 0.96, 0.24, 1.38, 0.48], ["c", 1.68, 0.93, 2.82, 3.24, 3.03, 6.12], ["c", 0.03, 0.24, 0.03, 0.45, 0.03, 0.45], ["c", 0, 0.03, 0.6, 0.03, 1.35, 0.03], ["c", 1.5, 0, 1.47, 0, 1.59, 0.18], ["c", 0.09, 0.12, 0.09, 0.3, -0, 0.42], ["c", -0.12, 0.18, -0.09, 0.18, -1.59, 0.18], ["c", -0.75, 0, -1.35, 0, -1.35, 0.03], ["c", -0, 0, -0, 0.21, -0.03, 0.42], ["c", -0.24, 3.15, -1.53, 5.58, -3.45, 6.36], ["c", -0.27, 0.12, -0.72, 0.24, -0.96, 0.27], ["l", -0.18, -0], ["l", -0, 1.38], ["c", -0, 1.32, -0, 1.41, -0.06, 1.5], ["c", -0.15, 0.24, -0.51, 0.24, -0.66, -0], ["c", -0.06, -0.09, -0.06, -0.18, -0.06, -1.5], ["l", -0, -1.38], ["l", -0.18, -0], ["c", -0.39, -0.06, -0.96, -0.24, -1.38, -0.48], ["c", -1.68, -0.93, -2.82, -3.24, -3.03, -6.15], ["c", -0.03, -0.21, -0.03, -0.42, -0.03, -0.42], ["c", 0, -0.03, -0.6, -0.03, -1.35, -0.03], ["c", -1.5, -0, -1.47, -0, -1.59, -0.18], ["c", -0.09, -0.12, -0.09, -0.3, 0, -0.42], ["c", 0.12, -0.18, 0.09, -0.18, 1.59, -0.18], ["c", 0.75, -0, 1.35, -0, 1.35, -0.03], ["c", 0, -0, 0, -0.21, 0.03, -0.45], ["c", 0.24, -3.12, 1.53, -5.55, 3.45, -6.33], ["c", 0.27, -0.12, 0.72, -0.24, 0.96, -0.27], ["l", 0.18, -0], ["l", 0, -1.38], ["c", 0, -1.53, 0, -1.5, 0.18, -1.62], ["z"], ["m", -0.18, 6.93], ["c", 0, -2.97, 0, -3.15, -0.06, -3.15], ["c", -0.09, 0, -0.51, 0.15, -0.66, 0.21], ["c", -0.87, 0.51, -1.38, 1.62, -1.56, 3.51], ["c", -0.06, 0.54, -0.12, 1.59, -0.12, 2.16], ["l", 0, 0.42], ["l", 1.2, 0], ["l", 1.2, 0], ["l", 0, -3.15], ["z"], ["m", 1.17, -3.06], ["c", -0.09, -0.03, -0.21, -0.06, -0.27, -0.09], ["l", -0.12, 0], ["l", 0, 3.15], ["l", 0, 3.15], ["l", 1.2, 0], ["l", 1.2, 0], ["l", 0, -0.81], ["c", -0.06, -2.4, -0.33, -3.69, -0.93, -4.59], ["c", -0.27, -0.39, -0.66, -0.69, -1.08, -0.81], ["z"], ["m", -1.17, 10.14], ["l", 0, -3.15], ["l", -1.2, -0], ["l", -1.2, -0], ["l", 0, 0.81], ["c", 0.03, 0.96, 0.06, 1.47, 0.15, 2.13], ["c", 0.24, 2.04, 0.96, 3.12, 2.13, 3.36], ["l", 0.12, -0], ["l", 0, -3.15], ["z"], ["m", 3.18, -2.34], ["l", 0, -0.81], ["l", -1.2, 0], ["l", -1.2, 0], ["l", 0, 3.15], ["l", 0, 3.15], ["l", 0.12, 0], ["c", 1.17, -0.24, 1.89, -1.32, 2.13, -3.36], ["c", 0.09, -0.66, 0.12, -1.17, 0.15, -2.13], ["z"]], w: 16.035, h: 21.062}
+        , 'scripts.comma': {d: [["M", 1.14, -4.62], ["c", 0.3, -0.12, 0.69, -0.03, 0.93, 0.15], ["c", 0.12, 0.12, 0.36, 0.45, 0.51, 0.78], ["c", 0.9, 1.77, 0.54, 4.05, -1.08, 6.75], ["c", -0.36, 0.63, -0.87, 1.38, -0.96, 1.44], ["c", -0.18, 0.12, -0.42, 0.06, -0.54, -0.12], ["c", -0.09, -0.18, -0.09, -0.3, 0.12, -0.6], ["c", 0.96, -1.44, 1.44, -2.97, 1.38, -4.35], ["c", -0.06, -0.93, -0.3, -1.68, -0.78, -2.46], ["c", -0.27, -0.39, -0.33, -0.63, -0.24, -0.96], ["c", 0.09, -0.27, 0.36, -0.54, 0.66, -0.63], ["z"]], w: 3.042, h: 9.237}
+        , 'scripts.roll': {d: [["M", 1.95, -6], ["c", 0.21, -0.09, 0.36, -0.09, 0.57, 0], ["c", 0.39, 0.15, 0.63, 0.39, 1.47, 1.35], ["c", 0.66, 0.75, 0.78, 0.87, 1.08, 1.05], ["c", 0.75, 0.45, 1.65, 0.42, 2.4, -0.06], ["c", 0.12, -0.09, 0.27, -0.27, 0.54, -0.6], ["c", 0.42, -0.54, 0.51, -0.63, 0.69, -0.63], ["c", 0.09, 0, 0.3, 0.12, 0.36, 0.21], ["c", 0.09, 0.12, 0.12, 0.3, 0.03, 0.42], ["c", -0.06, 0.12, -3.15, 3.9, -3.3, 4.08], ["c", -0.06, 0.06, -0.18, 0.12, -0.27, 0.18], ["c", -0.27, 0.12, -0.6, 0.06, -0.99, -0.27], ["c", -0.27, -0.21, -0.42, -0.39, -1.08, -1.14], ["c", -0.63, -0.72, -0.81, -0.9, -1.17, -1.08], ["c", -0.36, -0.18, -0.57, -0.21, -0.99, -0.21], ["c", -0.39, 0, -0.63, 0.03, -0.93, 0.18], ["c", -0.36, 0.15, -0.51, 0.27, -0.9, 0.81], ["c", -0.24, 0.27, -0.45, 0.51, -0.48, 0.54], ["c", -0.12, 0.09, -0.27, 0.06, -0.39, 0], ["c", -0.24, -0.15, -0.33, -0.39, -0.21, -0.6], ["c", 0.09, -0.12, 3.18, -3.87, 3.33, -4.02], ["c", 0.06, -0.06, 0.18, -0.15, 0.24, -0.21], ["z"]], w: 10.817, h: 6.125}
+        , 'scripts.prall': {d: [["M", -4.38, -3.69], ["c", 0.06, -0.03, 0.18, -0.06, 0.24, -0.06], ["c", 0.3, 0, 0.27, -0.03, 1.89, 1.95], ["l", 1.53, 1.83], ["c", 0.03, -0, 0.57, -0.84, 1.23, -1.83], ["c", 1.14, -1.68, 1.23, -1.83, 1.35, -1.89], ["c", 0.06, -0.03, 0.18, -0.06, 0.24, -0.06], ["c", 0.3, 0, 0.27, -0.03, 1.89, 1.95], ["l", 1.53, 1.83], ["l", 0.48, -0.69], ["c", 0.51, -0.78, 0.54, -0.84, 0.69, -0.9], ["c", 0.42, -0.18, 0.87, 0.15, 0.81, 0.6], ["c", -0.03, 0.12, -0.3, 0.51, -1.5, 2.37], ["c", -1.38, 2.07, -1.5, 2.22, -1.62, 2.28], ["c", -0.06, 0.03, -0.18, 0.06, -0.24, 0.06], ["c", -0.3, 0, -0.27, 0.03, -1.89, -1.95], ["l", -1.53, -1.83], ["c", -0.03, 0, -0.57, 0.84, -1.23, 1.83], ["c", -1.14, 1.68, -1.23, 1.83, -1.35, 1.89], ["c", -0.06, 0.03, -0.18, 0.06, -0.24, 0.06], ["c", -0.3, 0, -0.27, 0.03, -1.89, -1.95], ["l", -1.53, -1.83], ["l", -0.48, 0.69], ["c", -0.51, 0.78, -0.54, 0.84, -0.69, 0.9], ["c", -0.42, 0.18, -0.87, -0.15, -0.81, -0.6], ["c", 0.03, -0.12, 0.3, -0.51, 1.5, -2.37], ["c", 1.38, -2.07, 1.5, -2.22, 1.62, -2.28], ["z"]], w: 15.011, h: 7.5}
+        , 'scripts.mordent': {d: [["M", -0.21, -4.95], ["c", 0.27, -0.15, 0.63, 0, 0.75, 0.27], ["c", 0.06, 0.12, 0.06, 0.24, 0.06, 1.44], ["l", 0, 1.29], ["l", 0.57, -0.84], ["c", 0.51, -0.75, 0.57, -0.84, 0.69, -0.9], ["c", 0.06, -0.03, 0.18, -0.06, 0.24, -0.06], ["c", 0.3, 0, 0.27, -0.03, 1.89, 1.95], ["l", 1.53, 1.83], ["l", 0.48, -0.69], ["c", 0.51, -0.78, 0.54, -0.84, 0.69, -0.9], ["c", 0.42, -0.18, 0.87, 0.15, 0.81, 0.6], ["c", -0.03, 0.12, -0.3, 0.51, -1.5, 2.37], ["c", -1.38, 2.07, -1.5, 2.22, -1.62, 2.28], ["c", -0.06, 0.03, -0.18, 0.06, -0.24, 0.06], ["c", -0.3, 0, -0.27, 0.03, -1.83, -1.89], ["c", -0.81, -0.99, -1.5, -1.8, -1.53, -1.86], ["c", -0.06, -0.03, -0.06, -0.03, -0.12, 0.03], ["c", -0.06, 0.06, -0.06, 0.15, -0.06, 2.28], ["c", -0, 1.95, -0, 2.25, -0.06, 2.34], ["c", -0.18, 0.45, -0.81, 0.48, -1.05, 0.03], ["c", -0.03, -0.06, -0.06, -0.24, -0.06, -1.41], ["l", -0, -1.35], ["l", -0.57, 0.84], ["c", -0.54, 0.78, -0.6, 0.87, -0.72, 0.93], ["c", -0.06, 0.03, -0.18, 0.06, -0.24, 0.06], ["c", -0.3, 0, -0.27, 0.03, -1.89, -1.95], ["l", -1.53, -1.83], ["l", -0.48, 0.69], ["c", -0.51, 0.78, -0.54, 0.84, -0.69, 0.9], ["c", -0.42, 0.18, -0.87, -0.15, -0.81, -0.6], ["c", 0.03, -0.12, 0.3, -0.51, 1.5, -2.37], ["c", 1.38, -2.07, 1.5, -2.22, 1.62, -2.28], ["c", 0.06, -0.03, 0.18, -0.06, 0.24, -0.06], ["c", 0.3, 0, 0.27, -0.03, 1.89, 1.95], ["l", 1.53, 1.83], ["c", 0.03, -0, 0.06, -0.06, 0.09, -0.09], ["c", 0.06, -0.12, 0.06, -0.15, 0.06, -2.28], ["c", -0, -1.92, -0, -2.22, 0.06, -2.31], ["c", 0.06, -0.15, 0.15, -0.24, 0.3, -0.3], ["z"]], w: 15.011, h: 10.012}
+        , 'timesig.common': {d: [["M", 6.66, -7.826], ["c", 0.72, -0.06, 1.41, -0.03, 1.98, 0.09], ["c", 1.2, 0.27, 2.34, 0.96, 3.09, 1.92], ["c", 0.63, 0.81, 1.08, 1.86, 1.14, 2.73], ["c", 0.06, 1.02, -0.51, 1.92, -1.44, 2.22], ["c", -0.24, 0.09, -0.3, 0.09, -0.63, 0.09], ["c", -0.33, -0, -0.42, -0, -0.63, -0.06], ["c", -0.66, -0.24, -1.14, -0.63, -1.41, -1.2], ["c", -0.15, -0.3, -0.21, -0.51, -0.24, -0.9], ["c", -0.06, -1.08, 0.57, -2.04, 1.56, -2.37], ["c", 0.18, -0.06, 0.27, -0.06, 0.63, -0.06], ["l", 0.45, 0], ["c", 0.06, 0.03, 0.09, 0.03, 0.09, 0], ["c", 0, 0, -0.09, -0.12, -0.24, -0.27], ["c", -1.02, -1.11, -2.55, -1.68, -4.08, -1.5], ["c", -1.29, 0.15, -2.04, 0.69, -2.4, 1.74], ["c", -0.36, 0.93, -0.42, 1.89, -0.42, 5.37], ["c", 0, 2.97, 0.06, 3.96, 0.24, 4.77], ["c", 0.24, 1.08, 0.63, 1.68, 1.41, 2.07], ["c", 0.81, 0.39, 2.16, 0.45, 3.18, 0.09], ["c", 1.29, -0.45, 2.37, -1.53, 3.03, -2.97], ["c", 0.15, -0.33, 0.33, -0.87, 0.39, -1.17], ["c", 0.09, -0.24, 0.15, -0.36, 0.3, -0.39], ["c", 0.21, -0.03, 0.42, 0.15, 0.39, 0.36], ["c", -0.06, 0.39, -0.42, 1.38, -0.69, 1.89], ["c", -0.96, 1.8, -2.49, 2.94, -4.23, 3.18], ["c", -0.99, 0.12, -2.58, -0.06, -3.63, -0.45], ["c", -0.96, -0.36, -1.71, -0.84, -2.4, -1.5], ["c", -1.11, -1.11, -1.8, -2.61, -2.04, -4.56], ["c", -0.06, -0.6, -0.06, -2.01, 0, -2.61], ["c", 0.24, -1.95, 0.9, -3.45, 2.01, -4.56], ["c", 0.69, -0.66, 1.44, -1.11, 2.37, -1.47], ["c", 0.63, -0.24, 1.47, -0.42, 2.22, -0.48], ["z"]], w: 13.038, h: 15.697}
+        , 'timesig.cut': {d: [["M", 6.24, -10.44], ["c", 0.09, -0.06, 0.09, -0.06, 0.48, -0.06], ["c", 0.36, 0, 0.36, 0, 0.45, 0.06], ["l", 0.06, 0.09], ["l", 0, 1.23], ["l", 0, 1.26], ["l", 0.27, 0], ["c", 1.26, 0, 2.49, 0.45, 3.48, 1.29], ["c", 1.05, 0.87, 1.8, 2.28, 1.89, 3.48], ["c", 0.06, 1.02, -0.51, 1.92, -1.44, 2.22], ["c", -0.24, 0.09, -0.3, 0.09, -0.63, 0.09], ["c", -0.33, -0, -0.42, -0, -0.63, -0.06], ["c", -0.66, -0.24, -1.14, -0.63, -1.41, -1.2], ["c", -0.15, -0.3, -0.21, -0.51, -0.24, -0.9], ["c", -0.06, -1.08, 0.57, -2.04, 1.56, -2.37], ["c", 0.18, -0.06, 0.27, -0.06, 0.63, -0.06], ["l", 0.45, -0], ["c", 0.06, 0.03, 0.09, 0.03, 0.09, -0], ["c", 0, -0.03, -0.45, -0.51, -0.66, -0.69], ["c", -0.87, -0.69, -1.83, -1.05, -2.94, -1.11], ["l", -0.42, 0], ["l", 0, 7.17], ["l", 0, 7.14], ["l", 0.42, 0], ["c", 0.69, -0.03, 1.23, -0.18, 1.86, -0.51], ["c", 1.05, -0.51, 1.89, -1.47, 2.46, -2.7], ["c", 0.15, -0.33, 0.33, -0.87, 0.39, -1.17], ["c", 0.09, -0.24, 0.15, -0.36, 0.3, -0.39], ["c", 0.21, -0.03, 0.42, 0.15, 0.39, 0.36], ["c", -0.03, 0.24, -0.21, 0.78, -0.39, 1.2], ["c", -0.96, 2.37, -2.94, 3.9, -5.13, 3.9], ["l", -0.3, 0], ["l", 0, 1.26], ["l", 0, 1.23], ["l", -0.06, 0.09], ["c", -0.09, 0.06, -0.09, 0.06, -0.45, 0.06], ["c", -0.39, 0, -0.39, 0, -0.48, -0.06], ["l", -0.06, -0.09], ["l", 0, -1.29], ["l", 0, -1.29], ["l", -0.21, -0.03], ["c", -1.23, -0.21, -2.31, -0.63, -3.21, -1.29], ["c", -0.15, -0.09, -0.45, -0.36, -0.66, -0.57], ["c", -1.11, -1.11, -1.8, -2.61, -2.04, -4.56], ["c", -0.06, -0.6, -0.06, -2.01, 0, -2.61], ["c", 0.24, -1.95, 0.93, -3.45, 2.04, -4.59], ["c", 0.42, -0.39, 0.78, -0.66, 1.26, -0.93], ["c", 0.75, -0.45, 1.65, -0.75, 2.61, -0.9], ["l", 0.21, -0.03], ["l", 0, -1.29], ["l", 0, -1.29], ["z"], ["m", -0.06, 10.44], ["c", 0, -5.58, 0, -6.99, -0.03, -6.99], ["c", -0.15, 0, -0.63, 0.27, -0.87, 0.45], ["c", -0.45, 0.36, -0.75, 0.93, -0.93, 1.77], ["c", -0.18, 0.81, -0.24, 1.8, -0.24, 4.74], ["c", 0, 2.97, 0.06, 3.96, 0.24, 4.77], ["c", 0.24, 1.08, 0.66, 1.68, 1.41, 2.07], ["c", 0.12, 0.06, 0.3, 0.12, 0.33, 0.15], ["l", 0.09, 0], ["l", 0, -6.96], ["z"]], w: 13.038, h: 20.97}
+	, 'it.l':{d:[["M", 3.889, -4.778], ["c", -0.167, 1.167, -1.111, 2.833, -0.167, 3.5], ["c", 1, -0.278, 1.556, -0.833, 2.445, -1.278], ["l", -0, 0.389], ["c", -1.611, 1, -2.111, 1.945, -3.778, 2.445], ["c", -0.444, -0.112, -0.778, -0.945, -0.611, -1.612], ["l", 2.667, -10.111], ["c", 1.055, -1, 2.166, -2.5, 4.222, -2], ["l", -0.834, 1.056], ["c", -3.055, -0.778, -2.555, 3.111, -3.388, 5.389], ["c", -0.389, 1.111, -0.389, 1.166, -0.556, 2.222], ["z"]],w:6.933,h:13.822}
+	, 'it.f':{d:[["M", 4.333, -6.833], ["c", 0.722, -3.778, 2.222, -7, 6.5, -6.667], ["l", -0.944, 1.111], ["c", -3.5, -1.111, -3.167, 3.167, -4.112, 5.556], ["c", 0.834, -0, 1.723, -0.111, 2.445, -0], ["c", -0.5, 0.611, -1.389, 0.722, -2.611, 0.611], ["c", -1.278, 4.056, -1.722, 8.945, -5.111, 10.889], ["c", -0.556, 0.333, -1.667, 0.333, -2.5, 0.167], ["c", 0.5, -0.667, 0.722, -1.5, 2, -1.167], ["c", 3.722, -0.778, 2.611, -6.389, 4.166, -9.889], ["l", -2.666, 0], ["c", 0.666, -0.444, 1.666, -0.833, 2.833, -0.611], ["z"]],w:12.833,h:18.467}
+	, 'it.F':{d:[["M", 14.667, -12.389], ["c", -0.167, 0.778, -1.056, 1.111, -1.444, 1.444], ["l", -3.223, -0.055], ["l", -1.277, 5.167], ["l", 3.166, -0], ["c", -0.611, 0.777, -2, 0.777, -3.389, 0.777], ["c", -0.777, 4, -2.444, 7.556, -7.277, 7.278], ["c", 0.444, -0.667, 0.555, -1.444, 2.055, -1.278], ["c", 3.333, 0.334, 2.833, -3.444, 3.778, -5.889], ["l", -0.5, 0], ["c", 1.333, -1.388, 1.333, -4.055, 2, -6.055], ["c", -3.167, -0.667, -4.833, 2.055, -3.611, 4.833], ["l", -1.667, 0.778], ["c", -1.111, -3.944, 1.778, -6.333, 5.945, -6.333], ["c", 2, -0, 4.222, 0.333, 5.444, -0.667], ["z"]],w:13.444,h:14.626}
+	, 'it.i':{d:[["M", 5.444, -12.333], ["l", 0.722, 1.389], ["c", -0.444, 0.333, -0.944, 0.611, -1.333, 1.055], ["c", -0.167, -0.444, -1.167, -1.277, -0.445, -1.555], ["z"], ["m", -0.389, 4.333], ["l", -1.389, 6.167], ["c", 0.334, 1.389, 1.778, -0.278, 2.556, -0.5], ["c", -0.056, 1.111, -1.278, 1, -1.778, 1.667], ["c", -0.833, 0.444, -1.222, 0.833, -1.944, 0.944], ["c", -0.445, -0.055, -0.556, -0.722, -0.445, -1.167], ["c", 0.167, -1.777, 1, -3.333, 1.278, -5.333], ["c", -0.278, -0.778, -1.167, 0.111, -1.722, 0.333], ["l", 0.055, -0.555], ["c", 1.167, -0.722, 2.111, -1.556, 3.167, -1.778], ["c", 0.167, 0, 0.222, 0.111, 0.222, 0.222], ["z"]],w:4.611,h:12.611}
+	, 'it.n':{d:[["M", 6.556, 0.333], ["c", -0.889, -2.222, 1, -4.389, 0.944, -6.778], ["c", -0.388, -0.611, -1, 0.278, -1.555, 0.445], ["c", -0.5, 0.333, -0.556, 0.333, -1.5, 0.944], ["l", -1.167, 4.667], ["l", -1.5, 0.611], ["c", 0.5, -2.111, 1.334, -4.389, 1.611, -6.611], ["c", -0.333, -0.667, -1.166, 0.166, -1.777, 0.333], ["c", 0.5, -1.444, 2.166, -1.5, 3.277, -2.167], ["c", 0.667, 0.334, -0.222, 1.612, -0.222, 2.334], ["c", 1, -0.611, 2.667, -1.889, 4.222, -2.334], ["c", 0.334, 0, 0.445, 0.278, 0.334, 0.5], ["c", -0.278, 1.612, -1.167, 3.945, -1.445, 5.834], ["c", 0.111, 1, 1, 0.222, 1.445, -0], ["c", 0.444, -0.222, 0.444, -0.222, 1.166, -0.667], ["c", -0.555, 1.611, -2.722, 2.056, -3.833, 2.889], ["z"]],w:8.778,h:8.556}
+	, 'it.e':{d:[["M", 4.389, -0.889], ["c", 1.389, 0, 2.056, -0.889, 3.222, -1.833], ["l", 0, 0.555], ["c", -1.611, 1.611, -3, 2.445, -4.222, 2.445], ["c", -1.111, -0, -1.722, -0.778, -1.667, -1.945], ["c", 0.167, -3.444, 1.389, -6.555, 4.556, -6.555], ["c", 0.667, -0, 1.167, 0.389, 1.111, 1.111], ["c", -0.222, 2.389, -2.722, 3, -4.167, 4.278], ["c", -0.055, 1.055, 0.223, 1.944, 1.167, 1.944], ["z"], ["m", 1.556, -5.667], ["c", 0.111, -0.833, -0.667, -1.055, -1.167, -0.555], ["c", -0.778, 0.833, -1.333, 2.111, -1.5, 3.555], ["c", 1.222, -0.889, 2.5, -1.222, 2.667, -3], ["z"]],w:5.892,h:8.5}
+	, 'it.D':{d:[["M", 15.167, -8.056], ["c", -0.278, 6.778, -5.611, 8.667, -13.444, 8.056], ["l", 0.944, -0.945], ["c", 2.722, -0.055, 2.944, -1.833, 3.5, -4.111], ["l", 1.5, -5.944], ["c", -2.944, 0.222, -4.889, 2, -4.167, 5.166], ["l", -1.666, 0.778], ["c", -0.778, -3.778, 2.333, -6.111, 6.166, -6.611], ["l", 1.445, -0.611], ["l", -0.167, 0.555], ["c", 2.945, 0.056, 6, 0.945, 5.889, 3.667], ["z"], ["m", -7.833, 7.167], ["c", 4.5, 0.222, 6.111, -2.778, 6.111, -6.778], ["c", -0, -2.5, -1.611, -3.5, -4.334, -3.445], ["l", -2.166, 7.778], ["c", -0.611, 0.945, -1.222, 1.556, -2.167, 2.334], ["z"]],w:13.456,h:12.386}
+	, 'it.d':{d:[["M", 2.222, 0.111], ["c", -1.389, -3.444, 1.167, -8.611, 5.056, -8.222], ["c", 0.444, -1.5, 0.666, -3, 1.833, -3.834], ["c", 1.167, -0.833, 1.833, -1.833, 3.444, -1.5], ["c", -0.333, 0.612, -0.611, 1.389, -1.611, 0.945], ["c", -2.666, 0.889, -2.111, 5.778, -3.222, 8.444], ["c", -0.056, 0.889, -0.778, 2.278, -0.167, 2.889], ["c", 0.723, -0.222, 1.556, -1, 2.389, -1.444], ["c", -0.555, 1.666, -2.555, 2, -3.778, 2.889], ["c", -0.722, -0.111, -0.444, -1.223, -0.333, -2.056], ["c", -1, 0.611, -2.278, 1.722, -3.333, 2.056], ["c", -0.111, -0, -0.167, -0.056, -0.278, -0.167], ["z"], ["m", 3.722, -7.389], ["c", -1.5, -0.278, -2.778, 3.333, -2.778, 5.333], ["c", 0, 1.667, 1.223, 0.5, 1.834, 0.112], ["l", 1, -0.723], ["l", 0.944, -4.166], ["c", -0.333, -0.389, -0.5, -0.445, -1, -0.556], ["z"]],w:10.716,h:13.788}
+	, 'it.a':{d:[["M", 7.833, -1.444], ["c", 0.889, -0.167, 1.278, -0.833, 2, -1.167], ["c", -0.5, 1.778, -2.444, 2.056, -3.667, 2.889], ["c", -0.722, -0.333, -0.055, -1.333, 0, -2.222], ["c", -1.222, 0.722, -2.222, 1.667, -3.611, 2.222], ["c", -2.166, -3, 0.5, -9.5, 5.5, -8.444], ["c", 0.389, 0.055, 0.834, 0.111, 1.334, 0.222], ["c", -1.223, 1.389, -1.334, 4, -1.778, 6.111], ["c", -0, 0.278, 0.055, 0.389, 0.222, 0.389], ["z"], ["m", -0.444, -5.611], ["c", -3.223, -1.222, -3.889, 2.167, -4.112, 4.778], ["c", 0.389, 2.222, 2, -0, 3.056, -0.445], ["z"]],w:8.037,h:8.559}
+	, 'it.C':{d:[["M", 3.389, -2.556], ["c", -0.167, 4.167, 5, 3.389, 7.167, 1.278], ["l", -0.111, 0.611], ["c", -2.167, 2, -8.889, 3.889, -8.667, -1.167], ["c", 0.222, -5.333, 3.5, -10, 8.555, -10], ["c", 1.5, 0, 2.167, 0.667, 2.389, 2], ["l", -1.5, 1.278], ["c", -0.111, -1.389, -0.555, -2.333, -1.944, -2.333], ["c", -3.833, -0, -5.722, 4.166, -5.889, 8.333], ["z"]],w:10.95,h:13.236}
+	, 'it.c':{d:[["M", 3.278, -2.389], ["c", -0.056, 0.889, 0.389, 1.5, 1.167, 1.5], ["c", 0.611, 0, 1.666, -0.556, 3.222, -1.667], ["l", -0.056, 0.667], ["c", -1.389, 0.944, -2.722, 2, -4.444, 2.167], ["c", -2.945, -0.778, -0.833, -6.5, 0.833, -7.278], ["c", 0.778, -0.389, 1.278, -1.111, 2.278, -1.222], ["c", 0.778, -0.111, 1.333, 0.889, 1.111, 1.611], ["l", -1.167, 0.666], ["c", -0.111, -0.666, -0.222, -1.222, -0.833, -1.222], ["c", -1.389, 0.056, -2.055, 3, -2.111, 4.778], ["z"]],w:5.971,h:8.509}
+	, 'it.p':{d:[["M", 9.667, -6.667], ["c", 0, 3.778, -2, 7.111, -6.167, 6.722], ["l", -0.944, 4.278], ["l", 2.222, 0.111], ["c", -0.778, 0.945, -3.222, 0.333, -4.944, 0.445], ["c", 0.333, -0.334, 0.611, -0.723, 1.333, -0.667], ["l", 2.333, -10.167], ["c", -0.111, -1.166, -1.333, -0.166, -1.833, 0], ["c", 0.5, -1.333, 2.278, -1.611, 3.389, -2.278], ["c", 0.667, 0.223, -0.111, 1.334, -0.111, 2.056], ["c", 1.278, -0.944, 4.722, -3.722, 4.722, -0.5], ["z"], ["m", -1.444, 0.889], ["c", -0, -2.333, -2.612, -0.167, -3.445, 0.444], ["l", -0.944, 4], ["c", 2.722, 1.723, 4.389, -1.833, 4.389, -4.444], ["z"]],w:9.833,h:13.204}
+	, 'it.o':{d:[["M", 1.722, -1.722], ["c", 0.111, -3.722, 2.278, -6.056, 5.444, -6.5], ["c", 1.112, -0.167, 1.834, 0.722, 1.834, 1.833], ["c", -0.222, 3.778, -2.056, 6, -5.556, 6.667], ["c", -1, -0.056, -1.722, -0.833, -1.722, -2], ["z"], ["m", 2.889, 1.056], ["c", 2.222, -0, 3.333, -3.834, 2.5, -6.112], ["c", -0.222, -0.333, -0.556, -0.5, -1, -0.5], ["c", -1.945, 0, -2.833, 2.556, -2.833, 4.723], ["c", -0, 1, 0.444, 1.889, 1.333, 1.889], ["z"]],w:7.278,h:8.52}
+	, 'it.S':{d:[["M", 9, -3.611], ["c", 0, 4, -6.111, 6.722, -9, 3.667], ["c", 0.444, -0.778, 0.5, -1.834, 1.222, -2.334], ["c", 0.167, 1.778, 1.278, 2.778, 3, 2.778], ["c", 1.778, 0, 3.222, -1.055, 3.222, -2.944], ["c", 0, -2.611, -3.277, -2.389, -3.277, -5], ["c", -0, -2.389, 2, -4.278, 4.389, -4.278], ["c", 1.055, -0, 1.666, 0.555, 1.777, 1.667], ["l", -1.333, 0.888], ["c", -0.222, -1.111, -0.278, -1.611, -1.333, -1.611], ["c", -1.334, 0, -2.167, 1.056, -2.167, 2.445], ["c", 0, 2.5, 3.5, 2.222, 3.5, 4.722], ["z"]],w:10.333,h:13.089}
+	, 'it.s':{d:[["M", 2.278, 0.278], ["c", -1, 0, -1.556, -0.778, -1.444, -1.944], ["l", 1.388, -0.889], ["c", 0, 1.111, 0.278, 2, 1.167, 2], ["c", 0.945, -0.167, 1.722, -0.723, 1.667, -1.889], ["c", -0.445, -1.056, -2.222, -1.278, -2.222, -2.722], ["c", -0, -2, 3.055, -4.056, 4.722, -2.389], ["l", -0.945, 1.055], ["c", -0.555, -1.166, -2.555, -0.889, -2.5, 0.5], ["c", 0, 1.611, 2.334, 1.278, 2.223, 2.945], ["c", -0.167, 1.944, -1.889, 3.333, -4.056, 3.333], ["z"]],w:6.736,h:8.445}
+	, 'it.punto':{d:[["M", 3.056, 0.167], ["c", -0.333, -0.611, -1.389, -1.556, -0.333, -1.944], ["l", 0.889, -0.778], ["c", 0.388, 0.722, 1.444, 1.611, 0.277, 2.111], ["c", -0.277, 0.167, -0.5, 0.444, -0.833, 0.611], ["z"]],w:2.157,h:2.722}   };
+
+
+    this.getSymbolPathTxt = function (symb) {
+        if (!glyphs[symb])
+            return null;
+        return this.stringify(glyphs[symb].d);
+    };
+
+    this.printSymbol = function (x, y, symb, paper) {
+        if (!glyphs[symb])
+            return null;
+        var pathArray = this.pathClone(glyphs[symb].d);
+        pathArray[0][1] += x;
+        pathArray[0][2] += y;
+        var path = paper.path().attr({path: pathArray, stroke: "none", fill: "#000000"});
+
+        return path;//.translate(x,y);
+    };
+
+    this.getSymbolWidth = function (symbol) {
+        var s = symbol.replace('graceheads','noteheads').replace('graceflags','flags'); // fixme:corrigir isso
+        
+        if (glyphs[s])
+            return glyphs[s].w;
+        return 0;
+    };
+
+    this.getSymbolHeight = function (symbol) {
+        if (glyphs[symbol])
+            return glyphs[symbol].h;
+        return 0;
+    };
+
+    this.getSymbolAlign = function (symbol) {
+        if (symbol.substring(0, 7) === "scripts" &&
+                symbol !== "scripts.roll") {
+            return "center";
+        }
+        return "left";
+    };
+
+    this.pathClone = function (pathArray) {
+        var res = [];
+        for (var i = 0, ii = pathArray.length; i < ii; i++) {
+            res[i] = [];
+            for (var j = 0, jj = pathArray[i].length; j < jj; j++) {
+                res[i][j] = pathArray[i][j];
+            }
+        }
+        return res;
+    };
+
+    this.stringify = function (pathArray) {
+        var res = "";
+        for (var i = 0, ii = pathArray.length; i < ii; i++) {
+            if (i > 0 && (i%3===0) && !(pathArray[i].length === 1 && pathArray[i][0] === "z")) {
+                res += '\n';
+            }
+            res += pathArray[i][0] + pathArray[i].slice(1).join(' ');
+        }
+        return res;
+    };
+
+
+    this.pathScale = function (pathArray, kx, ky) {
+        for (var i = 0, ii = pathArray.length; i < ii; i++) {
+            var p = pathArray[i];
+            var j, jj;
+            for (j = 1, jj = p.length; j < jj; j++) {
+                p[j] *= (j % 2) ? kx : ky;
+            }
+        }
+    };
+
+    this.getYCorr = function (symbol) {
+        switch (symbol) {
+            case "0":
+            case "1":
+            case "2":
+            case "3":
+            case "4":
+            case "5":
+            case "6":
+            case "7":
+            case "8":
+            case "9":
+            case "+":
+                return -3;
+            case "timesig.common":
+            case "timesig.cut":
+                return -1;
+            case "flags.d32nd":
+                return -1;
+            case "flags.d64th":
+                return -2;
+            case "flags.u32nd":
+                return 1;
+            case "flags.u64th":
+                return 3;
+            case "rests.whole":
+                return 1;
+            case "rests.half":
+                return -1;
+            case "rests.8th":
+                return -1;
+            case "rests.quarter":
+                return -2;
+            case "rests.16th":
+                return -1;
+            case "rests.32nd":
+                return -1;
+            case "rests.64th":
+                return -1;
+            default:
+                return 0;
+        }
+    };
+};
+//    abc_graphelements.js: All the drawable and layoutable datastructures to be printed by ABCXJS.write.Printer
+//    Copyright (C) 2010 Gregory Dyke (gregdyke at gmail dot com)
+//
+//    This program is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+//
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+//
+//    You should have received a copy of the GNU General Public License
+//    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+/*global window, ABCXJS */
+
+if (!window.ABCXJS)
+    window.ABCXJS = {};
+
+if (!window.ABCXJS.write)
+    window.ABCXJS.write = {};
+
+ABCXJS.write.StaffGroupElement = function() {
+    this.voices = [];
+};
+
+ABCXJS.write.StaffGroupElement.prototype.addVoice = function( voice ) {
+    this.voices[this.voices.length] = voice;
+};
+
+ABCXJS.write.StaffGroupElement.prototype.finished = function() {
+    for (var i = 0; i < this.voices.length; i++) {
+        if (!this.voices[i].layoutEnded())
+            return false;
+    }
+    return true;
+};
+
+ABCXJS.write.StaffGroupElement.prototype.layout = function(spacing, printer, debug) {
+    this.spacingunits = 0; // number of times we will have ended up using the spacing distance (as opposed to fixed width distances)
+    this.minspace = 1000; // a big number to start off with - used to find out what the smallest space between two notes is -- GD 2014.1.7
+    var x = printer.paddingleft;
+
+    // find out how much space will be taken up by voice headers
+    var voiceheaderw = 0;
+    for (var i = 0; i < this.voices.length; i++) {
+        if (this.voices[i].header) {
+            //FLAVIO fixme: obter a largura real do texto - text.getBBox().width
+            voiceheaderw = Math.max(voiceheaderw, this.voices[i].header.length *5+10);
+        }
+    }
+    x += voiceheaderw + (voiceheaderw? printer.paddingleft:0); // 10% of 0 is 0
+    this.startx = x;
+
+    var currentduration = 0;
+    if (debug)
+        waterbug.log("init layout");
+    for (i = 0; i < this.voices.length; i++) {
+        this.voices[i].beginLayout(x);
+        for (b = 0; b < this.voices[i].beams.length; b++) {
+            for (be = 0; be < this.voices[i].beams[b].elems.length; be++) {
+                var elem = this.voices[i].beams[b].elems[be];
+                this.voices[i].stave.highest = Math.max(elem.top, this.voices[i].stave.highest);
+                this.voices[i].stave.lowest = Math.min(elem.bottom-2, this.voices[i].stave.lowest);
+            }
+        }
+    }
+
+    var c = 0;
+    while (!this.finished()) {
+        
+        if( c++ > 1000 ) {
+            alert( 'não termina!' );
+        }
+        
+        // find first duration level to be laid out among candidates across voices
+
+        currentduration = null; // candidate smallest duration level
+        for (i = 0; i < this.voices.length; i++) {
+            if (!this.voices[i].layoutEnded() && (!currentduration || this.voices[i].getDurationIndex() < currentduration))
+                currentduration = this.voices[i].getDurationIndex();
+        }
+        if (debug)
+            waterbug.log("currentduration: ", currentduration);
+
+
+        // isolate voices at current duration level
+        var currentvoices = [];
+        var othervoices = [];
+        for (i = 0; i < this.voices.length; i++) {
+            if (this.voices[i].getDurationIndex() !== currentduration) {
+                othervoices.push(this.voices[i]);
+                //waterbug.log("out: voice ",i);
+            } else {
+                currentvoices.push(this.voices[i]);
+                if (debug)
+                    waterbug.log("in: voice ", i);
+            }
+        }
+
+        // among the current duration level find the one which needs starting furthest right
+        var spacingunit = 0; // number of spacingunits coming from the previously laid out element to this one
+        var spacingduration = 0;
+        for (i = 0; i < currentvoices.length; i++) {
+            if (currentvoices[i].getNextX() > x) {
+                x = currentvoices[i].getNextX();
+                var sd = currentvoices[i].spacingduration;
+                spacingunit = currentvoices[i].getSpacingUnits();
+                // arredonda para zero os numeros muito pequenos - evita erros de NaN em operações posteriores
+                spacingduration = Math.abs(sd) < 0.001 ? Math.round(sd) : sd;
+            }
+        }
+        this.spacingunits += spacingunit;
+        this.minspace = Math.min(this.minspace, spacingunit);
+
+        for (i = 0; i < currentvoices.length; i++) {
+            var voicechildx = currentvoices[i].layoutOneItem(x, spacing );
+            var dx = voicechildx - x;
+            if (dx > 0) {
+                x = voicechildx; //update x
+                for (var j = 0; j < i; j++) { // shift over all previously laid out elements
+                    currentvoices[j].shiftRight(dx);
+                }
+            }
+        }
+
+        // remove the value of already counted spacing units in other voices (e.g. if a voice had planned to use up 5 spacing units but is not in line to be laid out at this duration level - where we've used 2 spacing units - then we must use up 3 spacing units, not 5)
+        for (i = 0; i < othervoices.length; i++) {
+            othervoices[i].spacingduration -= spacingduration;
+            othervoices[i].updateNextX(x, spacing); // adjust other voices expectations
+        }
+
+        // update indexes of currently laid out elems
+        for (i = 0; i < currentvoices.length; i++) {
+            var voice = currentvoices[i];
+            voice.updateIndices();
+        }
+    } // finished laying out
+
+
+    // find the greatest remaining x as a base for the width
+    for (i = 0; i < this.voices.length; i++) {
+        if (this.voices[i].getNextX() > x) {
+            x = this.voices[i].getNextX();
+            spacingunit = this.voices[i].getSpacingUnits();
+        }
+    }
+    this.spacingunits += spacingunit;
+    this.w = x;
+
+    for (i = 0; i < this.voices.length; i++) {
+        this.voices[i].w = this.w;
+    }
+};
+
+ABCXJS.write.StaffGroupElement.prototype.calcShiftAbove = function(voz) {
+  var abv = Math.max( voz.stave.highest, ABCXJS.write.spacing.TOPNOTE) - ABCXJS.write.spacing.TOPNOTE;
+  return (abv+2) * ABCXJS.write.spacing.STEP;
+};
+
+ABCXJS.write.StaffGroupElement.prototype.calcHeight = function(voz, hideLyrics) {
+    // calculo da altura da pauta + uma pequena folga
+    var h = (3+voz.stave.highest-voz.stave.lowest) * ABCXJS.write.spacing.STEP;
+
+    // inclui espaço para as linhas de texto - se existirem e estiverem visiveis
+    if( ! hideLyrics )
+        h += 15 * voz.stave.lyricsRows;
+
+    return h;
+};
+
+ABCXJS.write.StaffGroupElement.prototype.draw = function(printer, groupNumber) {
+    
+    var height = 0;
+    var shiftabove = 0;
+    var y =  printer.y;
+    var yi = printer.y;
+    
+    // posiciona cada pauta do grupo e determina a altura final da impressão
+    for (var i = 0; i < this.voices.length; i++) {
+
+        var h = 0;
+        
+        if( this.voices[i].stave.lyricsRows === 0 )
+            this.voices[i].stave.lowest -=2;
+        
+        shiftabove = this.calcShiftAbove( this.voices[i] );
+        
+        if( this.voices[i].duplicate ) {
+            
+            var above = this.voices[i-1].stave.y - this.voices[i-1].stave.top;
+            var lastH = this.voices[i-1].stave.bottom - this.voices[i-1].stave.top;
+
+            this.voices[i].stave.top = this.voices[i-1].stave.top;
+            
+            if( shiftabove > above ) {
+                this.voices[i-1].stave.y += (shiftabove-above);
+            }
+
+            this.voices[i].stave.y = this.voices[i-1].stave.y;
+            
+            var x = Math.min(this.voices[i].stave.lowest,this.voices[i-1].stave.lowest);
+            this.voices[i].stave.lowest = x;
+            this.voices[i-1].stave.lowest = x;
+
+            var x = Math.max(this.voices[i].stave.highest,this.voices[i-1].stave.highest);
+            this.voices[i].stave.highest = x;
+            this.voices[i-1].stave.highest = x;
+            
+            h = this.calcHeight(this.voices[i]);
+
+            if( h > lastH ) {
+                height += (h-lastH);
+                y += (h-lastH);
+            }
+            
+            this.voices[i-1].stave.bottom = y;
+            this.voices[i].stave.bottom = y;
+           
+        } else {
+            
+            if (groupNumber > 0 && i === 0 && this.voices[i].stave.subtitle) {
+                y += 5 ;
+            }
+
+            h = this.calcHeight(this.voices[i], printer.currentTune.formatting.hideLyrics);
+
+            this.voices[i].stave.top = y;
+            this.voices[i].stave.y = y + shiftabove;
+
+            height += h;
+            y += h;
+            
+            this.voices[i].stave.bottom = y;
+        }
+    }
+    
+    // verifica se deve iniciar nova pagina
+    var nexty = printer.y + height + printer.staffsep ; 
+    if( nexty >= printer.estimatedPageLength )  {
+        printer.skipPage();
+    } else  if (groupNumber > 0) {
+     // ou espaco entre os grupos de pautas
+      printer.y += printer.staffsep; 
+    }
+    
+    var delta = printer.y - yi; 
+
+    // ajusta a grupo para a nova posição
+    if( delta !== 0 ) {
+        for (var i = 0; i < this.voices.length; i++) {
+            this.voices[i].stave.bottom += delta;
+            this.voices[i].stave.top += delta;
+            this.voices[i].stave.y += delta;
+        }    
+    }
+    
+    // imprime a pauta
+    for (i = 0; i < this.voices.length; i++) {
+        if (this.voices[i].stave.numLines === 0 || this.voices[i].duplicate)
+            continue;
+        printer.y = this.voices[i].stave.y;
+        if( typeof(debug) !== 'undefined' && debug ) {
+          printer.printDebugLine(this.startx, this.w, this.voices[i].stave.y, "#ff0000"); 
+          printer.printDebugMsg( this.startx-5, this.voices[i].stave.y, 'y' );
+          printer.printDebugLine(this.startx, this.w, this.voices[i].stave.top, "#00ff00"); 
+          printer.printDebugMsg( this.startx-5, this.voices[i].stave.top, 'top' );
+          printer.printDebugLine(this.startx, this.w, this.voices[i].stave.bottom, "#00ff00"); 
+          printer.printDebugMsg( this.startx+50, this.voices[i].stave.bottom, 'bottom' );
+          printer.printDebugLine(this.startx, this.w, printer.calcY(this.voices[i].stave.highest), "#0000ff"); 
+          printer.printDebugMsg( this.w-50, printer.calcY(this.voices[i].stave.highest), 'highest' );
+          printer.printDebugLine(this.startx, this.w, printer.calcY(this.voices[i].stave.lowest), "#0000ff"); 
+          printer.printDebugMsg( this.w-50, printer.calcY(this.voices[i].stave.lowest), 'lowest' );
+        }  
+        printer.printStave(this.startx, this.w-1, this.voices[i].stave);
+    }
+    
+    for (i = 0; i < this.voices.length; i++) {
+        if (groupNumber > 0 && i === 0 && this.voices[i].stave.subtitle) {
+            printer.y = this.voices[i].stave.top - 18;
+            printer.printSubtitleLine(this.voices[i].stave.subtitle);
+        }
+        //if(this.voices[i].stave.clef.type === 'accordionTab') // flavio - implementar impressão seletiva da pauta
+        this.voices[i].draw(printer);
+    }
+
+    if (this.voices.length > 0) {
+        var top = this.voices[0].stave.y;
+        var clef = this.voices[this.voices.length - 1].stave.clef.type;
+        var bottom = printer.calcY(clef==="accordionTab"?0:2);
+        printer.printBar(this.startx, 0.6, top, bottom, false);
+        printer.printBar(this.w-1, 0.6, top, bottom, false);
+        if (this.voices.length > 1)  {
+            printer.paper.printBrace(this.startx-10, top-10, bottom+10);  
+        }
+    }
+    // registra a posição do staffgroup e sua altura para uso posterior, fazendo scroll durante a execução do MIDI.
+    this.top = yi+delta +printer.totalY;
+    this.height = height;
+    
+    // nova posição da impressora
+    printer.y = yi+ delta + height; 
+    
+};
+
+ABCXJS.write.VoiceElement = function(voicenumber, staffnumber, abcstaff) {
+    this.children = [];
+    this.fingers = [];
+    this.bassfingers = [];
+    this.beams = [];
+    this.otherchildren = []; // ties, slurs, triplets
+    this.w = 0;
+    this.duplicate = false;
+    this.voicenumber = voicenumber; //number of the voice on a given stave (not staffgroup)
+    this.staffnumber = staffnumber; // number of the staff in the staffgroup
+    this.voicetotal = abcstaff.voices.length;
+    this.stem = abcstaff.stem[voicenumber];
+    this.stave = {
+        y: 0
+       ,top: 0
+       ,bottom: 0
+       ,clef: abcstaff.clef
+       ,subtitle: abcstaff.subtitle
+       ,lyricsRows: abcstaff.lyricsRows
+       ,lowest: (abcstaff.clef.type === "accordionTab" ) ? -2 : 0
+       ,highest: (abcstaff.clef.type === "accordionTab" ) ? 21.5 : 10
+       ,numLines: (abcstaff.clef.type === "accordionTab" ) ? 4 : abcstaff.clef.staffLines || 5
+    };
+};
+
+ABCXJS.write.VoiceElement.prototype.addChild = function(child) {
+    this.children[this.children.length] = child;
+    // FINGERS - Parte I
+    // o parse do dedilhado foi feito nos moldes da letra (lyrics)
+    // porém agora, removo os elementos de dedilhados do padrão original e crio uma estrutura separada da voz
+    for (i=0; i<child.children.length; i++) {
+        if(child.children[i].type === 'fingering'){
+            var relativeChild =  child.children[i] ;
+            this.fingers[this.fingers.length] = relativeChild ;
+            child.children.splice(i,1);
+        } else  if(child.children[i].type === 'bassfingering'){
+            var relativeChild =  child.children[i] ;
+            this.bassfingers[this.bassfingers.length] = relativeChild ;
+            child.children.splice(i,1);
+        }
+    }
+};
+
+ABCXJS.write.VoiceElement.prototype.addOther = function(child) {
+    if (child instanceof ABCXJS.write.BeamElem) {
+        this.beams.push(child);
+    } else {
+        this.otherchildren.push(child);
+    }
+};
+
+ABCXJS.write.VoiceElement.prototype.updateIndices = function() {
+    if (!this.layoutEnded()) {
+        this.durationindex += this.children[this.i].duration;
+        if (this.children[this.i].duration === 0)
+            this.durationindex = Math.round(this.durationindex * 64) / 64; // everytime we meet a barline, do rounding to nearest 64th
+        this.i++;
+    }
+};
+
+ABCXJS.write.VoiceElement.prototype.layoutEnded = function() {
+    return (this.i >= this.children.length);
+};
+
+ABCXJS.write.VoiceElement.prototype.getDurationIndex = function() {
+    return this.durationindex - (this.children[this.i] && (this.children[this.i].duration > 0) ? 0 : 0.0000005); // if the ith element doesn't have a duration (is not a note), its duration index is fractionally before. This enables CLEF KEYSIG TIMESIG PART, etc. to be laid out before we get to the first note of other voices
+};
+
+// number of spacing units expected for next positioning
+ABCXJS.write.VoiceElement.prototype.getSpacingUnits = function() {
+    return (this.minx < this.nextx) ? Math.sqrt(this.spacingduration * 8) : 0; // we haven't used any spacing units if we end up using minx
+};
+
+//
+ABCXJS.write.VoiceElement.prototype.getNextX = function() {
+    return Math.max(this.minx, this.nextx);
+};
+
+ABCXJS.write.VoiceElement.prototype.beginLayout = function(startx) {
+    this.i = 0;
+    this.durationindex = 0;
+    this.ii = this.children.length;
+    this.startx = startx;
+    this.minx = startx; // furthest left to where negatively positioned elements are allowed to go
+    this.nextx = startx; // x position where the next element of this voice should be placed assuming no other voices and no fixed width constraints
+    this.spacingduration = 0; // duration left to be laid out in current iteration (omitting additional spacing due to other aspects, such as bars, dots, sharps and flats)
+};
+
+// Try to layout the element at index this.i
+// x - position to try to layout the element at
+// spacing - base spacing
+// can't call this function more than once per iteration
+ABCXJS.write.VoiceElement.prototype.layoutOneItem = function(x, spacing) {
+    var child = this.children[this.i];
+    if (!child)
+        return 0;
+    var er = x - this.minx; // available extrawidth to the left
+    if (er < child.getExtraWidth()) { // shift right by needed amount
+        x += child.getExtraWidth() - er;
+    }
+    child.x = x; // place child at x
+
+    this.spacingduration = child.duration;
+    //update minx
+    this.minx = x + child.getMinWidth(); // add necessary layout space
+    if (this.i !== this.ii - 1)
+        this.minx += child.minspacing; // add minimumspacing except on last elem
+
+    this.updateNextX(x, spacing);
+
+    // contribute to staff y position
+    this.stave.highest = Math.max(child.top, this.stave.highest);
+    this.stave.lowest = Math.min(child.bottom, this.stave.lowest);
+
+    return x; // where we end up having placed the child
+};
+
+// call when spacingduration has been updated
+ABCXJS.write.VoiceElement.prototype.updateNextX = function(x, spacing) {
+    var temp = x + (spacing * Math.sqrt(this.spacingduration * 8));
+    // isso resolve um problema que apareceu no chrome 71.0.3578.98, mas não sei o impacto de retornar 0.
+    this.nextx = isNaN(temp)? 0: temp;
+};
+
+ABCXJS.write.VoiceElement.prototype.shiftRight = function(dx) {
+    var child = this.children[this.i];
+    if (!child)
+        return;
+    child.x += dx;
+    this.minx += dx;
+    this.nextx += dx;
+};
+
+ABCXJS.write.VoiceElement.prototype.draw = function(printer) {
+    var ve = this;
+    var width = ve.w - 1;
+    printer.y = ve.stave.y;
+    
+    if (this.header) { // print voice name
+        var headerY = (ve.stave.clef.type!=='accordionTab'? printer.calcY(6) : ve.stave.y ) +3;
+        var headerX = printer.paddingleft;
+        printer.printText(headerX, headerY,  this.header, 'abc_voice_header', 'start' );
+    }
+    
+    // beams must be drawn first for proper printing of triplets, slurs and ties.
+    for (var i = 0; i < this.beams.length; i++) {
+        this.beams[i].draw(printer ); 
+    };
+
+    // bars, notes, stems, etc
+    for (var i = 0; i < this.children.length; i++) {
+        this.children[i].draw(printer, ve.stave);
+    }
+    
+    // tie arcs, endings, decorations, etc..
+    for (var i = 0; i < this.otherchildren.length; i++) {
+        this.otherchildren[i].draw(printer, ve.startx + 10, width, ve.stave, ve.staffnumber, ve.voicenumber );
+    };
+
+};
+
+// duration - actual musical duration - different from notehead duration in triplets. 
+// refer to abcelem to get the notehead duration
+// minspacing - spacing which must be taken on top of the width defined by the duration
+ABCXJS.write.AbsoluteElement = function(abcelem, duration, minspacing) {
+    this.abcelem = abcelem;
+    this.duration = duration;
+    this.minspacing = minspacing || 0;
+    this.x = 0;
+    this.children = [];
+    this.heads = [];
+    this.extra = [];
+    this.extraw = 0;
+    this.decs = [];
+    this.w = 0;
+    this.right = [];
+    this.invisible = false;
+    this.bottom = 7;
+    this.top = 7;
+};
+
+ABCXJS.write.AbsoluteElement.prototype.getMinWidth = function() {
+    // absolute space taken to the right of the note
+    return this.w;
+};
+
+ABCXJS.write.AbsoluteElement.prototype.getExtraWidth = function() {
+    // space needed to the left of the note
+    return -this.extraw;
+};
+
+ABCXJS.write.AbsoluteElement.prototype.addExtra = function(extra) {
+    if (extra.dx < this.extraw)
+        this.extraw = extra.dx;
+    this.extra[this.extra.length] = extra;
+    this.addChild(extra);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.addHead = function(head) {
+    if (head.dx < this.extraw)
+        this.extraw = head.dx;
+    this.heads[this.heads.length] = head;
+    this.addRight(head);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.addRight = function(right) {
+    if (right.dx + right.w > this.w)
+        this.w = right.dx + right.w;
+    this.right[this.right.length] = right;
+    this.addChild(right);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.addChild = function(child) {
+    child.parent = this;
+    this.children[this.children.length] = child;
+    this.pushTop(child.top);
+    this.pushBottom(child.bottom);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.pushTop = function(top) {
+    this.top = Math.max(top, this.top);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.pushBottom = function(bottom) {
+    this.bottom = Math.min(bottom, this.bottom);
+};
+
+ABCXJS.write.AbsoluteElement.prototype.draw = function(printer, staveInfo ) {
+    
+    if (this.invisible) return;
+
+    var l = 0;
+    
+    this.elemset = {};// printer.paper.set();
+    
+    // imprimir primeiro ledger e mante-los fora do grupo de selecionaveis
+    for (var i = 0; i < this.children.length; i++) {
+        //this.elemset.push(this.children[i].draw(printer, this.x, staveInfo ));
+        if ( this.children[i].type === 'ledger' || this.children[i].type === 'part' ) {
+            this.children[i].draw(printer, this.x, staveInfo );
+        } else {
+            l++; // count notes, bars, etc
+        }
+    }
+    
+    if( l > 0 ){
+        printer.beginGroup(this);
+    }
+    
+    for (var i = 0; i < this.children.length; i++) {
+        if ( this.children[i].type !== 'ledger' && this.children[i].type !== 'part' ) {
+            this.children[i].draw(printer, this.x, staveInfo );
+        }
+    }
+    
+    if( l > 0 ){
+        printer.endGroup();
+    }
+    
+    this.abcelem.parent = this; 
+    this.abcelem.parent.staffGroup = printer.staffgroups.length; // indica em qual staff group este abc elem vai estar
+                                                                 // lembrando que o staffgroup sera incluido mais adiante.
+    
+};
+/*
+var svgns = "http://www.w3.org/2000/svg";
+for (var x = 0; x < 5000; x += 50) {
+    for (var y = 0; y < 3000; y += 50) {
+        var rect = document.createElementNS(svgns, 'rect');
+        rect.setAttributeNS(null, 'x', x);
+        rect.setAttributeNS(null, 'y', y);
+        rect.setAttributeNS(null, 'height', '50');
+        rect.setAttributeNS(null, 'width', '50');
+        rect.setAttributeNS(null, 'fill', '#'+Math.round(0xffffff * Math.random()).toString(16));
+        document.getElementById('svgOne').appendChild(rect);
+
+  var translate = d3.transform(d3.select(this.parentNode).attr("transform")).translate;
+        var dataset = [1,2,3,4]                                    // HERE
+        vis.selectAll("line")                                      // HERE
+            .data(dataset)                                 // HERE
+            .enter()                                       // HERE
+            .append("line")                                // HERE
+            .attr("x1", translate[0])                            // HERE'S THE PROBLEM FOR PERRY
+            .attr("y1", translate[1])   
+
+ */
+
+ABCXJS.write.AbsoluteElement.prototype.setMouse = function(printer) {
+    var self = this;
+    this.svgElem = document.getElementById(self.gid);
+    
+    if(ABCXJS.write.color.useTransparency) {
+        try {
+            var svgns = "http://www.w3.org/2000/svg";
+
+            var bounds = this.svgElem.getBBox();
+            var rect = document.createElementNS(svgns, 'rect');
+                rect.setAttributeNS(null, 'x', bounds.x.toFixed(1)-1);
+                rect.setAttributeNS(null, 'y', bounds.y.toFixed(1)-1);
+                rect.setAttributeNS(null, 'height', bounds.height.toFixed(1)+2);
+                rect.setAttributeNS(null, 'width', bounds.width.toFixed(1)+2);
+                rect.setAttributeNS(null, 'fill', 'none' );
+
+            this.svgElem.appendChild(rect);
+            this.svgArea = rect;
+        } catch( e ) {
+            // Firefox dies if svgElem is not Visible
+        }
+    }    
+    
+    this.svgElem.onmouseover =  function() {self.highlight(true);};
+    this.svgElem.onmouseout =  function() {self.unhighlight(true);};
+    this.svgElem.onclick =  function() {printer.notifyClearNSelect(self, true);};
+ };
+
+ABCXJS.write.AbsoluteElement.prototype.highlight = function(keepState) {
+    if(!this.svgElem) return;
+    if(keepState) this.svgElem.prevFill = this.svgElem.style.fill;
+    this.svgElem.style.setProperty( 'fill', ABCXJS.write.color.highLight );
+    (this.svgArea) && this.svgArea.style.setProperty( 'fill', ABCXJS.write.color.highLight );
+    (this.svgArea) && this.svgArea.style.setProperty( 'fill-opacity', '0.15' );
+};
+
+ABCXJS.write.AbsoluteElement.prototype.unhighlight = function(keepState) {
+    if(!this.svgElem) return;
+    var fill = (keepState && this.svgElem.prevFill ) ? this.svgElem.prevFill : ABCXJS.write.color.unhighLight;
+    this.svgElem.style.setProperty( 'fill', fill );
+    (this.svgArea) && this.svgArea.style.setProperty( 'fill-opacity', '0' );
+};
+
+
+ABCXJS.write.RelativeElement = function(c, dx, w, pitch, opt) {
+    opt = opt || {};
+    this.x = 0;
+    this.c = c;      // character or path or string
+    this.dx = dx;    // relative x position
+    this.w = w;      // minimum width taken up by this element (can include gratuitous space)
+    this.pitch = pitch; // relative y position by pitch
+    this.type = opt.type || "symbol"; // cheap types.
+    this.pitch2 = opt.pitch2;
+    this.linewidth = opt.linewidth;
+    this.attributes = opt.attributes; // only present on textual elements
+    this.top = pitch + ((opt.extreme === "above") ? 7 : 0);
+    this.bottom = pitch - ((opt.extreme === "below") ? 7 : 0);
+};
+
+ABCXJS.write.RelativeElement.prototype.draw = function(printer, x, staveInfo ) {
+
+    this.x = x + this.dx;
+
+    switch (this.type) {
+      
+        case "symbol":
+            if (this.c === null)
+                return null;
+            this.graphelem = printer.printSymbol(this.x, this.pitch, this.c);
+            break;
+        case "debug":
+            this.graphelem = printer.printDebugMsg(this.x, staveInfo.highest+2, this.c);
+            break;
+        case "fingering":
+            this.graphelem = printer.printFingering(this.x, staveInfo, this.c);
+            break;
+        case "bassfingering":
+            this.graphelem = printer.printBassFingering(this.x, staveInfo, this.c);
+            break;
+        case "lyrics":
+            this.graphelem = printer.printLyrics(this.x, staveInfo, this.c);
+            break;
+        case "barnumber":
+            this.graphelem = printer.printText(this.x, this.pitch, this.c, 'abc_ending', 'middle');
+            break
+        case "part":
+            this.graphelem = printer.printText(this.x, this.pitch, this.c, 'abc_subtitle');
+            break;
+        case "text":
+            this.graphelem = printer.printText(this.x, this.pitch, this.c, 'abc_text');
+            break;
+        case "tabText":
+            this.graphelem = printer.printTabText(this.x, this.pitch, this.c);
+            break;
+        case "tabText2":
+            this.graphelem = printer.printTabText2(this.x, this.pitch, this.c);
+            break;
+        case "tabText3":
+            this.graphelem = printer.printTabText3(this.x, this.pitch, this.c);
+            break;
+        case "bar":
+            this.graphelem = printer.printBar(this.x, this.linewidth, printer.calcY(this.pitch), printer.calcY(this.pitch2), true);
+            break;
+        case "stem":
+            this.drawStem(printer);
+            //this.graphelem = printer.printStem(this.x, this.linewidth, printer.calcY(this.pitch), printer.calcY(this.pitch2));
+            break;
+        case "ledger":
+            this.graphelem = printer.printLedger(this.x, this.x + this.w, this.pitch);
+            break;
+    }
+    
+    return this.graphelem;
+};
+
+ABCXJS.write.RelativeElement.prototype.drawStem = function( printer ) {
+    var beam = this.parent.beam;
+    var abcelem = this.parent.abcelem;
+    if( beam ) { // under the beam, calculate new size for the stem
+        if (abcelem.rest) return;
+        var i = this.parent.beamId; 
+        var furthesthead = beam.elems[i].heads[(beam.asc) ? 0 : beam.elems[i].heads.length - 1];
+        var ovaldelta = (beam.isgrace) ? 1 / 3 : 1 / 5;
+        var pitch = furthesthead.pitch + ((beam.asc) ? ovaldelta : -ovaldelta);
+        var y = printer.calcY(pitch);
+        var x = furthesthead.x + ((beam.asc) ? furthesthead.w : 0);
+        var bary = beam.getBarYAt(x);
+        var dx = (beam.asc) ? -0.6 : 0.6;
+        printer.printStem(x, dx, y, bary);        
+    } else {
+        this.graphelem = printer.printStem(this.x, 0.6*this.linewidth/*fixme: mudar linew para 0.6*/, printer.calcY(this.pitch), printer.calcY(this.pitch2));
+    }
+};
+
+ABCXJS.write.TieElem = function(anchor1, anchor2, above, forceandshift) {
+    this.anchor1 = anchor1; // must have a .x and a .pitch, and a .parent property or be null (means starts at the "beginning" of the line - after keysig)
+    this.anchor2 = anchor2; // must have a .x and a .pitch property or be null (means ends at the end of the line)
+    this.above = above; // true if the arc curves above
+    this.force = forceandshift; // force the arc curve, regardless of beaming if true
+    // move by +7 "up" by -7 if "down"
+};
+
+ABCXJS.write.TieElem.prototype.draw = function(printer, linestartx, lineendx, staveInfo) {
+
+    var startpitch;
+    var endpitch;
+
+    if (this.startlimitelem) {
+        linestartx = this.startlimitelem.x + this.startlimitelem.w;
+    }
+
+    if (this.endlimitelem) {
+        lineendx = this.endlimitelem.x;
+    }
+    // PER: We might have to override the natural slur direction if the first and last notes are not in the
+    // save direction. We always put the slur up in this case. The one case that works out wrong is that we always
+    // want the slur to be up when the last note is stem down. We can tell the stem direction if the top is
+    // equal to the pitch: if so, there is no stem above it.
+    if (!this.force && this.anchor2 && this.anchor2.pitch === this.anchor2.top)
+        this.above = true;
+
+    if (this.anchor1) {
+        linestartx = this.anchor1.x;
+        startpitch = this.above ? this.anchor1.highestVert : this.anchor1.pitch;
+        if (!this.anchor2) {
+            endpitch = this.above ? this.anchor1.highestVert : this.anchor1.pitch;
+        }
+    }
+
+    if (this.anchor2) {
+        lineendx = this.anchor2.x;
+        endpitch = this.above ? this.anchor2.highestVert : this.anchor2.pitch;
+        if (!this.anchor1) {
+            startpitch = this.above ? this.anchor2.highestVert : this.anchor2.pitch;
+        }
+    }
+
+    printer.printTieArc(linestartx, lineendx, startpitch, endpitch, this.above);
+
+};
+
+ABCXJS.write.DynamicDecoration = function(anchor, dec) {
+    this.anchor = anchor;
+    this.dec = dec;
+};
+
+ABCXJS.write.DynamicDecoration.prototype.draw = function(printer, linestartx, lineendx, staveInfo) {
+    var ypos = staveInfo.lowest-1;
+    for( var r=0; r < this.dec.length; r ++ ) {
+        printer.printSymbol(this.anchor.x+r*10, ypos, this.dec[r]);
+    }    
+};
+
+ABCXJS.write.EndingElem = function(text, anchor1, anchor2) {
+    this.text = text; // text to be displayed top left
+    this.anchor1 = anchor1; // must have a .x property or be null (means starts at the "beginning" of the line - after keysig)
+    this.anchor2 = anchor2; // must have a .x property or be null (means ends at the end of the line)
+};
+
+ABCXJS.write.EndingElem.prototype.draw = function(printer, linestartx, lineendx, staveInfo, staffnumber, voicenumber) {
+    if(staffnumber > 0  || voicenumber > 0)  return;
+
+    var y = printer.calcY(staveInfo.highest + 5); // fixme: era 4
+
+    if (this.anchor1) {
+        linestartx = this.anchor1.x + this.anchor1.w;
+        printer.paper.printLine( linestartx, y, linestartx, y + 10 );
+        printer.paper.text( linestartx + 3, y + 9, this.text, 'abc_ending', 'start' );
+    }
+
+    if (this.anchor2) {
+        lineendx = this.anchor2.x;
+    }   
+    
+    printer.paper.printLine(linestartx, y, lineendx-5, y);  
+};
+
+ABCXJS.write.CrescendoElem = function(anchor1, anchor2, dir) {
+    this.anchor1 = anchor1; // must have a .x and a .parent property or be null (means starts at the "beginning" of the line - after keysig)
+    this.anchor2 = anchor2; // must have a .x property or be null (means ends at the end of the line)
+    this.dir = dir; // either "<" or ">"
+};
+
+ABCXJS.write.CrescendoElem.prototype.draw = function(printer, linestartx, lineendx, staveInfo) {
+    var ypos = printer.calcY(staveInfo.lowest - 1);
+
+    if (this.dir === "<") {
+        printer.paper.printLine(this.anchor1.x, ypos, this.anchor2.x, ypos-4);
+        printer.paper.printLine(this.anchor1.x, ypos, this.anchor2.x, ypos+4);
+    } else {
+        printer.paper.printLine(this.anchor1.x, ypos-4, this.anchor2.x, ypos);
+        printer.paper.printLine(this.anchor1.x, ypos+4, this.anchor2.x, ypos);
+    }
+};
+
+ABCXJS.write.TripletElem = function(tripletInfo, anchor1, anchor2, stemDir ) {
+    this.anchor1 = anchor1; // must have a .x and a .parent property or be null (means starts at the "beginning" of the line - after keysig)
+    this.anchor2 = anchor2; // must have a .x property or be null (means ends at the end of the line)
+    this.forceUp = stemDir==='up';
+    this.forceDown = stemDir==='down';
+    this.number = tripletInfo.num;
+    this.qtd_notes = tripletInfo.notes;
+    this.avgPitch = tripletInfo.avgPitch;
+    this.minPitch = 100;
+    this.maxPitch = -100;
+    this.asc = ! ( (this.forceUp || this.avgPitch <= 6 ) && (!this.forceDown) ); // hardcoded 6 is B
+    this.multiplier = tripletInfo.num === 2 ? 1.5 : (tripletInfo.num-1)/tripletInfo.num;
+    
+};
+
+ABCXJS.write.TripletElem.prototype.draw = function(printer, linestartx, lineendx, staveInfo) {
+    
+    if (this.anchor1 && this.anchor2) {
+
+        var maxslant = (this.qtd_notes? this.qtd_notes: this.number) / 2;
+        var slant = this.anchor1.parent.abcelem.averagepitch - this.anchor2.parent.abcelem.averagepitch;
+        var isFlat = true;
+        
+        if (isFlat ) {
+            slant = 0;
+        } else  {
+            slant = Math.min(slant,maxslant);
+            slant = Math.max(slant,-maxslant);
+        }
+
+        var ypos = Math.max( this.forceUp ? this.maxPitch+9 : (this.maxPitch >= 10 ? this.maxPitch + 3 : 13), 13) ;
+        var starty = printer.calcY(ypos + Math.floor(slant / 2));
+        var endy = printer.calcY(ypos + Math.floor(-slant / 2));
+
+        if (this.anchor1.parent.beam &&
+                this.anchor1.parent.beam === this.anchor2.parent.beam) {
+            var beam = this.anchor1.parent.beam;
+            this.asc = beam.asc;
+            ypos = beam.pos;
+        } else {
+            var y = printer.calcY(ypos);
+            var linestartx = this.anchor1.x -2;
+            var lineendx = this.anchor2.x + this.anchor2.w;
+            
+            //printer.paper.printLine(linestartx, starty+ (!this.asc? 0 : -5), linestartx, starty + (!this.asc? 5 : 0) );
+            //printer.paper.printLine(lineendx, endy+ (!this.asc? 0 : -5), lineendx, endy + (!this.asc? 5 : 0));
+
+            printer.paper.printLine(linestartx, starty+ (true? 0 : -5), linestartx, starty + (true? 5 : 0) );
+            printer.paper.printLine(lineendx, endy+ (true? 0 : -5), lineendx, endy + (true? 5 : 0));
+            
+            
+            //printer.paper.printLine(linestartx, y, (linestartx + lineendx) / 2 - 5, y);
+            //printer.paper.printLine((linestartx + lineendx) / 2 + 5, y, lineendx, y);
+            
+            printer.paper.printBeam( linestartx, starty, (linestartx + lineendx) / 2 - 5, y, (linestartx + lineendx) / 2 - 5, y+1, linestartx, starty+1 );
+            printer.paper.printBeam( (linestartx + lineendx) / 2 + 5, y, lineendx, endy, lineendx, endy+1, (linestartx + lineendx) / 2 + 5, y+1 );
+        }
+        
+        var ydelta = ypos + (beam ? ( this.asc ? 2 : -3.5 ) : -1 );
+        var xdelta = ( this.anchor1.x + this.anchor2.x + this.anchor1.w + (beam && this.asc ? this.anchor2.w : 0 ) - 2 ) / 2;
+        
+        printer.printText( xdelta, ydelta, this.number, 'abc_ending', "middle");
+
+    } else {
+        waterbug.log( 'Incomplete triplet' );
+    }
+};
+
+ABCXJS.write.BeamElem = function(type, flat) {
+    this.isflat = (flat);
+    this.isgrace = (type && type === "grace");
+    this.forceup = (type && type === "up");
+    this.forcedown = (type && type === "down");
+    this.elems = []; // all the ABCXJS.write.AbsoluteElements
+    this.total = 0;
+    this.dy = (this.asc) ? ABCXJS.write.spacing.STEP * 1.2 : -ABCXJS.write.spacing.STEP * 1.2;
+    if (this.isgrace)
+        this.dy = this.dy * 0.4;
+    this.allrests = true;
+};
+
+ABCXJS.write.BeamElem.prototype.add = function(abselem) {
+    var pitch = abselem.abcelem.averagepitch;
+    if (pitch === undefined)
+        return; // don't include elements like spacers in beams
+    this.allrests = this.allrests && abselem.abcelem.rest;
+    abselem.beam = this;
+    this.elems.push(abselem);
+    //var pitch = abselem.abcelem.averagepitch;
+    this.total += pitch; // TODO CHORD (get pitches from abselem.heads)
+    if (!this.min || abselem.abcelem.minpitch < this.min) {
+        this.min = abselem.abcelem.minpitch;
+    }
+    if (!this.max || abselem.abcelem.maxpitch > this.max) {
+        this.max = abselem.abcelem.maxpitch;
+    }
+};
+
+ABCXJS.write.BeamElem.prototype.average = function() {
+    try {
+        return this.total / this.elems.length;
+    } catch (e) {
+        return 0;
+    }
+};
+
+ABCXJS.write.BeamElem.prototype.calcDir = function() {
+    var average = this.average();
+    this.asc = (this.forceup || this.isgrace || average < 6) && (!this.forcedown); // hardcoded 6 is B
+    return this.asc;
+};
+
+ABCXJS.write.BeamElem.prototype.getBarYAt = function(x) {
+    return this.starty + (this.endy - this.starty) / (this.endx - this.startx) * (x - this.startx);
+};
+
+ABCXJS.write.BeamElem.prototype.draw = function(printer) {
+
+    if (this.elems.length === 0 || this.allrests)
+        return;
+    
+    var average = this.average();
+    var barpos = (this.isgrace) ? 5 : 7;
+    this.calcDir();
+
+    //PER: I just bumped up the minimum height for notes with descending stems to clear a rest in the middle of them.
+    var barminpos = this.asc ? 5 : 8;	
+    
+    this.pos = Math.round(this.asc ? Math.max(average + barpos, this.max + barminpos) : Math.min(average - barpos, this.min - barminpos));
+    
+    var maxslant = this.elems.length / 2;
+    var slant = this.elems[0].abcelem.averagepitch - this.elems[this.elems.length - 1].abcelem.averagepitch;
+    
+    if (this.isflat ) {
+        slant = 0;
+    } else  {
+        slant = Math.min(slant,maxslant);
+        slant = Math.max(slant,-maxslant);
+    }
+
+    this.starty = printer.calcY(this.pos + Math.floor(slant / 2));
+    this.endy = printer.calcY(this.pos + Math.floor(-slant / 2));
+   
+    var starthead = this.elems[0].heads[(this.asc) ? 0 : this.elems[0].heads.length - 1];
+    var endhead = this.elems[this.elems.length - 1].heads[(this.asc) ? 0 : this.elems[this.elems.length - 1].heads.length - 1];
+    this.startx = this.elems[0].x;
+    
+    if (this.asc)
+        this.startx += starthead.w - 0.6;
+    
+    this.endx = this.elems[this.elems.length - 1].x;
+    
+    if (this.asc)
+        this.endx += endhead.w;
+
+    // PER: if the notes are too high or too low, make the beam go down to the middle
+    if ( (this.asc && this.pos < 6) || (!this.asc && this.pos > 6) ){
+        this.pos = 6;
+        this.starty = printer.calcY(this.pos);
+        this.endy = printer.calcY(this.pos);
+    }
+    
+    printer.paper.printBeam(
+        this.startx, this.starty
+       ,this.startx, (this.starty + this.dy) 
+       ,this.endx, (this.endy + this.dy)
+       ,this.endx, this.endy
+       
+    );
+
+    
+    this.drawAuxBeams(printer);
+};
+
+ABCXJS.write.BeamElem.prototype.drawAuxBeams = function(printer) {
+    var auxbeams = [];  // auxbeam will be {x, y, durlog, single} auxbeam[0] should match with durlog=-4 (16th) (j=-4-durlog)
+    for (var i = 0, ii = this.elems.length; i < ii; i++) {
+        if (this.elems[i].abcelem.rest) continue;
+        var furthesthead = this.elems[i].heads[(this.asc) ? 0 : this.elems[i].heads.length - 1];
+        var x = this.elems[i].x + ((this.asc) ? furthesthead.w : 0);
+        var bary = this.getBarYAt(x);
+
+        var sy = (this.asc) ? 1.5 * ABCXJS.write.spacing.STEP : -1.5 * ABCXJS.write.spacing.STEP;
+        if (this.isgrace)
+            sy = sy * 2 / 3;
+        for (var durlog = ABCXJS.write.getDurlog(this.elems[i].abcelem.duration); durlog < -3; durlog++) { // get the duration via abcelem because of triplets
+            if (auxbeams[-4 - durlog]) {
+                auxbeams[-4 - durlog].single = false;
+            } else {
+                auxbeams[-4 - durlog] = {x: x + ((this.asc) ? -0.6 : 0), y: bary + sy * (-4 - durlog + 1),
+                    durlog: durlog, single: true};
+            }
+        }
+
+        for (var j = auxbeams.length - 1; j >= 0; j--) {
+            if (i === ii - 1 || ABCXJS.write.getDurlog(this.elems[i + 1].abcelem.duration) > (-j - 4)) {
+
+                var auxbeamendx = x;
+                var auxbeamendy = bary + sy * (j + 1);
+
+
+                if (auxbeams[j].single) {
+                    auxbeamendx = (i === 0) ? x + 5 : x - 5;
+                    auxbeamendy = this.getBarYAt(auxbeamendx) + sy * (j + 1);
+                }
+                // TODO I think they are drawn from front to back, hence the small x difference with the main beam
+                printer.paper.printBeam(auxbeams[j].x,auxbeams[j].y, auxbeamendx,auxbeamendy,auxbeamendx,(auxbeamendy + this.dy), auxbeams[j].x,(auxbeams[j].y + this.dy));
+                auxbeams = auxbeams.slice(0, j);
+            }
+        }
+    }
+};
+//    abc_layout.js: Creates a data structure suitable for printing a line of abc
+//    Copyright (C) 2010 Gregory Dyke (gregdyke at gmail dot com)
+//
+//    This program is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+//
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+//
+//    You should have received a copy of the GNU General Public License
+//    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+/*global window, ABCXJS */
+
+if (!window.ABCXJS)
+    window.ABCXJS = {};
+
+if (!window.ABCXJS.write)
+    window.ABCXJS.write = {};
+    
+window.ABCXJS.write.chartable = {rest:{0:"rests.whole", 1:"rests.half", 2:"rests.quarter", 3:"rests.8th", 4: "rests.16th",5: "rests.32nd", 6: "rests.64th", 7: "rests.128th"},
+		   note:{"-1": "noteheads.dbl", 0:"noteheads.whole", 1:"noteheads.half", 2:"noteheads.quarter", 3:"noteheads.quarter", 4:"noteheads.quarter", 5:"noteheads.quarter", 6:"noteheads.quarter"},
+		   uflags:{3:"flags.u8th", 4:"flags.u16th", 5:"flags.u32nd", 6:"flags.u64th"},
+		   dflags:{3:"flags.d8th", 4:"flags.d16th", 5:"flags.d32nd", 6:"flags.d64th"}};
+
+ABCXJS.write.getDuration = function(elem) {
+  var d = 0;
+  if (elem.duration) {
+    d = elem.duration;
+  }
+  return d;
+};
+
+ABCXJS.write.getDurlog = function(duration) {
+    // TODO-PER: This is a hack to prevent a Chrome lockup. Duration should have been defined already,
+    // but there's definitely a case where it isn't. [Probably something to do with triplets.]
+    if (duration === undefined) {
+        return 0;
+    }
+    return Math.floor(Math.log(duration)/Math.log(2));
+};
+
+ABCXJS.write.sortPitch = function (elem) {
+    var sorted;
+    do {
+        sorted = true;
+        for (var p = 0; p < elem.length - 1; p++) {
+            if (elem[p].pitch > elem[p + 1].pitch) {
+                sorted = false;
+                var tmp = elem[p];
+                elem[p] = elem[p + 1];
+                elem[p + 1] = tmp;
+            }
+        }
+    } while (!sorted);
+};
+
+
+ABCXJS.write.Layout = function(printer, bagpipes ) {
+  this.isBagpipes = bagpipes;
+  this.slurs = {};
+  this.ties = [];
+  this.slursbyvoice = {};
+  this.tiesbyvoice = {};
+  this.endingsbyvoice = {};
+  this.staffgroup = {};
+  this.tune = {};
+  this.tuneCurrLine = 0;
+  this.tuneCurrStaff = 0; // current staff number
+  this.tuneCurrVoice = 0; // current voice number on current staff
+  this.tripletmultiplier = 1;
+  this.printer = printer;	// TODO-PER: this is a hack to get access, but it tightens the coupling.
+  this.glyphs = printer.glyphs;
+};
+
+ABCXJS.write.Layout.prototype.getCurrentVoiceId = function() {
+  return "s"+this.tuneCurrStaff+"v"+this.tuneCurrVoice;
+};
+
+ABCXJS.write.Layout.prototype.pushCrossLineElems = function() {
+  this.slursbyvoice[this.getCurrentVoiceId()] = this.slurs;
+  this.tiesbyvoice[this.getCurrentVoiceId()] = this.ties;
+  this.endingsbyvoice[this.getCurrentVoiceId()] = this.partstartelem;
+};
+
+ABCXJS.write.Layout.prototype.popCrossLineElems = function() {
+  this.slurs = this.slursbyvoice[this.getCurrentVoiceId()] || {};
+  this.ties = this.tiesbyvoice[this.getCurrentVoiceId()] || [];
+  this.partstartelem = this.endingsbyvoice[this.getCurrentVoiceId()];
+};
+
+ABCXJS.write.Layout.prototype.getElem = function() {
+    if (this.currVoice.length <= this.pos)
+        return null;
+    return this.currVoice[this.pos];
+};
+
+ABCXJS.write.Layout.prototype.getNextElem = function() {
+    if (this.currVoice.length <= this.pos + 1)
+        return null;
+    return this.currVoice[this.pos + 1];
+};
+
+ABCXJS.write.Layout.prototype.isFirstVoice = function() {
+    return this.currVoice.firstVoice || false;
+};
+
+ABCXJS.write.Layout.prototype.isLastVoice = function() {
+    return this.currVoice.lastVoice || false;
+};
+
+ABCXJS.write.Layout.prototype.layoutABCLine = function( abctune, line, width ) {
+
+    this.tune = abctune;
+    this.tuneCurrLine = line;
+    this.staffgroup = new ABCXJS.write.StaffGroupElement();
+    this.width = width;
+
+    for (this.tuneCurrStaff = 0; this.tuneCurrStaff < this.tune.lines[this.tuneCurrLine].staffs.length; this.tuneCurrStaff++) {
+        var abcstaff = this.tune.lines[this.tuneCurrLine].staffs[this.tuneCurrStaff];
+        var header = "";
+        
+        if(!abcstaff) continue ;
+        
+        if (abcstaff.bracket)
+            header += "bracket " + abcstaff.bracket + " ";
+        if (abcstaff.brace)
+            header += "brace " + abcstaff.brace + " ";
+
+        for (this.tuneCurrVoice = 0; this.tuneCurrVoice < abcstaff.voices.length; this.tuneCurrVoice++) {
+            this.currVoice = abcstaff.voices[this.tuneCurrVoice];
+            this.voice = new ABCXJS.write.VoiceElement( this.tuneCurrVoice, this.tuneCurrStaff, abcstaff );
+            
+            if (this.tuneCurrVoice === 0) {
+                this.voice.barfrom = (abcstaff.connectBarLines === "start" || abcstaff.connectBarLines === "continue");
+                this.voice.barto = (abcstaff.connectBarLines === "continue" || abcstaff.connectBarLines === "end");
+            } else {
+                this.voice.duplicate = true; // barlines and other duplicate info need not be printed
+            }
+
+            if (abcstaff.clef.type !== "accordionTab") {
+                this.voice.addChild(this.printClef(abcstaff.clef));
+                (abcstaff.key) && this.voice.addChild(this.printKeySignature(abcstaff.key));
+                (abcstaff.meter) && this.voice.addChild(this.printTimeSignature(abcstaff.meter));
+                this.printABCVoice();
+            } else {
+                var p = new ABCXJS.tablature.Layout(this.tuneCurrVoice, this.tuneCurrStaff, abcstaff, this.glyphs, this.tune.formatting.restsInTab );
+                this.voice = p.printTABVoice(this.layoutJumpDecorationItem);
+            }
+            
+            if (abcstaff.title && abcstaff.title[this.tuneCurrVoice])
+                this.voice.header = abcstaff.title[this.tuneCurrVoice];
+            
+            this.staffgroup.addVoice(this.voice);
+        }
+    }
+
+    // FINGERS - Parte II
+    // a informação de dedilhado (fingering) esta disponível na primeira voz (treble - pode haver mais de uma)
+    // a cada nota, deve corresponder uma digital.
+    // a terceira voz, em geral é a da tablatura 
+    // busca-se aqui, mover a informação de dedilhado que foi informada na primeira voz para a voz da tablatura
+    if( this.staffgroup.voices[0].stave.clef.type === 'treble' &&  this.staffgroup.voices[0].fingers.length > 0 ) {
+        var fingers = this.staffgroup.voices[0].fingers;
+        var fingerIdx = 0;
+        if(this.staffgroup.voices[2].stave.clef.type === 'accordionTab') {
+            var voz = this.staffgroup.voices[2].children;
+            var stave = this.staffgroup.voices[2].stave;
+            for (i=0; i<voz.length; i++) {
+                if(voz[i].abcelem.el_type === 'note'){
+                    //verificar se algum dos pitches, que não seja baixo, é do tipo 'tabText'[2|3]
+                    var pitches = voz[i].abcelem.pitches
+                    for (p=0; p<pitches.length; p++) {
+                        if(pitches[p].type.substr(0,7) === 'tabText' && pitches[p].c !== 'scripts.rarrow' && pitches[p].bass === undefined && fingerIdx < fingers.length ){
+                            if(fingers[fingerIdx].c.trim() !== '*' ) {
+                                voz[i].children[voz[i].children.length] = fingers[fingerIdx++];
+                                voz[i].children[voz[i].children.length-1].dx =-5;
+                                //voz[i].children[voz[i].children.length-1].parent.pushBottom()
+                                stave.lowest = Math.min(-4, stave.lowest);
+                            } else {
+                                fingerIdx++
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            // existe dedilhado mas não consegui tratar 
+            console.log('abc_layout: existe dedilhado mas não consegui tratar')
+        }
+    }
+    if( this.staffgroup.voices[1].stave.clef.type === 'bass' &&  this.staffgroup.voices[1].bassfingers.length > 0 ) {
+        var bassfingers = this.staffgroup.voices[1].bassfingers;
+        var bassFingerIdx = 0;
+        if(this.staffgroup.voices[2].stave.clef.type === 'accordionTab') {
+            var voz = this.staffgroup.voices[2].children;
+            var stave = this.staffgroup.voices[2].stave;
+            for (i=0; i<voz.length; i++) {
+                if(voz[i].abcelem.el_type === 'note'){
+                    //verificar se algum dos pitches, que não seja baixo, é do tipo 'tabText'[2|3]
+                    var pitches = voz[i].abcelem.pitches
+                    for (p=0; p<pitches.length; p++) {
+                        if(pitches[p].type.substr(0,7) === 'tabText' && pitches[p].c !== 'scripts.rarrow' && pitches[p].bass && bassFingerIdx < bassfingers.length ){
+                            voz[i].children[voz[i].children.length] = bassfingers[bassFingerIdx++];
+                            voz[i].children[voz[i].children.length-1].dx =-5;
+                            //voz[i].children[voz[i].children.length-1].y = 24;
+                            //voz[i].children[voz[i].children.length-1].parent.pushTop(24)
+                            stave.highest = Math.max(25.5, stave.highest);
+                        
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            // existe dedilhado mas não consegui tratar 
+            console.log('abc_layout: existe dedilhado mas não consegui tratar')
+        }
+    }
+
+    this.layoutStaffGroup();
+    
+    return this.staffgroup;
+};
+
+ABCXJS.write.Layout.prototype.layoutJumpDecorationItem = function(jumpDecorationItem, pitch) {
+    switch (jumpDecorationItem.type) {
+        case "coda":     return new ABCXJS.write.RelativeElement("scripts.coda", 0, 0, pitch + 1); 
+        case "segno":    return new ABCXJS.write.RelativeElement("scripts.segno", 0, 0, pitch + 1); 
+        case "fine":     return new ABCXJS.write.RelativeElement("it.Fine", -34, 34, pitch);
+        case "dacapo":   return new ABCXJS.write.RelativeElement("it.DC", -30, 30, pitch);
+        case "dacoda":   return new ABCXJS.write.RelativeElement("it.DaCoda", -30, 30, pitch);
+        case "dasegno":  return new ABCXJS.write.RelativeElement("it.DaSegno", -32, 32, pitch);
+        case "dcalfine": return new ABCXJS.write.RelativeElement("it.DCalFine", 25, -25, pitch);
+        case "dcalcoda": return new ABCXJS.write.RelativeElement("it.DCalCoda", 25, -25, pitch);
+        case "dsalfine": return new ABCXJS.write.RelativeElement("it.DSalFine", 25, -25, pitch);
+        case "dsalcoda": return new ABCXJS.write.RelativeElement("it.DSalCoda", 25, -25, pitch);
+    }
+        
+    return null;
+};
+
+ABCXJS.write.Layout.prototype.layoutStaffGroup = function() {
+    var newspace = ABCXJS.write.spacing.SPACEX;
+
+    for (var it = 0; it < 3; it++) { // TODO shouldn't need this triple pass any more
+        this.staffgroup.layout(newspace, this.printer, false);
+        if (this.tuneCurrLine && this.tuneCurrLine === this.tune.lines.length - 1 &&
+                this.staffgroup.w / this.width < 0.66 && !this.tune.formatting.stretchlast)
+            break; // don't stretch last line too much unless it is 1st
+        var relspace = this.staffgroup.spacingunits * newspace;
+        var constspace = this.staffgroup.w - relspace;
+        if (this.staffgroup.spacingunits > 0) {
+            newspace = (this.printer.width - constspace) / this.staffgroup.spacingunits;
+            if (newspace * this.staffgroup.minspace > 50) {
+                newspace = 50 / this.staffgroup.minspace;
+            }
+        }
+    }
+};
+
+ABCXJS.write.Layout.prototype.printABCVoice = function() {
+  this.popCrossLineElems();
+  this.stemdir = (this.isBagpipes)? "down" : this.voice.stem;
+  if (this.partstartelem) {
+    this.partstartelem = new ABCXJS.write.EndingElem("", null, null);
+    this.voice.addOther(this.partstartelem);
+  }
+  for (var slur in this.slurs) {
+    if (this.slurs.hasOwnProperty(slur)) {
+      this.slurs[slur]= new ABCXJS.write.TieElem(null, null, this.slurs[slur].above, this.slurs[slur].force);
+	this.voice.addOther(this.slurs[slur]);
+    }
+  }
+  for (var i=0; i<this.ties.length; i++) {
+    this.ties[i]=new ABCXJS.write.TieElem(null, null, this.ties[i].above, this.ties[i].force);
+    this.voice.addOther(this.ties[i]);
+  }
+
+  for (this.pos=0; this.pos<this.currVoice.length; this.pos++) {
+    var abselems = this.printABCElement();
+    for (i=0; i<abselems.length; i++) {
+      this.voice.addChild(abselems[i]);
+    }
+  }
+  this.pushCrossLineElems();
+};
+
+// return an array of ABCXJS.write.AbsoluteElement
+ABCXJS.write.Layout.prototype.printABCElement = function() {
+  var elemset = [];
+  var elem = this.getElem();
+  
+  switch (elem.el_type) {
+  case "note":
+    elemset = this.printBeam();
+    break;
+  case "bar":
+    elemset[0] = this.printBarLine(elem);
+    if (this.voice.duplicate) elemset[0].invisible = true;
+    break;
+  case "meter":
+    elemset[0] = this.printTimeSignature(elem);
+    if (this.voice.duplicate) elemset[0].invisible = true;
+    break;
+  case "clef":
+    elemset[0] = this.printClef(elem);
+    if (this.voice.duplicate) elemset[0].invisible = true;
+    break;
+  case "key":
+    elemset[0] = this.printKeySignature(elem);
+    if (this.voice.duplicate) elemset[0].invisible = true;
+    break;
+  case "part":
+    var abselem = new ABCXJS.write.AbsoluteElement(elem,0,0);
+    abselem.addChild(new ABCXJS.write.RelativeElement(elem.title, 0, 0, 18.5, {type:"part" })); 
+    elemset[0] = abselem;
+    break;
+  default: 
+    var abselem2 = new ABCXJS.write.AbsoluteElement(elem,0,0);
+    abselem2.addChild(new ABCXJS.write.RelativeElement("element type "+elem.el_type, 0, 0, 0, {type:"debug"}));
+    elemset[0] = abselem2;
+  }
+
+  return elemset;
+};
+
+ABCXJS.write.Layout.prototype.printBeam = function() {
+    var abselemset = [];
+
+    if (this.getElem().startBeam && !this.getElem().endBeam) {
+        
+        var beamelem = new ABCXJS.write.BeamElem(this.stemdir);
+        // PER: need two passes: the first one decides if the stems are up or down.
+        // TODO-PER: This could be more efficient.
+        var oldPos = this.pos;
+        var abselem;
+        while (this.getElem()) {
+            abselem = this.printNote(this.getElem(), true, true); // chamada 1
+            beamelem.add(abselem);
+            if (this.getElem().endBeam)
+                break;
+            this.pos++;
+        }
+        // tentativa de manter a haste na mesma direcao durante as ligaduras
+        var dir = this.lastTieStemDir? (this.lastTieStemDir==='up') : ( beamelem.calcDir() );
+        this.pos = oldPos;
+
+        beamelem = new ABCXJS.write.BeamElem(dir ? "up" : "down");
+        var oldDir = this.stemdir;
+        this.stemdir = dir ? "up" : "down";
+        var beamId =0;
+        while (this.getElem()) {
+            abselem = this.printNote(this.getElem(),true); // chamada 2
+            abselem.beamId = beamId++;
+            abselemset.push(abselem);
+            beamelem.add(abselem);
+            if (this.getElem().endBeam) {
+                break;
+            }
+            this.pos++;
+        }
+        this.stemdir = oldDir;
+        this.voice.addOther(beamelem);
+    } else {
+        abselemset[0] = this.printNote(this.getElem());
+    }
+    return abselemset;
+};
+
+ABCXJS.write.Layout.prototype.printNote = function(elem, nostem, dontDraw) { //stem presence: true for drawing stemless notehead
+    var notehead = null;
+    var grace = null;
+    this.roomtaken = 0; // room needed to the left of the note
+    this.roomtakenright = 0; // room needed to the right of the note
+    var dotshiftx = 0; // room taken by chords with displaced noteheads which cause dots to shift
+    var c = "";
+    var flag = null;
+    var additionalLedgers = []; // PER: handle the case of [bc'], where the b doesn't have a ledger line
+
+    var p, i, pp;
+    var width, p1, p2, dx;
+
+    var duration = ABCXJS.write.getDuration(elem);
+    
+    //PER: zero duration will draw a quarter note head.
+    if (duration === 0) {
+        duration = 0.25;
+        nostem = true;
+    }   
+    
+    var durlog = Math.floor(Math.log(duration) / Math.log(2));  //TODO use getDurlog
+    var dot = 0;
+
+    for (var tot = Math.pow(2, durlog), inc = tot / 2; tot < duration; dot++, tot += inc, inc /= 2)
+        ;
+
+    if (elem.startTriplet) {
+        
+        if( ! this.stemdir ) {
+            this.clearStem = true;
+            this.stemdir = elem.startTriplet.avgPitch < 6? 'up' : 'down';
+        }
+            
+        this.triplet = new ABCXJS.write.TripletElem( elem.startTriplet, null, null, this.stemdir ); 
+        this.tripletmultiplier = this.triplet.multiplier;
+    }
+
+    var abselem = new ABCXJS.write.AbsoluteElement(elem, duration * this.tripletmultiplier, 1);
+
+    if (elem.rest) {
+        var restpitch = 7;
+        if (this.stemdir === "down")
+            restpitch = 3;
+        if (this.stemdir === "up")
+            restpitch = 11;
+        switch (elem.rest.type) {
+            case "rest":
+                c = ABCXJS.write.chartable.rest[-durlog];
+                elem.averagepitch = restpitch;
+                elem.minpitch = restpitch;
+                elem.maxpitch = restpitch;
+                break;
+            case "invisible":
+            case "spacer":
+                c = "";
+        }
+        if (!dontDraw)
+            notehead = this.printNoteHead(abselem, c, {verticalPos: restpitch}, null, 0, -this.roomtaken, null, dot, 0, 1);
+        if (notehead)
+            abselem.addHead(notehead);
+        this.roomtaken += this.accidentalshiftx;
+        this.roomtakenright = Math.max(this.roomtakenright, this.dotshiftx);
+
+    } else {
+        ABCXJS.write.sortPitch(elem.pitches);
+
+        // determine averagepitch, minpitch, maxpitch and stem direction
+        var sum = 0;
+        var startsTie=false;
+        var endsTie=false;
+        for (p = 0, pp = elem.pitches.length; p < pp; p++) {
+            sum += elem.pitches[p].verticalPos;
+
+            //tentativa de garantir que as notas da ligadura usem hastes na mesma direcao
+            if(elem.pitches[p].startTie && !dontDraw) {
+                var startsTie=true;
+            }
+            if(elem.pitches[p].endTie && !dontDraw) {
+                var endsTie=true;
+            }
+
+        }
+        elem.averagepitch = sum / elem.pitches.length;
+        elem.minpitch = elem.pitches[0].verticalPos;
+        elem.maxpitch = elem.pitches[elem.pitches.length - 1].verticalPos;
+        var dir = this.stemdir? this.stemdir : ((elem.averagepitch >= 6) ? "down" : "up");
+
+        //tentativa de garantir que as notas da ligadura usem hastes na mesma direcao
+        if( startsTie ) {
+            this.lastTieStemDir = dir;
+        } else if( endsTie ) {
+            if ( this.lastTieStemDir  && this.lastTieStemDir != dir){
+                dir = this.lastTieStemDir;
+            }
+            delete this.lastTieStemDir;
+        }
+        
+        // determine elements of chords which should be shifted
+        for (p = (dir === "down") ? elem.pitches.length - 2 : 1; (dir === "down") ? p >= 0 : p < elem.pitches.length; p = (dir === "down") ? p - 1 : p + 1) {
+            var prev = elem.pitches[(dir === "down") ? p + 1 : p - 1];
+            var curr = elem.pitches[p];
+            var delta = (dir === "down") ? prev.pitch - curr.pitch : curr.pitch - prev.pitch;
+            if (delta <= 1 && !prev.printer_shift) {
+                curr.printer_shift = (delta) ? "different" : "same";
+                if (curr.verticalPos > 11 || curr.verticalPos < 1) {	// PER: add extra ledger line
+                    additionalLedgers.push(curr.verticalPos - (curr.verticalPos % 2));
+                }
+                if (dir === "down") {
+                    this.roomtaken = this.glyphs.getSymbolWidth(ABCXJS.write.chartable.note[-durlog]) + 2;
+                } else {
+                    dotshiftx = this.glyphs.getSymbolWidth(ABCXJS.write.chartable.note[-durlog]) + 2;
+                }
+            }
+        }
+
+        // The accidentalSlot will hold a list of all the accidentals on this chord. Each element is a vertical place,
+        // and contains a pitch, which is the last pitch that contains an accidental in that slot. The slots are numbered
+        // from closest to the note to farther left. We only need to know the last accidental we placed because
+        // we know that the pitches are sorted by now.
+        this.accidentalSlot = [];
+
+        for (p = 0; p < elem.pitches.length; p++) {
+
+            // vou retirar apenas flags
+            if (/*flavio*/ nostem || (dir === "down" && p !== 0) || (dir === "up" && p !== pp - 1)) { // not the stemmed elem of the chord
+                flag = null;
+            } else {
+                flag = ABCXJS.write.chartable[(dir === "down") ? "dflags" : "uflags"][-durlog];
+            }
+            
+            c = ABCXJS.write.chartable.note[-durlog];
+
+            // The highest position for the sake of placing slurs is itself if the slur is internal. It is the highest position possible if the slur is for the whole chord.
+            // If the note is the only one in the chord, then any slur it has counts as if it were on the whole chord.
+            elem.pitches[p].highestVert = elem.pitches[p].verticalPos;
+            var isTopWhenStemIsDown = (this.stemdir === "up" || dir === "up") && p === 0;
+            var isBottomWhenStemIsUp = (this.stemdir === "down" || dir === "down") && p === pp - 1;
+            if (!dontDraw && (isTopWhenStemIsDown || isBottomWhenStemIsUp)) { // place to put slurs if not already on pitches
+
+                if (elem.startSlur || pp === 1) {
+                    elem.pitches[p].highestVert = elem.pitches[pp - 1].verticalPos;
+                    if (this.stemdir === "up" || dir === "up")
+                        elem.pitches[p].highestVert += 6;	// If the stem is up, then compensate for the length of the stem
+                }
+                if (elem.startSlur) {
+                    if (!elem.pitches[p].startSlur)
+                        elem.pitches[p].startSlur = []; //TODO possibly redundant, provided array is not optional
+                    for (i = 0; i < elem.startSlur.length; i++) {
+                        elem.pitches[p].startSlur.push(elem.startSlur[i]);
+                    }
+                }
+
+                if (!dontDraw && elem.endSlur) {
+                    elem.pitches[p].highestVert = elem.pitches[pp - 1].verticalPos;
+                    if (this.stemdir === "up" || dir === "up")
+                        elem.pitches[p].highestVert += 6;	// If the stem is up, then compensate for the length of the stem
+                    if (!elem.pitches[p].endSlur)
+                        elem.pitches[p].endSlur = [];  //TODO possibly redundant, provided array is not optional
+                    for (i = 0; i < elem.endSlur.length; i++) {
+                        elem.pitches[p].endSlur.push(elem.endSlur[i]);
+                    }
+                }
+            }
+
+            if (!dontDraw)
+                notehead = this.printNoteHead(abselem, c, elem.pitches[p], dir, 0, -this.roomtaken, flag, dot, dotshiftx, 1);
+            if (notehead)
+                abselem.addHead(notehead);
+            this.roomtaken += this.accidentalshiftx;
+            this.roomtakenright = Math.max(this.roomtakenright, this.dotshiftx);
+        }
+
+        // draw stem from the furthest note to a pitch above/below the stemmed note
+        if ( durlog <= -1 ) {
+            p1 = (dir === "down") ? elem.minpitch - 7 : elem.minpitch + 1 / 3;
+            // PER added stemdir test to make the line meet the note.
+            if (p1 > 6 && !this.stemdir)
+                p1 = 6;
+            p2 = (dir === "down") ? elem.maxpitch - 1 / 3 : elem.maxpitch + 7;
+            // PER added stemdir test to make the line meet the note.
+            if (p2 < 6 && !this.stemdir)
+                p2 = 6;
+            dx = (dir === "down" || abselem.heads.length === 0) ? 0 : abselem.heads[0].w;
+            width = (dir === "down") ? 1 : -1;
+            abselem.addExtra(new ABCXJS.write.RelativeElement(null, dx, 0, p1, {"type": "stem", "pitch2": p2, linewidth: width}));
+        }
+    }
+
+    if (elem.lyric !== undefined && !this.tune.formatting.hideLyrics ) {
+        var lyricStr = "";
+        var maxLen = 0;
+        window.ABCXJS.parse.each(elem.lyric, function(ly) {
+            lyricStr += "\n" + ly.syllable + ly.divider ;
+            maxLen = Math.max( maxLen, (ly.syllable + ly.divider).length );
+        });
+        lyricStr = lyricStr.substring(1); // remove the first linefeed
+        abselem.addRight(new ABCXJS.write.RelativeElement(lyricStr, 0, maxLen * 5, 0, {type: "lyrics"}));
+    }
+    
+    if (elem.fingering !== undefined  && !this.tune.formatting.hideFingering) {
+        var lyricStr = "";
+        var maxLen = 0;
+        window.ABCXJS.parse.each(elem.fingering, function(ly) {
+            lyricStr += "\n" + ly.syllable + ly.divider ;
+            maxLen = Math.max( maxLen, (ly.syllable + ly.divider).length*1.3 );
+        });
+        lyricStr = lyricStr.substring(1); // remove the first linefeed
+        abselem.addRight(new ABCXJS.write.RelativeElement(lyricStr, 0, maxLen * 5, 0, {type: "fingering"}));
+    }
+
+    if (elem.bassfingering !== undefined  && !this.tune.formatting.hideFingering) {
+        var lyricStr = "";
+        var maxLen = 0;
+        window.ABCXJS.parse.each(elem.bassfingering, function(ly) {
+            lyricStr += "\n" + ly.syllable + ly.divider ;
+            maxLen = Math.max( maxLen, (ly.syllable + ly.divider).length*1.3 );
+        });
+        lyricStr = lyricStr.substring(1); // remove the first linefeed
+        abselem.addRight(new ABCXJS.write.RelativeElement(lyricStr, 0, maxLen * 5, 0, {type: "bassfingering"}));
+    }
+
+    if (!dontDraw && elem.gracenotes !== undefined) {
+        var gracescale = 3 / 5;
+        var gracebeam = null;
+        if (elem.gracenotes.length > 1) {
+            gracebeam = new ABCXJS.write.BeamElem("grace", this.isBagpipes);
+        }
+
+        var graceoffsets = [];
+        for (i = elem.gracenotes.length - 1; i >= 0; i--) { // figure out where to place each gracenote
+            this.roomtaken += 10;
+            graceoffsets[i] = this.roomtaken;
+            if (elem.gracenotes[i].accidental) {
+                this.roomtaken += 7;
+            }
+        }
+
+        for (i = 0; i < elem.gracenotes.length; i++) {
+            var gracepitch = elem.gracenotes[i].verticalPos;
+
+            flag = (gracebeam) ? null : 'grace'+ABCXJS.write.chartable.uflags[(this.isBagpipes) ? 5 : 3];
+            grace = this.printNoteHead(abselem, "graceheads.quarter", elem.gracenotes[i], "up", -graceoffsets[i], -graceoffsets[i], flag, 0, 0, gracescale);
+            abselem.addExtra(grace);
+            // PER: added acciaccatura slash
+            if (elem.gracenotes[i].acciaccatura) {
+                var pos = elem.gracenotes[i].verticalPos + 7 * gracescale;	// the same formula that determines the flag position.
+                var dAcciaccatura = gracebeam ? 5 : 6;	// just an offset to make it line up correctly.
+                abselem.addRight(new ABCXJS.write.RelativeElement("flags.ugrace", -graceoffsets[i] + dAcciaccatura, 0, pos));
+            }
+            if (gracebeam) { // give the beam the necessary info
+                var pseudoabselem = {heads: [grace],
+                    abcelem: {averagepitch: gracepitch, minpitch: gracepitch, maxpitch: gracepitch},
+                    duration: (this.isBagpipes) ? 1 / 32 : 1 / 16};
+                gracebeam.add(pseudoabselem);
+            } else { // draw the stem
+                p1 = gracepitch + 1 / 3 * gracescale;
+                p2 = gracepitch + 7 * gracescale;
+                dx = grace.dx + grace.w;
+                width = -0.6;
+                abselem.addExtra(new ABCXJS.write.RelativeElement(null, dx, 0, p1, {"type": "stem", "pitch2": p2, linewidth: width}));
+            }
+
+            if (i === 0 && !this.isBagpipes && !(elem.rest && (elem.rest.type === "spacer" || elem.rest.type === "invisible")))
+                this.voice.addOther(new ABCXJS.write.TieElem(grace, notehead, false, true));
+        }
+
+        
+        if (gracebeam) {
+            this.voice.addOther(gracebeam);
+        }
+    }
+
+    if (!dontDraw && elem.decoration) {
+        var addMark = this.printDecoration(elem.decoration, elem.maxpitch, (notehead) ? notehead.w : 0, abselem, this.roomtaken, dir, elem.minpitch);
+        if (addMark) {
+            abselem.klass = "mark";
+        }
+    }
+
+    // ledger lines
+    for (i = elem.maxpitch; i > 11; i--) {
+        if (i % 2 === 0 && !elem.rest) {
+            abselem.addChild(new ABCXJS.write.RelativeElement(null, -2, this.glyphs.getSymbolWidth(c) + 4, i, {type: "ledger"}));
+        }
+    }
+
+    for (i = elem.minpitch; i < 1; i++) {
+        if (i % 2 === 0 && !elem.rest) {
+            abselem.addChild(new ABCXJS.write.RelativeElement(null, -2, this.glyphs.getSymbolWidth(c) + 4, i, {type: "ledger"}));
+        }
+    }
+
+    for (i = 0; i < additionalLedgers.length; i++) { // PER: draw additional ledgers
+        var ofs = this.glyphs.getSymbolWidth(c);
+        if (dir === 'down')
+            ofs = -ofs;
+        abselem.addChild(new ABCXJS.write.RelativeElement(null, ofs - 2, this.glyphs.getSymbolWidth(c) + 4, additionalLedgers[i], {type: "ledger"}));
+    }
+
+    if (elem.chord !== undefined) { //16 -> high E.
+        for (i = 0; i < elem.chord.length; i++) {
+            var x = 0;
+            var y = 16;
+            switch (elem.chord[i].position) {
+                case "left":
+                    this.roomtaken += 7;
+                    x = -this.roomtaken;	// TODO-PER: This is just a guess from trial and error
+                    y = elem.averagepitch;
+                    abselem.addExtra(new ABCXJS.write.RelativeElement(elem.chord[i].name, x, this.glyphs.getSymbolWidth(elem.chord[i].name[0]) + 4, y, {type: "text"}));
+                    break;
+                case "right":
+                    this.roomtakenright += 4;
+                    x = this.roomtakenright;// TODO-PER: This is just a guess from trial and error
+                    y = elem.averagepitch;
+                    abselem.addRight(new ABCXJS.write.RelativeElement(elem.chord[i].name, x, this.glyphs.getSymbolWidth(elem.chord[i].name[0]) + 4, y, {type: "text"}));
+                    break;
+                case "below":
+                    y = elem.minpitch - 4;
+                    if (y > -3)
+                        y = -3;
+                    var eachLine = elem.chord[i].name.split("\n");
+                    for (var ii = 0; ii < eachLine.length; ii++) {
+                        abselem.addChild(new ABCXJS.write.RelativeElement(eachLine[ii], x, 0, y, {type: "text"}));
+                        y -= 3;	// TODO-PER: This should actually be based on the font height.
+                    }
+                    break;
+                default:
+                    if (elem.chord[i].rel_position)
+                        abselem.addChild(new ABCXJS.write.RelativeElement(elem.chord[i].name, x + elem.chord[i].rel_position.x, 0, elem.minpitch + elem.chord[i].rel_position.y / ABCXJS.write.spacing.STEP, {type: "text"}));
+                    else
+                        abselem.addChild(new ABCXJS.write.RelativeElement(elem.chord[i].name, x, 0, y, {type: "text"}));
+            }
+        }
+    }
+
+    /* flavio - handle triplets only when drawing - else no notehead */
+    if( !dontDraw ) {
+        
+        if( elem.startTriplet ) {
+            this.triplet.anchor1 = notehead;
+            this.voice.addOther(this.triplet);
+        } 
+        
+        // procura nas notas minimas e máximas do triplet
+        if ( this.triplet ) {
+            this.triplet.minPitch = Math.min( this.triplet.minPitch, notehead.parent.abcelem.minpitch );
+            this.triplet.maxPitch = Math.max( this.triplet.maxPitch, notehead.parent.abcelem.maxpitch );
+        }
+        
+        if ( this.triplet && elem.endTriplet ) {
+            this.triplet.anchor2 = notehead;
+            this.triplet = null;
+            this.tripletmultiplier = 1;
+            if( this.clearStem ) {
+                this.stemdir = null;
+                delete this.clearStem;
+            }
+        }
+    }
+
+    return abselem;
+};
+
+
+ABCXJS.write.Layout.prototype.printNoteHead = function (abselem, c, pitchelem, dir, headx, extrax, flag, dot, dotshiftx, scale) {
+
+    // TODO scale the dot as well
+    var pitch = pitchelem.verticalPos;
+    var notehead;
+    var i;
+    this.accidentalshiftx = 0;
+    this.dotshiftx = 0;
+
+    if (c === undefined)
+        abselem.addChild(new ABCXJS.write.RelativeElement("pitch is undefined", 0, 0, 0, { type: "debug" }));
+    else if (c === "") {
+        notehead = new ABCXJS.write.RelativeElement(null, 0, 0, pitch);
+    } else {
+        var shiftheadx = headx;
+        if (pitchelem.printer_shift) {
+            var adjust = (pitchelem.printer_shift === "same") ? 1 : 0;
+            shiftheadx = (dir === "down") ? -this.glyphs.getSymbolWidth(c) * scale + adjust : this.glyphs.getSymbolWidth(c) * scale - adjust;
+        }
+        //fixme: tratar adequadamente a escala - provavel problema com gracenotes
+        notehead = new ABCXJS.write.RelativeElement(c, shiftheadx, this.glyphs.getSymbolWidth(c) * scale, pitch, { scalex: scale, scaley: scale, extreme: ((dir === "down") ? "below" : "above") });
+        if (flag) {
+            var pos = pitch + ((dir === "down") ? -7 : 7) * scale;
+            if (scale === 1 && (dir === "down") ? (pos > 6) : (pos < 6)) pos = 6;
+            var xdelta = (dir === "down") ? headx : headx + notehead.w - 0.6;
+            abselem.addRight(new ABCXJS.write.RelativeElement(flag, xdelta, this.glyphs.getSymbolWidth(flag) * scale, pos, { scalex: scale, scaley: scale }));
+        }
+        this.dotshiftx = notehead.w + dotshiftx - 2 + 5 * dot;
+        for (; dot > 0; dot--) {
+            var dotadjusty = (1 - Math.abs(pitch) % 2); //PER: take abs value of the pitch. And the shift still happens on ledger lines.
+            abselem.addRight(new ABCXJS.write.RelativeElement("dots.dot", notehead.w + dotshiftx - 2 + 5 * dot, this.glyphs.getSymbolWidth("dots.dot"), pitch + dotadjusty));
+        }
+    }
+    if (notehead)
+        notehead.highestVert = pitchelem.highestVert;
+
+    if (pitchelem.accidental) {
+        var symb;
+        switch (pitchelem.accidental) {
+            case "quartersharp":
+                symb = "accidentals.halfsharp";
+                break;
+            case "dblsharp":
+                symb = "accidentals.dblsharp";
+                break;
+            case "sharp":
+                symb = "accidentals.sharp";
+                break;
+            case "quarterflat":
+                symb = "accidentals.halfflat";
+                break;
+            case "flat":
+                symb = "accidentals.flat";
+                break;
+            case "dblflat":
+                symb = "accidentals.dblflat";
+                break;
+            case "natural":
+                symb = "accidentals.nat";
+        }
+        // if a note is at least a sixth away, it can share a slot with another accidental
+        var accSlotFound = false;
+        var accPlace = extrax;
+        for (var j = 0; j < this.accidentalSlot.length; j++) {
+            if (pitch - this.accidentalSlot[j][0] >= 6) {
+                this.accidentalSlot[j][0] = pitch;
+                accPlace = this.accidentalSlot[j][1];
+                accSlotFound = true;
+                break;
+            }
+        }
+        if (accSlotFound === false) {
+            accPlace -= (this.glyphs.getSymbolWidth(symb) * scale + 2);
+            this.accidentalSlot.push([pitch, accPlace]);
+            this.accidentalshiftx = (this.glyphs.getSymbolWidth(symb) * scale + 2);
+        }
+        //fixme: verificar se há problemas com a escala aqui também      
+        abselem.addExtra(new ABCXJS.write.RelativeElement(symb, accPlace, this.glyphs.getSymbolWidth(symb), pitch));
+    }
+
+    if (pitchelem.endTie) {
+        if (this.ties[0]) {
+            this.ties[0].anchor2 = notehead;
+            this.ties = this.ties.slice(1, this.ties.length);
+        }
+    }
+
+    if (pitchelem.startTie) {
+        //PER: bug fix: var tie = new ABCXJS.write.TieElem(notehead, null, (this.stemdir=="up" || dir=="down") && this.stemdir!="down",(this.stemdir=="down" || this.stemdir=="up"));
+        var tie = new ABCXJS.write.TieElem(notehead, null, (this.stemdir === "down" || dir === "down") && this.stemdir !== "up", (this.stemdir === "down" || this.stemdir === "up"));
+        this.ties[this.ties.length] = tie;
+        this.voice.addOther(tie);
+    }
+
+    if (pitchelem.endSlur) {
+        for (i = 0; i < pitchelem.endSlur.length; i++) {
+            var slurid = pitchelem.endSlur[i];
+            var slur;
+            if (this.slurs[slurid]) {
+                slur = this.slurs[slurid].anchor2 = notehead;
+                delete this.slurs[slurid];
+            } else {
+                slur = new ABCXJS.write.TieElem(null, notehead, dir === "down", (this.stemdir === "up" || dir === "down") && this.stemdir !== "down", this.stemdir);
+                this.voice.addOther(slur);
+            }
+            if (this.startlimitelem) {
+                slur.startlimitelem = this.startlimitelem;
+            }
+        }
+    }
+
+    if (pitchelem.startSlur) {
+        for (i = 0; i < pitchelem.startSlur.length; i++) {
+            var slurid = pitchelem.startSlur[i].label;
+            //PER: bug fix: var slur = new ABCXJS.write.TieElem(notehead, null, (this.stemdir=="up" || dir=="down") && this.stemdir!="down", this.stemdir);
+            var slur = new ABCXJS.write.TieElem(notehead, null, (this.stemdir === "down" || dir === "down") && this.stemdir !== "up", false);
+            this.slurs[slurid] = slur;
+            this.voice.addOther(slur);
+        }
+    }
+
+    return notehead;
+
+};
+
+ABCXJS.write.Layout.prototype.printDecoration = function(decoration, pitch, width, abselem, roomtaken, dir, minPitch) {
+    var dec;
+    var compoundDec;	// PER: for decorations with two symbols
+    var diminuendo;
+    var crescendo;
+    var unknowndecs = [];
+    var yslot = (pitch > 9) ? pitch + 3 : 12;
+    var ypos;
+    //var dir = (this.stemdir==="down" || pitch>=6) && this.stemdir!=="up";
+    var below = false;	// PER: whether decoration goes above or below.
+    var yslotB = -6; // neste ponto min-Y era sempre -2 - min-Y foi eliminado this.min-Y - 4; // (pitch<1) ? pitch-9 : -6;
+    var i;
+    roomtaken = roomtaken || 0;
+    if (pitch === 5)
+        yslot = 14; // avoid upstem of the A
+    var addMark = false; // PER: to allow the user to add a class whereever
+
+    for (i = 0; i < decoration.length; i++) { // treat staccato and tenuto first (may need to shift other markers) //TODO, same with tenuto?
+        if (decoration[i] === "staccato" || decoration[i] === "tenuto") {
+            var symbol = "scripts." + decoration[i];
+            ypos = (dir === "down") ? pitch + 2 : minPitch - 2;
+            // don't place on a stave line. The stave lines are 2,4,6,8,10
+            switch (ypos) {
+                case 2:
+                case 4:
+                case 6:
+                case 8:
+                case 10:
+                    if (dir === "up")
+                        ypos--;
+                    else
+                        ypos++;
+                    break;
+            }
+            if (pitch > 9)
+                yslot++; // take up some room of those that are above
+            var deltax = width / 2;
+            if (this.glyphs.getSymbolAlign(symbol) !== "center") {
+                deltax -= (this.glyphs.getSymbolWidth(dec) / 2);
+            }
+            abselem.addChild(new ABCXJS.write.RelativeElement(symbol, deltax, this.glyphs.getSymbolWidth(symbol), ypos));
+        }
+        if (decoration[i] === "slide" && abselem.heads[0]) {
+            ypos = abselem.heads[0].pitch;
+            var blank1 = new ABCXJS.write.RelativeElement("", -roomtaken - 15, 0, ypos - 1);
+            var blank2 = new ABCXJS.write.RelativeElement("", -roomtaken - 5, 0, ypos + 1);
+            abselem.addChild(blank1);
+            abselem.addChild(blank2);
+            this.voice.addOther(new ABCXJS.write.TieElem(blank1, blank2, false));
+        }
+    }
+
+    for (i = 0; i < decoration.length; i++) {
+        below = false;
+        switch (decoration[i]) {
+            case "trill":
+                dec = "scripts.trill";
+                break;
+            case "roll":
+                dec = "scripts.roll";
+                break; //TODO put abc2ps roll in here
+            case "irishroll":
+                dec = "scripts.roll";
+                break;
+            case "marcato":
+                dec = "scripts.umarcato";
+                break;
+            case "marcato2":
+                dec = "scriopts.dmarcato";
+                break;//other marcato
+            case "turn":
+                dec = "scripts.turn";
+                break;
+            case "uppermordent":
+                dec = "scripts.prall";
+                break;
+            case "mordent":
+            case "lowermordent":
+                dec = "scripts.mordent";
+                break;
+            case "staccato":
+            case "tenuto":
+            case "slide":
+                continue;
+            case "downbow":
+                dec = "scripts.downbow";
+                break;
+            case "upbow":
+                dec = "scripts.upbow";
+                break;
+            case "fermata":
+                dec = "scripts.ufermata";
+                break;
+            case "invertedfermata":
+                below = true;
+                dec = "scripts.dfermata";
+                break;
+            case "breath":
+                dec = ",";
+                break;
+            case "accent":
+                dec = "scripts.sforzato";
+                break;
+            case "umarcato":
+                dec = "scripts.umarcato";
+                break;
+            case "/":
+                compoundDec = ["flags.ugrace", 1];
+                continue;	// PER: added new decorations
+            case "//":
+                compoundDec = ["flags.ugrace", 2];
+                continue;
+            case "///":
+                compoundDec = ["flags.ugrace", 3];
+                continue;
+            case "////":
+                compoundDec = ["flags.ugrace", 4];
+                continue;
+            case "p":
+            case "mp":
+            case "pp":
+            case "ppp":
+            case "pppp":
+            case "f":
+            case "ff":
+            case "fff":
+            case "ffff":
+            case "sfz":
+            case "mf":
+                var ddelem = new ABCXJS.write.DynamicDecoration(abselem, decoration[i]);
+                this.voice.addOther(ddelem);
+                continue;
+            case "mark":
+                addMark = true;
+                continue;
+            case "diminuendo(":
+                ABCXJS.write.Layout.prototype.startDiminuendoX = abselem;
+                diminuendo = undefined;
+                continue;
+            case "diminuendo)":
+                diminuendo = {start: ABCXJS.write.Layout.prototype.startDiminuendoX, stop: abselem};
+                ABCXJS.write.Layout.prototype.startDiminuendoX = undefined;
+                continue;
+            case "crescendo(":
+                ABCXJS.write.Layout.prototype.startCrescendoX = abselem;
+                crescendo = undefined;
+                continue;
+            case "crescendo)":
+                crescendo = {start: ABCXJS.write.Layout.prototype.startCrescendoX, stop: abselem};
+                ABCXJS.write.Layout.prototype.startCrescendoX = undefined;
+                continue;
+            default:
+                unknowndecs[unknowndecs.length] = decoration[i];
+                continue;
+        }
+        if (below) {
+            ypos = yslotB;
+            yslotB -= 4;
+        } else {
+            ypos = yslot;
+            yslot += 3;
+        }
+        var deltax = width / 2;
+        if (this.glyphs.getSymbolAlign(dec) !== "center") {
+            deltax -= (this.glyphs.getSymbolWidth(dec) / 2);
+        }
+        abselem.addChild(new ABCXJS.write.RelativeElement(dec, deltax, this.glyphs.getSymbolWidth(dec), ypos));
+    }
+    if (compoundDec) {	// PER: added new decorations
+        ypos = (dir === 'down') ? pitch + 1 : pitch + 9;
+        deltax = width / 2;
+        deltax += (dir === 'down') ? -5 : 3;
+        for (var xx = 0; xx < compoundDec[1]; xx++) {
+            ypos -= 1;
+            abselem.addChild(new ABCXJS.write.RelativeElement(compoundDec[0], deltax, this.glyphs.getSymbolWidth(compoundDec[0]), ypos));
+        }
+    }
+    if (diminuendo) {
+        var delem = new ABCXJS.write.CrescendoElem(diminuendo.start, diminuendo.stop, ">");
+        this.voice.addOther(delem);
+    }
+    if (crescendo) {
+        var celem = new ABCXJS.write.CrescendoElem(crescendo.start, crescendo.stop, "<");
+        this.voice.addOther(celem);
+    }
+    if (unknowndecs.length > 0)
+        abselem.addChild(new ABCXJS.write.RelativeElement(unknowndecs.join(','), 0, 0, 19, {type: "text"}));
+    return addMark;
+};
+
+ABCXJS.write.Layout.prototype.printBarLine = function (elem) {
+// bar_thin, bar_thin_thick, bar_thin_thin, bar_thick_thin, bar_right_repeat, bar_left_repeat, bar_double_repeat
+
+    var topbar = 10;
+    var yDot = 5;
+
+    var abselem = new ABCXJS.write.AbsoluteElement(elem, 0, 10);
+    var anchor = null; // place to attach part lines
+    var dx = 0;
+
+    var firstdots = (elem.type === "bar_right_repeat" || elem.type === "bar_dbl_repeat");
+    var firstthin = (elem.type !== "bar_left_repeat" && elem.type !== "bar_thick_thin" && elem.type !== "bar_invisible");
+    var thick = (elem.type === "bar_right_repeat" || elem.type === "bar_dbl_repeat" || elem.type === "bar_left_repeat" ||
+            elem.type === "bar_thin_thick" || elem.type === "bar_thick_thin");
+    var secondthin = (elem.type === "bar_left_repeat" || elem.type === "bar_thick_thin" || elem.type === "bar_thin_thin" || elem.type === "bar_dbl_repeat");
+    var seconddots = (elem.type === "bar_left_repeat" || elem.type === "bar_dbl_repeat");
+
+    var anyJumpDecoUpper = false; // indica a presença de decorações na parte superior - inibe a impressão do barnumber
+
+    // limit positioning of slurs
+    if (firstdots || seconddots) {
+        for (var slur in this.slurs) {
+            if (this.slurs.hasOwnProperty(slur)) {
+                this.slurs[slur].endlimitelem = abselem;
+            }
+        }
+        this.startlimitelem = abselem;
+    }
+
+    if (firstdots) {
+        abselem.addRight(new ABCXJS.write.RelativeElement("dots.dot", dx, 1, yDot + 2));
+        abselem.addRight(new ABCXJS.write.RelativeElement("dots.dot", dx, 1, yDot));
+        dx += 6; //2 hardcoded, twice;
+    }
+
+    if (firstthin) {
+        anchor = new ABCXJS.write.RelativeElement(null, dx, 1, 2, {"type": "bar", "pitch2": topbar, linewidth: 0.6});
+        abselem.addRight(anchor);
+        if( elem.repeat > 2 && this.tuneCurrStaff == 0) {
+            abselem.addChild(new ABCXJS.write.RelativeElement(elem.repeat+"x", 0, -5, 12, {type: "part"}));
+            anyJumpDecoUpper = true;
+        }
+    }
+
+    if (elem.type === "bar_invisible") {
+        anchor = new ABCXJS.write.RelativeElement(null, dx, 1, 2, {"type": "none", "pitch2": topbar, linewidth: 0.6});
+        abselem.addRight(anchor);
+    }
+
+    if (elem.decoration) {
+        this.printDecoration(elem.decoration, 12, (thick) ? 3 : 1, abselem, 0, "down", 2);
+    }
+
+    if (thick) {
+        dx += 4; //3 hardcoded;    
+        anchor = new ABCXJS.write.RelativeElement(null, dx, 4, 2, {"type": "bar", "pitch2": topbar, linewidth: 4});
+        abselem.addRight(anchor);
+        dx += 5;
+    }
+
+    if (elem.jumpDecoration) {
+        for(var j=0; j< elem.jumpDecoration.length; j++ ) {
+            if(( elem.jumpDecoration[j].upper && this.isFirstVoice() ) || ( !elem.jumpDecoration[j].upper && this.isLastVoice() ) ) {
+                var pitch = elem.jumpDecoration[j].upper ? 12 : -3;
+                anyJumpDecoUpper = (anyJumpDecoUpper||elem.jumpDecoration[j].upper);
+                switch (elem.jumpDecoration[j].type) {
+                    case "coda":     
+                    case "segno":    
+                    case "fine":     
+                    case "dcalfine": 
+                    case "dcalcoda": 
+                    case "dsalfine": 
+                    case "dsalcoda": 
+                        abselem.addRight( this.layoutJumpDecorationItem(elem.jumpDecoration[j], pitch) );
+                        break;
+                    case "dacapo":   
+                    case "dasegno":  
+                    case "dacoda":   
+                        abselem.addExtra( this.layoutJumpDecorationItem(elem.jumpDecoration[j], pitch) );
+                        break;
+                }
+            }
+        }
+    
+    }
+    
+    if (elem.barNumber && elem.barNumberVisible && !anyJumpDecoUpper) {
+        // quando não há jumpDecorations na parte superiror da pauta, o barnumber pode ser escrito sem sobreposição
+        abselem.addChild(new ABCXJS.write.RelativeElement(elem.barNumber, 0, 0, 12, {type: "barnumber"}));
+    }
+
+    if (this.partstartelem && elem.endDrawEnding) {
+        this.partstartelem.anchor2 = anchor;
+        this.partstartelem = null;
+    }
+
+    if (secondthin) {
+        dx += 3; //3 hardcoded;
+        anchor = new ABCXJS.write.RelativeElement(null, dx, 1, 2, {"type": "bar", "pitch2": topbar, linewidth: 0.6});
+        abselem.addRight(anchor); // 3 is hardcoded
+    }
+
+    if (seconddots) {
+        dx += 3; //3 hardcoded;
+        abselem.addRight(new ABCXJS.write.RelativeElement("dots.dot", dx, 1, yDot + 2));
+        abselem.addRight(new ABCXJS.write.RelativeElement("dots.dot", dx, 1, yDot));
+    } // 2 is hardcoded
+
+    if (elem.startEnding) {
+        this.partstartelem = new ABCXJS.write.EndingElem(elem.startEnding, anchor, null);
+        this.voice.addOther(this.partstartelem);
+    }
+
+    return abselem;
+
+};
+
+ABCXJS.write.Layout.prototype.printClef = function (elem) {
+    var clef = "clefs.G";
+    var octave = 0;
+    var abselem = new ABCXJS.write.AbsoluteElement(elem, 0, 10);
+
+    switch (elem.type) {
+        case "treble": break;
+        case "tenor": clef = "clefs.C"; break;
+        case "alto": clef = "clefs.C"; break;
+        case "bass": clef = "clefs.F"; break;
+        case 'treble+8': octave = 1; break;
+        case 'tenor+8': clef = "clefs.C"; octave = 1; break;
+        case 'bass+8': clef = "clefs.F"; octave = 1; break;
+        case 'alto+8': clef = "clefs.C"; octave = 1; break;
+        case 'treble-8': octave = -1; break;
+        case 'tenor-8': clef = "clefs.C"; octave = -1; break;
+        case 'bass-8': clef = "clefs.F"; octave = -1; break;
+        case 'alto-8': clef = "clefs.C"; octave = -1; break;
+        case "accordionTab": clef = "clefs.tab"; break;
+        case 'none': clef = ""; break;
+        case 'perc': clef = "clefs.perc"; break;
+        default: abselem.addChild(new ABCXJS.write.RelativeElement("clef=" + elem.type, 0, 0, 0, { type: "debug" }));
+    }
+
+    var dx = 10;
+    if (clef !== "") {
+        abselem.addRight(new ABCXJS.write.RelativeElement(clef, dx, this.glyphs.getSymbolWidth(clef), elem.clefPos));
+    }
+    if (octave !== 0) {
+        // fixme: ajustar a escala da oitava  
+        var scale = 2 / 3;
+        var adjustspacing = (this.glyphs.getSymbolWidth(clef) - this.glyphs.getSymbolWidth("8")) / 2;
+        abselem.addRight(new ABCXJS.write.RelativeElement("8", dx + adjustspacing, this.glyphs.getSymbolWidth("8"), (octave > 0) ? 16 : -2));
+    }
+    return abselem;
+};
+
+ABCXJS.write.Layout.prototype.printKeySignature = function(elem) {
+    var abselem = new ABCXJS.write.AbsoluteElement(elem,0,10);
+    var dx = 0;
+    if ( elem.accidentals) {
+        ABCXJS.parse.each(elem.accidentals, function(acc) {
+            var symbol = (acc.acc === "sharp") ? "accidentals.sharp" : (acc.acc === "natural") ? "accidentals.nat" : "accidentals.flat";
+            abselem.addRight(new ABCXJS.write.RelativeElement(symbol, dx, this.glyphs.getSymbolWidth(symbol), acc.verticalPos));
+            dx += this.glyphs.getSymbolWidth(symbol)+2;
+        }, this);
+    }
+    this.startlimitelem = abselem; // limit ties here
+    return abselem;
+};
+
+ABCXJS.write.Layout.prototype.printTimeSignature= function(elem) {
+  var abselem = new ABCXJS.write.AbsoluteElement(elem,0,20);
+  if (elem.type === "specified") {
+    //TODO make the alignment for time signatures centered
+    for (var i = 0; i < elem.value.length; i++) {
+      if (i !== 0)
+        abselem.addRight(new ABCXJS.write.RelativeElement("+", i*20-9, this.glyphs.getSymbolWidth("+"), 7));
+      var num = "n."+ elem.value[i].num;
+      if (elem.value[i].den) {
+        var den = "n."+ elem.value[i].den;
+        abselem.addRight(new ABCXJS.write.RelativeElement(num, i*20, this.glyphs.getSymbolWidth(num)*num.length, 6));
+        abselem.addRight(new ABCXJS.write.RelativeElement(den, i*20, this.glyphs.getSymbolWidth(den)*den.length, 2));
+      } else {
+        abselem.addRight(new ABCXJS.write.RelativeElement(num, i*20, this.glyphs.getSymbolWidth(num)*num.length, 4));
+      }
+    }
+  } else if (elem.type === "common_time") {
+    abselem.addRight(new ABCXJS.write.RelativeElement("timesig.common", 0, this.glyphs.getSymbolWidth("timesig.common"), 7));
+    
+  } else if (elem.type === "cut_time") {
+    abselem.addRight(new ABCXJS.write.RelativeElement("timesig.cut", 0, this.glyphs.getSymbolWidth("timesig.cut"), 7));
+  }
+  this.startlimitelem = abselem; // limit ties here
+  return abselem;
+};
+//    abc_write.js: Prints an abc file parsed by abc_parse.js
+//    Copyright (C) 2010 Gregory Dyke (gregdyke at gmail dot com)
+//
+//    This program is free software: you can redistribute it and/or modify
+//    it under the terms of the GNU General Public License as published by
+//    the Free Software Foundation, either version 3 of the License, or
+//    (at your option) any later version.
+//
+//    This program is distributed in the hope that it will be useful,
+//    but WITHOUT ANY WARRANTY; without even the implied warranty of
+//    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//    GNU General Public License for more details.
+//
+//    You should have received a copy of the GNU General Public License
+//    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+/*global window, ABCXJS, Math */
+
+if (!window.ABCXJS)
+	window.ABCXJS = {};
+
+if (!window.ABCXJS.write)
+	window.ABCXJS.write = {};
+
+ABCXJS.write.spacing = {};
+ABCXJS.write.spacing.FONTEM = 360;
+ABCXJS.write.spacing.FONTSIZE = 30;
+ABCXJS.write.spacing.STEP = ABCXJS.write.spacing.FONTSIZE*(93)/720;
+ABCXJS.write.spacing.SPACEX = 30;
+ABCXJS.write.spacing.TOPNOTE = 10; 
+
+ABCXJS.write.color = {};
+ABCXJS.write.color.highLight = "#5151ff";
+ABCXJS.write.color.highLight = "#ff0000";
+ABCXJS.write.color.unhighLight = 'black';
+ABCXJS.write.color.useTransparency = true;
+
+//--------------------------------------------------------------------PRINTER
+
+ABCXJS.write.Printer = function (paper, params, loadedKeyboard) {
+
+    params = params || {};
+    this.y = 0;
+    this.pageNumber = 1;
+    this.estimatedPageLength = 0;
+    this.paper = paper;
+    this.glyphs = new ABCXJS.write.Glyphs();
+    this.listeners = [];
+    this.selected = [];
+    this.scale = params.scale || 1;
+    this.paddingtop = params.paddingtop || 15;
+    this.paddingbottom = params.paddingbottom || 15;
+    this.paddingleft = params.paddingleft || 15;
+    this.paddingright = params.paddingright || 30;
+    this.editable = params.editable || false;
+    this.loadedKeyboard = loadedKeyboard || null; // preciso disso para gerar a pauta númerica (se houver)
+    this.staffgroups = [];
+};
+
+ABCXJS.write.Printer.prototype.printABC = function (abctunes, options) {
+    if (abctunes[0] === undefined) {
+        abctunes = [abctunes];
+    }
+    this.y = 0;
+    this.totalY = 0; // screen position of an element
+
+    for (var i = 0; i < abctunes.length; i++) {
+        this.printTune(abctunes[i], options);
+    }
+
+};
+
+ABCXJS.write.Printer.prototype.printTune = function(abctune, options) {
+    
+    if( abctune.lines.length === 0 ) return;
+
+    this.currentTune = abctune; // substituir toda ocorrencia de abctune por this.currentTune
+    
+    options = options || {};
+    options.color = options.color ||'black';
+    options.backgroundColor = options.backgroundColor ||'none';
+    
+    ABCXJS.write.color.unhighLight = options.color;
+    
+    var estilo = 
+'\n\
+   .abc_link { font-weight: normal;  text-decoration: none; }\n\
+   .abc_link:hover { stroke: blue;  font-weight: normal;  text-decoration: none; }\n\
+   .abc_title {\n\
+        font-size: 18px;\n\
+        font-weight: bold;\n\
+        font-family: Merienda, serif;\n\
+    }\n\
+    \n\
+    .abc_subtitle {\n\
+        font-size: 16px;\n\
+        font-family: Merienda, serif;\n\
+        font-style: italic;\n\
+    }\n\
+    \n\
+    .abc_author {\n\
+        font-size: 14px;\n\
+        font-family: Merienda, serif;\n\
+        font-style: italic;\n\
+        font-weight: bold;\n\
+    }\n\
+    \n\
+    .abc_rhythm {\n\
+        font-size: 12px;\n\
+        font-family: Merienda, serif;\n\
+        font-style: italic;\n\
+    }\n\
+    \n\
+    .abc_voice_header {\n\
+        font-size: 12px;\n\
+        font-family: Merienda, serif;\n\
+        font-style: italic;\n\
+        font-weight: bold;\n\
+    }\n\
+    \n\
+    .abc_tempo {\n\
+        font-size: 12px;\n\
+        font-family: Merienda, serif;\n\
+        font-weight: bold;\n\
+    }\n\
+    \n\
+    .abc_text {\n\
+        font-size: 12px;\n\
+        font-family: arial, serif;\n\
+    }\n\
+    \n\
+    .abc_lyrics {\n\
+        font-size: 13px;\n\
+        font-family: Merienda, serif;\n\
+        font-weight: normal;\n\
+    }\n\
+    \n\
+    .abc_ending {\n\
+        font-size: 10px;\n\
+        font-family: Merienda, serif;\n\
+    }\n\
+    \n\
+    .abc_tabtext\n\
+    ,.abc_tabtext2\n\
+    ,.abc_tabtext3 {\n\
+        font-family: arial;\n\
+        font-weight: bold;\n\
+        text-anchor:middle;\n\
+        font-size: 14px;\n\
+    }\n\
+    .abc_tabtext2 {\n\
+        font-size: 12px;\n\
+    }\n\
+    \n\
+    .abc_tabtext3 {\n\
+        font-size: 10px;\n\
+    }';
+    
+    var svg_title = 'Partitura ' + abctune.metaText.title + ' criada por ABCXJS.';
+    
+    if( abctune.midi) {
+        abctune.midi.printer = this;
+    }
+    this.pageratio = abctune.formatting.pageratio;
+    this.pagenumbering = abctune.formatting.pagenumbering;
+    this.staffsep = abctune.formatting.staffsep ||  ABCXJS.write.spacing.STEP*8;
+    this.paddingtop = abctune.formatting.landscape? 15 : 15;
+    this.scale = abctune.formatting.scale ? abctune.formatting.scale: this.scale;
+    this.width = Math.min( abctune.formatting.staffwidth, abctune.formatting.usablewidth) - this.paddingright;
+    this.maxwidth = this.width;
+    
+    this.y = this.paddingtop;
+    this.totalY = 0;
+    
+    this.layouter = new ABCXJS.write.Layout( this, abctune.formatting.bagpipes );
+    
+    this.calcPageLength();
+    
+    this.paper.initDoc( 'tune', svg_title, estilo, options );
+    this.paper.initPage( this.scale );
+
+=======
+>>>>>>> 9c6593ad16e8043a41d0c14dc6bc265a33f90d8a
     if (abctune.metaText.title) {
         this.paper.text(this.width/2, this.y+5, abctune.metaText.title, "abc_title", "middle" );
         this.y += 20;
     }    
+<<<<<<< HEAD
+
+    if (abctune.lines[0].staffs[0].subtitle) {
+        this.printSubtitleLine(abctune.lines[0].staffs[0].subtitle);
+    }
+    
+    var composerLine = "";
+    
+    if (abctune.metaText.composer)
+        composerLine += abctune.metaText.composer;
+    if (abctune.metaText.origin)
+        composerLine += ' (' + abctune.metaText.origin + ')';
+    if (abctune.metaText.author) 
+        composerLine += (composerLine.length> 0?'\n':'') + abctune.metaText.author;
+
+    if (composerLine.length > 0) {
+        var n = composerLine.split('\n').length;
+        var dy = (n>1?(n>2?0:5):30);
+        this.paper.text(this.width, dy, composerLine, 'abc_author', 'end' );
+    } 
+    
+    var xtempo ;
+    if (abctune.metaText.tempo && !abctune.metaText.tempo.suppress) {
+        xtempo = this.printTempo(this.paddingleft*2, abctune.metaText.tempo );
+    }
+    if (abctune.metaText.rhythm) {
+        this.paper.text( xtempo || this.paddingleft*3+5, this.y, abctune.metaText.rhythm, 'abc_rhythm', 'start');
+    }
+    
+    this.y += 20;
+
+    // impressão dos grupos de pautas
+    for (var line = 0; line < abctune.lines.length; line++) {
+        var abcline = abctune.lines[line];
+        if(abcline.newpage) {
+            this.skipPage();
+            continue;
+        }
+        if(abcline.staffs) {
+            var staffgroup =  this.layouter.layoutABCLine(abctune, line, this.width);
+            staffgroup.draw( this, line );
+            this.staffgroups.push(staffgroup);
+            this.maxwidth = Math.max(staffgroup.w, this.maxwidth);
+            this.calcPageLength();
+        }
+    }
+
+    var extraText1 = "", extraText2 = "",  height = 0, h1=0, h2=0;
+    
+    if (abctune.metaText.unalignedWords) {
+        for (var j = 0; j < abctune.metaText.unalignedWords.length; j++) {
+            if (typeof abctune.metaText.unalignedWords[j] === 'string') {
+                extraText1 += abctune.metaText.unalignedWords[j] + "\n";
+                h1 ++;
+            }
+        }
+    }
+    if (abctune.metaText.book) {
+         h2 ++;
+         extraText2 += "Livro: " + abctune.metaText.book + "\n";
+    }    
+    if (abctune.metaText.source) {
+         h2 ++;
+        extraText2+= "Fonte: " + abctune.metaText.source + "\n";
+    }    
+    if (abctune.metaText.discography) {
+         h2 ++;
+        extraText2 += "Discografia: " + abctune.metaText.discography + "\n";
+    }    
+    if (abctune.metaText.notes) {
+         h2 ++;
+        extraText2 += abctune.metaText.notes + "\n";
+    }    
+    if (abctune.metaText.transcription) {
+         h2 ++;
+        extraText2 += "Transcrito por " + abctune.metaText.transcription + "\n";
+    }    
+    if (abctune.metaText.history) {
+         h2 ++;
+        extraText2+= "Histórico: " + abctune.metaText.history + "\n";
+    }    
+    
+    if(h1> 0) {
+        height = ABCXJS.write.spacing.STEP*3 + h1*1.5*16; 
+        if( ( this.pageNumber - ((this.y+height)/this.estimatedPageLength) ) < 0 ) {
+           this.skipPage();
+        } else {
+            this.y += ABCXJS.write.spacing.STEP*3; 
+        }
+        this.printExtraText( extraText1, this.paddingleft+50);
+        this.y += height; 
+    }
+
+    if(h2> 0) {
+        height = ABCXJS.write.spacing.STEP*3 + h2*1.5*16;
+        if( ( this.pageNumber - ((this.y+height)/this.estimatedPageLength) ) < 0 ) {
+           this.skipPage();
+        } else {
+            this.y += ABCXJS.write.spacing.STEP*3; 
+        }
+        this.printExtraText( extraText2, this.paddingleft);
+        this.y += height; 
+    }
+    
+//    for(var r=0; r < 10; r++) // para debug: testar a posição do número ao final da página
+//        this.skipPage();
+    
+    this.skipPage(true); 
+    
+    this.paper.endDoc(abctune);
+    
+    this.formatPage();
+    
+    //binds SVG elements
+    var lines = abctune.lines;
+    for(var l=0; l<lines.length;l++){
+        for(var s=0; lines[l].staffs && s <lines[l].staffs.length;s++){
+            for(var v=0; v <lines[l].staffs[s].voices.length;v++){
+                for(var a=0; a <lines[l].staffs[s].voices[v].length;a++){
+                   var abs = lines[l].staffs[s].voices[v][a].parent;
+                   if( !abs || !abs.gid ) continue;
+                   abs.setMouse(this);
+                }
+            }
+        }
+    }
+    
+    //this.paper.topDiv.style.width = "" +  (this.maxwidth + this.paddingright) + "px";
+    this.paper.topDiv.style.width = "auto";
+
+};
+
+ABCXJS.write.Printer.prototype.printTempo = function (x, tempo) {
+    
+    this.y -= 5;
+
+    var tempopitch = 5;
+    
+    this.paper.beginGroup();
+
+    if (tempo.preString) {
+        this.paper.text(x, this.calcY(tempopitch-0.8), tempo.preString, 'abc_tempo', 'start');
+        //fixme: obter a largura do texto
+        //x += (text.getBBox().width + 20*printer.scale);
+        x += tempo.preString.length*5 + 5;
+    }
+
+    if (tempo.duration) {
+        var temposcale = 0.9;
+        var duration = tempo.duration[0]; // TODO when multiple durations
+        var abselem = new ABCXJS.write.AbsoluteElement(tempo, duration, 1);
+        var durlog = ABCXJS.write.getDurlog(duration);
+        var dot = 0;
+        for (var tot = Math.pow(2, durlog), inc = tot / 2; tot < duration; dot++, tot += inc, inc /= 2);
+        var c = ABCXJS.write.chartable.note[-durlog];
+        var flag = ABCXJS.write.chartable.uflags[-durlog];
+        var temponote = this.layouter.printNoteHead( abselem, c, {verticalPos:tempopitch}, "up", 0, 0, flag, dot, 0, temposcale );
+        abselem.addHead(temponote);
+        if (duration < 1) {
+            var dx = 9.5;
+            var width = -0.6;
+            abselem.addExtra(new ABCXJS.write.RelativeElement(null, dx, 0, tempopitch, {type:"stem", pitch2:tempopitch+6, linewidth:width}));
+        }
+        abselem.x = x+4;
+        abselem.draw(this, null);
+
+        x += (abselem.w+dx );
+        var tempostr = "= " + tempo.bpm;
+        this.paper.text(x, this.calcY(tempopitch-0.8), tempostr, 'abc_tempo', 'start');
+        //fixme: obter a largura do texto // text.getBBox().width + 10*printer.scale;
+        x += tempostr.length*5 + 5;
+    }
+
+    if (tempo.postString) {
+        this.paper.text( x, this.calcY(tempopitch-0.8), tempo.postString, 'abc_tempo', 'start');
+    }
+    this.paper.endGroup();
+
+    this.y += 5;
+    return abselem.x + abselem.w +4;
+};
+
+
+ABCXJS.write.Printer.prototype.printSymbol = function (x, offset, symbol ) {
+    if (!symbol) return null;
+    try {
+        this.paper.printSymbol(x, this.calcY(offset + this.glyphs.getYCorr(symbol)), symbol);
+    } catch(e){
+        this.paper.text(x, this.calcY(offset + this.glyphs.getYCorr(symbol)), e );
+    }
+};
+
+ABCXJS.write.Printer.prototype.printTieArc = function(x1, x2, pitch1, pitch2, above) {
+
+  x1 = x1 + 6;
+  x2 = x2 + 4;
+  pitch1 = pitch1 + ((above)?1.5:-1.5);
+  pitch2 = pitch2 + ((above)?1.5:-1.5);
+  var y1 = this.calcY(pitch1);
+  var y2 = this.calcY(pitch2);
+
+  this.paper.printTieArc(x1,y1,x2,y2,above);
+};
+
+ABCXJS.write.Printer.prototype.printStave = function (startx, endx, staff ) {
+    if(staff.numLines === 4) {
+      // startx+1 e endx-1 pq a rotina faz um deslocamento contrario para desenhar o ledger
+      this.printLedger(startx+1,endx-1, 19.5); 
+      
+      // imprimo duas linhas para efeito
+      this.paper.printStaveLine(startx,endx,this.calcY(15)-0.5 ); 
+      this.paper.printStaveLine(startx,endx,this.calcY(15) ); 
+      
+      this.printLedger(startx+1,endx-1, 7.5 ); 
+      
+      this.paper.printStaveLine(startx,endx,this.calcY(0)); 
+    } else {
+      for (var i = 0; i < staff.numLines; i++) {
+        this.paper.printStaveLine(startx,endx,this.calcY((i+1)*2));
+      }
+    }
+};
+
+ABCXJS.write.Printer.prototype.printDebugLine = function (x1,x2, y, fill ) {
+   this.paper.printStaveLine(x1,x2, y, fill ) ; 
+};
+
+ABCXJS.write.Printer.prototype.printLedger = function (x1, x2, pitch) {
+    this.paper.printLedger(x1-1, this.calcY(pitch), x2+1, this.calcY(pitch) );
+};
+
+ABCXJS.write.Printer.prototype.printText = function (x, offset, text, kls, anchor ) {
+    anchor = anchor || "start";
+    kls = kls || "abc_text";
+    this.paper.text(x, this.calcY(offset), text, kls, anchor);
+};
+
+ABCXJS.write.Printer.prototype.printTabText = function (x, offset, text, klass) {
+
+    klass = klass || 'abc_tabtext';
+
+    //if( opcao tablatura !== alemã )
+    //btn.tabButton = (i + 1) + Array(j + 1).join("'");
+
+    var i = parseInt(text);
+    var j=(text.match(/'/g)||[]).length
+    var n=text;
+
+    if(this.loadedKeyboard.pautaNumerica && !isNaN(i) && this.loadedKeyboard.keyMap[j][i-1] && !this.loadedKeyboard.keyMap[j][i-1].closeNote.isBass){
+        var b = this.loadedKeyboard.keyMap[j][i-1]
+        var formato = this.loadedKeyboard.pautaNumericaFormato;
+        if( formato.overrides[b.tabButton] ){
+            n = formato.overrides[b.tabButton];
+         } else{
+            n =  i+formato.rule[j];
+         }
+    }
+
+    //se for um numero da tablatura e o formato é para numerar as ilheiras faz as devidas mudanças
+    if( this.currentTune.formatting.tabprintrowsnumbered && !isNaN(i) ){
+        this.paper.tabText(x, this.calcY(offset)+7, i, klass, 'middle');
+        this.paper.tabText(x+6, this.calcY(offset)+2, j+1, 'abc_tabtext3', 'middle');
+    } else {
+        this.paper.tabText(x, this.calcY(offset)+5, n, klass, 'middle');
+    }
+
+};
+
+ABCXJS.write.Printer.prototype.printTabText2 = function (x, offset, text) {
+    return this.printTabText(x, offset, text, 'abc_tabtext2');
+};
+
+ABCXJS.write.Printer.prototype.printTabText3 = function (x, offset, text) {
+    return this.printTabText(x, offset, text, 'abc_tabtext3');
+};
+
+ABCXJS.write.Printer.prototype.printBar = function (x, dx, y1, y2, real) {
+    this.paper.printBar(x, dx, y1, y2, real);
+};
+
+ABCXJS.write.Printer.prototype.printStem = function (x, dx, y1, y2) {
+    this.paper.printStem(x, dx, y1, y2);
+};
+ABCXJS.write.Printer.prototype.printDebugMsg = function(x, y, msg ) {
+  return this.paper.text(x, y, msg, 'abc_ending', 'start');
+};
+
+ABCXJS.write.Printer.prototype.printLyrics = function(x, staveInfo, msg) {
+    var y = this.calcY(staveInfo.lowest-(staveInfo.lyricsRows>1?0:3.7));
+    
+    // para manter alinhado, quando uma das linhas for vazia, imprimo 3 pontos
+    var i = msg.indexOf( "\n " );
+    if( i >= 0) msg = msg.substr(0, i) + "\n...";
+    
+    this.paper.text(x, y, msg, 'abc_lyrics', 'start');
+    
+};
+
+ABCXJS.write.Printer.prototype.printFingering = function(x, staveInfo, msg) {
+    var y = this.calcY(staveInfo.lowest+4);
+    try {
+        this.paper.printSymbol(x-3, y, 'cn.'+msg.trim());
+    } catch(e){
+        this.paper.text(x, y+12, msg.trim(), 'abc_fingers', 'start');        
+    }
+};
+
+ABCXJS.write.Printer.prototype.printBassFingering = function(x, staveInfo, msg) {
+    var y = this.calcY(staveInfo.highest+1.5);
+    try {
+        this.paper.printSymbol(x-3, y, 'cn.'+msg.trim());
+    } catch(e){
+        this.paper.text(x, y+12, msg.trim(), 'abc_bassfingers', 'start');        
+    }
+};
+
+ABCXJS.write.Printer.prototype.addSelectListener = function (listener) {
+  this.listeners[this.listeners.length] = listener;
+};
+
+//// notify all listeners que o modelo mudou
+//ABCXJS.write.Printer.prototype.notifyChange = function () {
+//  for (var i=0; i<this.listeners.length;i++) {
+//    this.listeners[i].modelChanged && this.listeners[i].modelChanged();
+//  }
+//};
+
+// notify all listeners that a graphical element has been selected
+ABCXJS.write.Printer.prototype.notifySelect = function (abselem, keepState) {
+  this.selected[this.selected.length]=abselem;
+  abselem.highlight(keepState);
+  for (var i=0; i<this.listeners.length;i++) {
+    this.listeners[i].highlight && this.listeners[i].highlight(abselem.abcelem);
+  }
+};
+
+// notify all listeners that a graphical element has been deselected
+ABCXJS.write.Printer.prototype.notifyClear = function (abselem) {
+  abselem.unhighlight();
+  for (var i=0; i<this.listeners.length;i++) {
+    this.listeners[i].unhighlight && this.listeners[i].unhighlight(abselem.abcelem);
+  }
+};
+
+// notify all listeners that a graphical element has been selected (should clear any previous selection)
+ABCXJS.write.Printer.prototype.notifyClearNSelect = function (abselem, keepState) {
+  this.clearSelection();
+  this.notifySelect(abselem,keepState);
+};
+
+ABCXJS.write.Printer.prototype.clearSelection = function () {
+  for (var i=0;i<this.selected.length;i++) {
+    this.notifyClear( this.selected[i] );
+  }
+  this.selected = [];
+};
+
+ABCXJS.write.Printer.prototype.rangeHighlight = function(sel) {
+    
+    this.clearSelection();
+    
+    if( sel.length === 1 && sel[0].start.row === sel[0].end.row && sel[0].start.column === sel[0].end.column ) {
+        return;
+    }
+    
+    for (var line=0;line<this.staffgroups.length; line++) {
+	var voices = this.staffgroups[line].voices;
+	for (var voice=0;voice<voices.length;voice++) {
+	    var elems = voices[voice].children;
+	    for (var elem=0; elem<elems.length; elem++) {
+		// Elementos estão confinados somente em uma linha
+                if(! elems[elem].abcelem.position ) continue;
+                var elLine = elems[elem].abcelem.position.anchor.line;
+		var elStart = elems[elem].abcelem.position.anchor.ch;
+		var elEnd = elems[elem].abcelem.position.head.ch;
+                for(var s = 0; s < sel.length; s ++) {
+                    try {
+                        if( elLine >= sel[s].start.row && elLine <= sel[s].end.row ) {
+
+                            if (  ( elLine === sel[s].start.row && elEnd < sel[s].start.column ) ||
+                                  ( elLine === sel[s].end.row && elStart > sel[s].end.column   ) ) {
+                                continue; //elemento fora do range
+                            } else {
+                                this.selected.push(elems[elem]);
+                                elems[elem].highlight();
+                                break;
+                            }
+                        }
+                    } catch(e) {
+                        
+                    }
+                }
+	    }
+	}
+    }
+    return this.selected;
+};
+
+ABCXJS.write.Printer.prototype.beginGroup = function (abselem) {
+    abselem.gid = this.paper.beginGroup(abselem.abcelem.el_type); // associa o elemento absoluto com o futuro elemento sgv selecionavel
+};
+
+ABCXJS.write.Printer.prototype.endGroup = function () {
+  
+  this.paper.endGroup();
+  return;
+  
+};
+
+ABCXJS.write.Printer.prototype.calcY = function(ofs) {
+  return this.y+((ABCXJS.write.spacing.TOPNOTE-ofs)*ABCXJS.write.spacing.STEP); // flavio
+};
+
+ABCXJS.write.Printer.prototype.calcPageLength = function() {
+    if( this.currentTune.formatting.papersize === 'screen' ) 
+        this.estimatedPageLength =  1e6; // no page breaks
+    else
+        this.estimatedPageLength = ((this.maxwidth+this.paddingright)*this.pageratio - this.paddingbottom)/this.scale;
+};
+
+ABCXJS.write.Printer.prototype.printPageNumber = function() {
+    
+    this.y = this.estimatedPageLength;
+    
+    if (this.pagenumbering) {
+         this.paper.text(this.maxwidth+this.paddingright, this.y, "- " + this.pageNumber + " -", 'abc_tempo', 'end');
+    }
+};
+
+ABCXJS.write.Printer.prototype.skipPage = function(lastPage) {
+    
+    // se não for a última página ou possui mais de uma página
+    if( ! lastPage || this.pageNumber > 1) {
+        this.printPageNumber();
+    }
+    
+    this.totalY += this.y;
+    
+    this.paper.endPage({w: (this.maxwidth + this.paddingright) , h: this.y });
+    
+    if( ! lastPage ) {
+        this.y = this.paddingtop;
+        this.pageNumber++;
+        this.paper.initPage( this.scale );
+    }
+};
+
+ABCXJS.write.Printer.prototype.formatPage = function() {
+    //prepara a página para impressão de acordo com os parâmetros da canção.
+    var orientation = this.currentTune.formatting.landscape?'landscape':'portrait';
+    var style = document.getElementById('page_format');
+    
+    var formato = 
+'   @page {\n\
+        margin: '+this.currentTune.formatting.defaultMargin+'; size: '+this.currentTune.formatting.papersize+' ' + orientation + ';\n\
+    }\n' ; //+ pgnumber;
+    
+    if( ! style ) {
+        style = document.createElement('style');
+        style.setAttribute( "id", "page_format" ); 
+        document.head.appendChild(style);
+    }
+    
+    style.innerHTML = formato;
+
+};
+
+ABCXJS.write.Printer.prototype.printExtraText = function(text, x) {
+    var t = this.paper.text(x, this.y , text, 'abc_title', 'start');
+    var height ;//= t.getBBox().height;
+    if (!height)  height = 25 ; //fixme: obter a altura do texto
+    return height;
+};
+
+ABCXJS.write.Printer.prototype.printSubtitleLine = function(subtitle) {
+    this.paper.text(this.width/2, this.y+2, subtitle, 'abc_subtitle', 'middle');
+};
+    /**
+ * sprintf() for JavaScript v.0.4
+ *
+ * Copyright (c) 2007 Alexandru Marasteanu <http://alexei.417.ro/>
+ * Thanks to David Baird (unit test and patch).
+ *
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free Software
+ * Foundation; either version 2 of the License, or (at your option) any later
+ * version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, write to the Free Software Foundation, Inc., 59 Temple
+ * Place, Suite 330, Boston, MA 02111-1307 USA
+ */
+
+//function str_repeat(i, m) { for (var o = []; m > 0; o[--m] = i); return(o.join('')); }
+
+if (!window.ABCXJS)
+	window.ABCXJS = {};
+
+if (!window.ABCXJS.write)
+	window.ABCXJS.write = {};
+
+ABCXJS.write.sprintf = function() {
+  var i = 0, a, f = arguments[i++], o = [], m, p, c, x;
+  while (f) {
+    if (m = /^[^\x25]+/.exec(f)) o.push(m[0]);
+    else if (m = /^\x25{2}/.exec(f)) o.push('%');
+    else if (m = /^\x25(?:(\d+)\$)?(\+)?(0|'[^$])?(-)?(\d+)?(?:\.(\d+))?([b-fosuxX])/.exec(f)) {
+      if (((a = arguments[m[1] || i++]) == null) || (a == undefined)) throw("Too few arguments.");
+      if (/[^s]/.test(m[7]) && (typeof(a) != 'number'))
+        throw("Expecting number but found " + typeof(a));
+      switch (m[7]) {
+        case 'b': a = a.toString(2); break;
+        case 'c': a = String.fromCharCode(a); break;
+        case 'd': a = parseInt(a); break;
+        case 'e': a = m[6] ? a.toExponential(m[6]) : a.toExponential(); break;
+        case 'f': a = m[6] ? parseFloat(a).toFixed(m[6]) : parseFloat(a); break;
+        case 'o': a = a.toString(8); break;
+        case 's': a = ((a = String(a)) && m[6] ? a.substring(0, m[6]) : a); break;
+        case 'u': a = Math.abs(a); break;
+        case 'x': a = a.toString(16); break;
+        case 'X': a = a.toString(16).toUpperCase(); break;
+      }
+      a = (/[def]/.test(m[7]) && m[2] && a > 0 ? '+' + a : a);
+      c = m[3] ? m[3] == '0' ? '0' : m[3].charAt(1) : ' ';
+      x = m[5] - String(a).length;
+      p = m[5] ? str_repeat(c, x) : '';
+      o.push(m[4] ? a + p : p + a);
+    }
+    else throw ("Huh ?!");
+    f = f.substring(m[0].length);
+  }
+  return o.join('');
+};
+/* 
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+/* 
+    Created on : 27/04/2016, 10:55:16
+    Author     : flavio.vani@gmail.com
+*/
+
+/*
+
+Main document structure:
+
+<div style"..." >
+
+    Header:
+     Contains a title, the style definitions for the entire document and the defined symbols.
+    <svg id="tune" ... >
+        <title>Música criada por ABCXJS.</title><style type="text/css">
+        <style type="text/css">
+            @media print {
+                div.nobrk {page-break-inside: avoid} 
+                div.newpage {page-break-before: always} 
+            }    
+        </style>
+        <defs>
+        </defs>
+    </svg>
+
+    Page1:
+      Class nobrk, an optional group to control aspects like scaling and the content of the page 
+    <div class="nobrk" >
+        <svg id="page1"  ... >
+            <g id="gpage1" ... ></g>
+        </svg>
+    </div>
+
+    Page2 and subsequents:
+      Class newpage, an optional group to control aspects like scaling and the content of the page 
+    <div class="newpage" >
+        <svg id="page2"  ...>
+            <g id="gpage2" ... ></g>
+        </svg>
+    </div>
+
+</div>
+*/
+
+if (!window.SVG)
+    window.SVG = {};
+
+if (! window.SVG.misc )
+    window.SVG.misc = { printerId: 0 };
+
+if (! window.SVG.Printer )
+    window.SVG.Printer = {};
+
+SVG.Printer = function ( d ) {
+    this.topDiv = d;
+    this.scale = 1;
+    this.gid=0;
+    this.printerId = ++SVG.misc.printerId;
+   
+    this.title;
+    this.styles = '';
+    this.defines = '';
+    this.defined_glyph = [];
+
+    this.svg_pages = [];
+    this.currentPage = 0;
+    
+    this.glyphs = new SVG.Glyphs();
+    
+    this.initDoc();
+    
+    this.svgHead = function( id, kls, size ) {
+        
+        var w = size? size.w*this.scale + 'px' : '0';
+        var h = size? size.h*this.scale + 'px' : '0';
+        var d = size? '' : 'display: none; ';
+        
+        //        // not in use
+        //        id = id? 'id="'+id+'"' : '' ;
+        //        kls = kls? 'class="'+kls+'"' : '' ;
+        
+        return '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" style="'+d+'width:'+w+'; height: '+h+';" >\n';
+    };
+};
+
+SVG.Printer.prototype.initDoc = function( docId, title, add_styles, options ) {
+    options = options || {};
+    this.docId = docId || 'dcto';
+    this.title = title || '';
+    this.backgroundColor = options.backgroundColor || 'none';
+    this.color = options.color || 'black';
+    this.baseColor = options.baseColor || 'black';
+    this.scale = 1.0;
+    this.defines = '';
+    this.defined_glyph = [];
+
+    this.svg_pages = [];
+    this.currentPage = -1;
+    this.gid=0;
+    this.styles = 
+'<style type="text/css">\n\
+    @media print {\n\
+        div.nobrk {page-break-inside: avoid}\n\
+        div.newpage {page-break-before: always}\n\
+    }\n'+(add_styles||'')+'\n</style>\n';
+    
+//<![CDATA[\n\
+//]]>\n
+    
+};
+
+SVG.Printer.prototype.endDoc = function( ) {
+
+    var output = '<div style="display:block; margin:0; padding: 0; width: fit-content; background-color:'+this.backgroundColor+'; ">\n' + this.svgHead( this.docId );
+    
+    output += '<title>'+this.title+'</title>\n';
+    output += this.styles;
+    
+    if(this.defines.length > 0 ) {
+        output += '<defs>'+this.defines+'</defs>\n';
+    }
+    
+    output += '</svg>\n';
+    
+    for( var p=0; p <=  this.currentPage; p++ ) {
+        output += '<div class="'+(p>0?'newpage':'nobrk')+'">'+this.svg_pages[p]+'</div>\n';  
+    }
+    
+    output +='</div>';
+    
+    this.topDiv.innerHTML = output;
+
+};
+
+SVG.Printer.prototype.initPage = function( scl ) {
+    this.scale = scl || this.scale;
+    this.currentPage++;
+    this.svg_pages[this.currentPage] = '';
+    var g = 'g' + this.docId + (this.currentPage+1);
+    if( this.scale !== 1.0 ) {
+        this.svg_pages[this.currentPage]  += '<g id="'+g+'" transform="scale( '+ this.scale +')">';
+    }
+};
+
+SVG.Printer.prototype.endPage = function( size ) {
+    if( this.scale && this.scale !== 1.0 ) {
+        this.svg_pages[this.currentPage]  += '</g>';
+    }
+    var pg = this.docId + (this.currentPage+1);
+    this.svg_pages[this.currentPage] = this.svgHead( pg, this.currentPage < 1 ? 'nobrk':'newpage', size ) + this.svg_pages[this.currentPage] + '</svg>\n';
+};
+
+SVG.Printer.prototype.beginGroup = function (el_type) {
+    var id = 'p'+this.printerId+'g'+(++this.gid); 
+    var kls = ' style="fill:'+this.color+'; stroke:none;" ' ;
+    this.svg_pages[this.currentPage] += '<g id="'+id+'"'+kls+'>\n';  
+    return id;
+};
+
+SVG.Printer.prototype.endGroup = function () {
+    this.svg_pages[this.currentPage] += '</g>\n';  
+};
+
+SVG.Printer.prototype.setDefine = function (s) {
+    var p =  this.glyphs.getDefinition(s);
+    
+    if(p.length === 0 ) return false;
+    
+    if(!this.defined_glyph[s]) {
+        this.defines += p;
+        this.defined_glyph[s] = true;
+    }
+    return true;
+};
+
+SVG.Printer.prototype.printLine = function (x,y,dx,dy) {
+    if( x === dx ) {
+        dx = ABCXJS.misc.isIE() ? 1: 0.6;
+        dy -=  y;
+    }
+    if( y === dy ) {
+        dy = ABCXJS.misc.isIE() ? 1: 0.6;
+        dx -=  x;
+    }
+    var pathString = ABCXJS.write.sprintf('<rect style="fill:'+this.color+';"  x="%.1f" y="%.1f" width="%.1f" height="%.1f"/>\n', x, y, dx, dy);
+    this.svg_pages[this.currentPage] += pathString;
+};
+
+SVG.Printer.prototype.printLedger = function (x,y,dx,dy) {
+    var pathString = ABCXJS.write.sprintf('<path style="stroke:'+this.baseColor+'; fill: white; stroke-width:0.6; stroke-dasharray: 1 1;" d="M %.1f %.1f h%.1f"/>\n', x, y, dx-x);
+    this.svg_pages[this.currentPage] += pathString;
+};
+
+SVG.Printer.prototype.printBeam = function (x1,y1,x2,y2,x3,y3,x4,y4) {
+    
+//    this.svg_pages[this.currentPage] += ABCXJS.write.sprintf(
+//        '<path style="fill:'+this.color + '; stroke:none;" ' +
+//        'd="M %.1f %.1f L %.1f %.1f L %.1f %.1f L %.1f %.1f Z" />\n'
+//        , x1, y1, x2, y2, x3, y3, x4, y4);
+        
+// Por algum motivo o path acima apresenta vazamento do preenchimento em algumas escalas de zoom.
+// Resolvi usando um path diferente (e não muito eficiente para desenhar o beam
+        
+    this.svg_pages[this.currentPage] += ABCXJS.write.sprintf(
+        '<path style="stroke:none; fill:'+ this.color + ';" ' +
+        'd="M %.1f %.1f L %.1f %.1f L %.1f %.1f Z L %.1f %.1f L %.1f %.1f Z" />\n'
+        , x1, y1, x2, y2, x3, y3, x3, y3, x4, y4 );
+};
+
+SVG.Printer.prototype.printStaveLine = function (x1, x2, y, debug) {
+    var color = debug? debug : this.baseColor;
+    var dy =0.6;   
+    var pathString = ABCXJS.write.sprintf('<rect style="stroke:none; fill: %s;" x="%.1f" y="%.1f" width="%.1f" height="%.1f"/>\n', 
+                                                color, x1, y, Math.abs(x2-x1), dy );
+    this.svg_pages[this.currentPage] += pathString;
+};
+
+SVG.Printer.prototype.printBar = function (x, dx, y1, y2, real) {
+    
+    var x2 = x+dx;
+    var kls = real?'':'style="stroke:none; fill:'+this.baseColor+'"';
+    
+    if (ABCXJS.misc.isIE() && dx<1) {
+      dx = 1;
+    }
+    
+    var dy = Math.abs(y2-y1);
+    dx = Math.abs(dx); 
+    
+    var pathString = ABCXJS.write.sprintf('<rect '+kls+' x="%.1f" y="%.1f" width="%.1f" height="%.1f"/>\n', Math.min(x,x2), Math.min(y1,y2), dx, dy );
+
+    this.svg_pages[this.currentPage] += pathString;
+};
+
+SVG.Printer.prototype.printStem = function (x, dx, y1, y2) {
+    
+    var x2 = x+dx;
+    
+    if (ABCXJS.misc.isIE() && dx<1) {
+      dx = 1;
+    }
+    
+    var dy = Math.abs(y2-y1);
+    dx = Math.abs(dx); 
+    
+    var pathString = ABCXJS.write.sprintf('<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f"/>\n', Math.min(x,x2), Math.min(y1,y2), dx, dy );
+
+    this.svg_pages[this.currentPage] += pathString;
+};
+
+
+SVG.Printer.prototype.printTieArc = function (x1,y1,x2,y2,up) {
+    
+    //unit direction vector
+    var dx = x2-x1;
+    var dy = y2-y1;
+    var norm= Math.sqrt(dx*dx+dy*dy);
+    var ux = dx/norm;
+    var uy = dy/norm;
+
+    var flatten = norm/3.5;
+    var curve = (up?-1:1)*Math.min(25, Math.max(4, flatten));
+
+    var controlx1 = x1+flatten*ux-curve*uy;
+    var controly1 = y1+flatten*uy+curve*ux;
+    var controlx2 = x2-flatten*ux-curve*uy;
+    var controly2 = y2-flatten*uy+curve*ux;
+    var thickness = 2;
+    
+    var pathString = ABCXJS.write.sprintf('<path style="fill:'+this.color+'; stroke-width:0.6px; stroke:none;" d="M %.1f %.1f C %.1f %.1f %.1f %.1f %.1f %.1f C %.1f %.1f %.1f %.1f %.1f %.1f z"/>\n', 
+                            x1, y1,
+                            controlx1, controly1, controlx2, controly2, x2, y2, 
+                            controlx2-thickness*uy, controly2+thickness*ux, controlx1-thickness*uy, controly1+thickness*ux, x1, y1 );
+    
+    this.svg_pages[this.currentPage] += pathString;
+};
+    
+SVG.Printer.prototype.printBrace = function (x, y1, y2) {
+    var sz = Math.abs(y1-y2); // altura esperada
+    var scale = sz / 1027; // altura real do simbolo
+    this.setDefine('scripts.lbrace');
+    var pathString = ABCXJS.write.sprintf('<use style="fill:'+this.baseColor+'" x="0" y="0" xlink:href="#scripts.lbrace" transform="translate(%.1f %.1f) scale(0.13 %.5f)" />\n', x, y2, scale );
+    this.svg_pages[this.currentPage] += pathString;
+};
+
+SVG.Printer.prototype.printSymbol = function (x, y, symbol) {
+    if (this.setDefine(symbol)) {
+        var pathString = ABCXJS.write.sprintf('<use x="%.1f" y="%.1f" xlink:href="#%s" />\n', x, y, symbol );
+        this.svg_pages[this.currentPage] += pathString;
+    } else {
+        throw 'Undefined: ' + symbol;
+    }
+};
+
+SVG.Printer.prototype.tabText = function( x, y, str, clss, anch ) {
+    
+   if( str === 'scripts.rarrow') {
+       //fixme: deveria mudar o tipe de tabtext para symbol, adequadamente
+       this.printSymbol(x, y, str );
+       return;
+   }
+   
+   str = ""+str;
+   if( str.length===0) return;
+   
+   anch = anch || 'start';
+   x = x.toFixed(2);
+   y = y.toFixed(2);
+   
+   this.svg_pages[this.currentPage] += '<text class="'+clss+'" x="'+x+'" y="'+y+'" >'+str+'</text>\n';
+};
+
+SVG.Printer.prototype.text = function( x, y, str, clss, anch ) {
+   
+   str = ""+str;
+   if( str.length===0 ) return;
+   
+   var estilo = clss === 'abc_lyrics' ? '' : 'style="stroke:none; fill: '+this.color+';"' ;
+   var t = str.split('\n');
+   anch = anch || 'start';
+   x = x.toFixed(2);
+   y = y.toFixed(2);
+   
+   this.svg_pages[this.currentPage] += '<g class="'+clss+'" '+estilo+' transform="translate('+x+' '+y+')">\n';
+    if(t.length < 2) {
+        var stl = t[0].trim() === "."? 'style="opacity:0;"':'';
+        this.svg_pages[this.currentPage] += '<text text-anchor="'+anch+'" x="0" y="0" '+stl+' >'+t[0]+'</text>\n';
+    } else {
+       this.svg_pages[this.currentPage] += '<text text-anchor="'+anch+'" x="0" y="0">\n';
+       for(var i = 0; i < t.length; i++ ){
+           var stl = t[i].trim() === "."? 'style="opacity:0;"':'';
+           this.svg_pages[this.currentPage] += '<tspan x="0" dy="1.2em" '+stl+' >'+(t[i].length===0 ? '&nbsp;' : t[i])+'</tspan>\n';
+       }
+       this.svg_pages[this.currentPage] += '</text>\n';
+    }
+    this.svg_pages[this.currentPage] += '</g>\n';
+};
+
+SVG.Printer.prototype.printButton = function (id, x, y, options) {
+    
+    var scale = options.radius/26; // 26 é o raio inicial do botão
+    var gid = 'p'+this.printerId+id;
+    var estilo = 'stroke:'+options.borderColor+'; stroke-width:'+options.borderWidth+'px; fill: none;';
+    var estiloMini = 'stroke:'+options.borderColor+'; stroke-width:'+options.borderWidth+'px; fill: black;';
+
+    var linha = '<path style="'+estilo+'" d="m 2 34 l 52 -12" ></path>\n';
+    var circPautaNum  = '';
+    
+    if(options.pautaNumerica ) {
+        if( options.pautaNumericaMini) {
+            circPautaNum  = '<circle style="'+estiloMini+'" cx="46" cy="46" r="10"></circle>\n'
+        } else {
+            linha = ''
+        }
+    }
+
+    var pathString = ABCXJS.write.sprintf( '<g id="%s" transform="translate(%.1f %.1f) scale(%.5f)">\n\
+        <circle cx="28" cy="28" r="26" style="stroke:none; fill: %s;" ></circle>\n\
+        <path id="%s_ac" style="stroke: none; fill: %s;" d="M 2 34 a26 26 0 0 1 52 -12"></path>\n\
+        <path id="%s_ao" style="stroke: none; fill: %s;" d="M 54 22 a26 26 0 0 1 -52 12"></path>\n\
+        <circle style="'+estilo+'" cx="28" cy="28" r="26"></circle>\n\
+        '+linha+'\
+        <text id="%s_tc" class="%s" style="stroke:none; fill: black;" x="27" y="22" ></text>\n\
+        <text id="%s_to" class="%s" style="stroke:none; fill: black;" x="27" y="44" ></text>\n\
+        <text id="%s_tn" class="%s" style="stroke:none; fill: black;" x="28" y="36" ></text>\n\
+        '+circPautaNum+'\
+        <text id="%s_tm" class="%s" style="stroke:none; fill: white;" x="46" y="50" ></text>\n\
+        </g>\n',
+        gid, x, y, scale, options.fillColor, gid, options.closeColor, gid, options.openColor, gid, options.kls, gid, options.kls, gid, options.klsN, gid, options.klsNMini );
+        
+    this.svg_pages[this.currentPage] += pathString;
+    return gid;
+
+};
+
+/* 
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+if (!window.SVG)
+    window.SVG = {};
+
+if (!window.SVG.Glyphs )
+    window.SVG.Glyphs = {};
+
+SVG.Glyphs = function () {
+    
+    var abc_glyphs = new ABCXJS.write.Glyphs();
+    var cn_const_scale = '0.06';
+    var cn_const_fill = '#f00';
+
+    
+    var glyphs = { // the @@ will be replaced by the abc_glyph contents.
+          "cn.1": '<path id="cn.1" style="fill:' + cn_const_fill +'" transform="scale('+cn_const_scale+')" \nd="M143.027,0C64.04,0,0,64.04,0,143.027c0,78.996,64.04,143.027,143.027,143.027 s143.027-64.031,143.027-143.027C286.054,64.04,222.022,0,143.027,0z M143.027,259.236c-64.183,0-116.209-52.026-116.209-116.209 S78.844,26.818,143.027,26.818s116.209,52.026,116.209,116.209S207.21,259.236,143.027,259.236z M150.026,80.39h-22.84c-6.91,0-10.933,7.044-10.933,13.158c0,5.936,3.209,13.158,10.933,13.158 h7.259v85.36c0,8.734,6.257,13.605,13.176,13.605s13.185-4.881,13.185-13.605V92.771C160.798,85.789,156.945,80.39,150.026,80.39z"/>'
+        , "cn.2": '<path id="cn.2" style="fill:' + cn_const_fill +'" transform="scale('+cn_const_scale+')" \nd="M143.027,0C64.04,0,0,64.04,0,143.027c0,78.996,64.04,143.027,143.027,143.027 s143.027-64.031,143.027-143.027C286.054,64.04,222.022,0,143.027,0z M143.027,259.236c-64.183,0-116.209-52.026-116.209-116.209 S78.844,26.818,143.027,26.818s116.209,52.026,116.209,116.209S207.21,259.236,143.027,259.236z M173.232,180.205h-32.038 c15.661-18.459,40.852-39.753,40.852-63.736c0-21.91-16.564-35.882-39.216-35.882c-22.661,0-43.847,17.977-43.847,39.717 c0,6.731,4.604,12.586,13.445,12.586c17.691,0,8.108-28.498,29.294-28.498c7.554,0,13.266,6.204,13.266,13.284 c0,6.204-3.138,11.558-6.454,16.046c-13.999,18.969-30.581,34.496-45.867,51.579c-1.841,2.065-4.246,5.176-4.246,8.796 c0,7.938,6.266,11.38,14.365,11.38h61.528c6.999,0,13.266-4.568,13.266-12.497C187.58,185.05,181.331,180.205,173.232,180.205z"/>'
+        , "cn.3": '<path id="cn.3" style="fill:' + cn_const_fill +'" transform="scale('+cn_const_scale+')" \nd="M143.027,0C64.04,0,0,64.04,0,143.027c0,78.996,64.04,143.027,143.027,143.027 s143.027-64.031,143.027-143.027C286.054,64.04,222.014,0,143.027,0z M143.027,259.236c-64.183,0-116.209-52.026-116.209-116.209 S78.844,26.818,143.027,26.818s116.209,52.026,116.209,116.209S207.21,259.236,143.027,259.236z M167.717,137.637 c8.966-5.936,13.364-15.277,13.364-25.977c0-13.239-11.254-31.082-34.729-31.082c-18.093,0-35.542,14.276-35.542,27.515 c0,6.284,3.915,12.56,10.602,12.56c11.085,0,8.966-16.636,24.449-16.636c7.339,0,11.737,4.925,11.737,11.371 c0,18.853-23.152,6.794-23.152,24.627c0,20.033,27.72,2.548,27.72,26.317c0,9.002-6.856,15.796-15.331,15.796 c-18.424,0-15.813-19.872-26.898-19.872c-5.873,0-12.551,4.756-12.551,11.38c0,13.418,15,31.922,39.127,31.922 c23.152,0,41.084-17.154,41.084-37.527C187.598,154.621,179.445,143.25,167.717,137.637z"/>'
+        , "cn.4": '<path id="cn.4" style="fill:' + cn_const_fill +'" transform="scale('+cn_const_scale+')" \nd="M143.027,0C64.04,0,0,64.04,0,143.027c0,78.996,64.04,143.027,143.027,143.027 s143.027-64.031,143.027-143.027C286.054,64.04,222.014,0,143.027,0z M143.027,259.236c-64.183,0-116.209-52.026-116.209-116.209 S78.844,26.818,143.027,26.818s116.209,52.026,116.209,116.209S207.21,259.236,143.027,259.236z M175.065,155.122h-5.042v-52.607 c0-15.59-8.394-21.937-18.933-21.937c-9.449,0-14.535,3.093-18.531,9.94l-40.7,69.565c-1.091,1.707-2.548,3.772-2.548,7.545 c0,4.452,3.817,10.11,12.72,10.11h43.793V192.3c0,9.091,1.85,13.364,11.12,13.364s13.078-4.282,13.078-13.364v-14.562h5.042 c7.089,0,12.72-4.452,12.72-11.317C187.785,159.573,182.154,155.122,175.065,155.122z M146.379,155.122h-24.896l24.529-47.816 h0.367V155.122z"/>'
+        , "cn.5": '<path id="cn.5" style="fill:' + cn_const_fill +'" transform="scale('+cn_const_scale+')" \nd="M143.027,0C64.04,0,0,64.04,0,143.027c0,78.996,64.04,143.027,143.027,143.027 s143.027-64.031,143.027-143.027C286.054,64.04,222.014,0,143.027,0z M143.027,259.236c-64.183,0-116.209-52.026-116.209-116.209 S78.844,26.818,143.027,26.818s116.209,52.026,116.209,116.209S207.21,259.236,143.027,259.236z M149.678,120.849 c-4.613,0-9.395,0.867-13.811,1.716l2.762-18.325h34.63c3.316,0,12.89-1.037,12.89-12.971c0-6.222-4.979-10.888-13.445-10.888 h-44.401c-8.832,0-12.712,2.941-14.365,16.43l-4.604,36.481c-0.188,1.895-0.554,3.629-0.554,5.873 c0,2.941,3.683,8.126,10.861,8.126c9.395,0,11.049-5.703,21.74-5.703c11.424,0,17.691,7.08,17.691,17.458 c0,10.897-6.633,22.643-19.523,22.643c-12.345,0-21.195-11.058-28.561-11.058c-6.812,0-12.515,5.364-12.515,11.755 c0,15.214,27.443,23.17,40.521,23.17c31.859,0,48.817-19.023,48.817-47.896C187.812,137.44,171.972,120.849,149.678,120.849z"/>'
+        , "cn.23h": '<path id="cn.23h" style="fill:' + cn_const_fill +'" transform="scale('+cn_const_scale+')" \nd="M 244.597 167.084 C 244.597 187.457 226.665 204.611 203.513 204.611 C 179.386 204.611 164.386 186.107 164.386 172.689 C 164.386 166.065 171.064 161.309 176.937 161.309 C 188.022 161.309 185.411 181.181 203.835 181.181 C 212.31 181.181 219.166 174.387 219.166 165.385 C 219.166 141.616 191.446 159.101 191.446 139.068 C 191.446 121.235 214.598 133.294 214.598 114.441 C 214.598 107.995 210.2 103.07 202.861 103.07 C 187.378 103.07 189.497 119.706 178.412 119.706 C 171.725 119.706 167.81 113.43 167.81 107.146 C 167.81 93.907 185.259 79.631 203.352 79.631 C 226.827 79.631 238.081 97.474 238.081 110.713 C 238.081 121.413 233.683 130.754 224.717 136.69 C 236.445 142.303 244.598 153.674 244.597 167.084 M 320.896 143.027 C 320.896 222.023 273.867 286.054 215.862 286.054 C 196.449 286.054 178.266 278.882 162.664 266.379 C 146.219 280.664 126.658 288.948 105.668 288.948 C 47.313 288.948 0 224.917 0 145.921 C 0 66.934 47.313 2.894 105.668 2.894 C 125.204 2.894 143.5 10.069 159.199 22.579 C 175.547 8.288 194.994 0 215.862 0 C 273.867 0 320.896 64.04 320.896 143.027 Z M 162.261 233.462 C 176.911 249.582 195.558 259.236 215.862 259.236 C 262.996 259.236 301.202 207.21 301.202 143.027 C 301.202 78.844 262.996 26.818 215.862 26.818 C 194.603 26.818 175.161 37.401 160.221 54.909 C 160.171 54.826 160.121 54.744 160.07 54.661 C 159.91 54.936 159.751 55.212 159.593 55.488 C 144.855 39.366 126.095 29.712 105.668 29.712 C 58.25 29.712 19.813 81.738 19.813 145.921 C 19.813 210.104 58.25 262.13 105.668 262.13 C 127.055 262.13 146.614 251.547 161.644 234.039 C 161.693 234.12 161.742 234.2 161.792 234.28 C 161.949 234.008 162.105 233.736 162.261 233.462 M 154.528 189.927 C 154.528 197.856 148.261 202.424 141.262 202.424 L 79.734 202.424 C 71.635 202.424 65.369 198.982 65.369 191.044 C 65.369 187.424 67.774 184.313 69.615 182.248 C 84.901 165.165 101.483 149.638 115.482 130.669 C 118.798 126.181 121.936 120.827 121.936 114.623 C 121.936 107.543 116.224 101.339 108.67 101.339 C 87.484 101.339 97.067 129.837 79.376 129.837 C 70.535 129.837 65.931 123.982 65.931 117.251 C 65.931 95.511 87.117 77.534 109.778 77.534 C 132.43 77.534 148.994 91.506 148.994 113.416 C 148.994 137.399 123.803 158.693 108.142 177.152 L 140.18 177.152 C 148.279 177.152 154.528 181.997 154.528 189.927 Z"/>'
+        , "cn.24h": '<path id="cn.24h" style="fill:' + cn_const_fill + '" transform="scale(' + cn_const_scale + ')" \nd="M 320.896 143.027 C 320.896 222.023 273.867 286.054 215.862 286.054 C 196.449 286.054 178.266 278.882 162.664 266.379 C 146.219 280.664 126.658 288.948 105.668 288.948 C 47.313 288.948 0 224.917 0 145.921 C 0 66.934 47.313 2.894 105.668 2.894 C 125.204 2.894 143.5 10.069 159.199 22.579 C 175.547 8.288 194.994 0 215.862 0 C 273.867 0 320.896 64.04 320.896 143.027 Z M 162.261 233.462 C 176.911 249.582 195.558 259.236 215.862 259.236 C 262.996 259.236 301.202 207.21 301.202 143.027 C 301.202 78.844 262.996 26.818 215.862 26.818 C 194.603 26.818 175.161 37.401 160.221 54.909 C 160.171 54.826 160.121 54.744 160.07 54.661 C 159.91 54.936 159.751 55.212 159.593 55.488 C 144.855 39.366 126.095 29.712 105.668 29.712 C 58.25 29.712 19.813 81.738 19.813 145.921 C 19.813 210.104 58.25 262.13 105.668 262.13 C 127.055 262.13 146.614 251.547 161.644 234.039 C 161.693 234.12 161.742 234.2 161.792 234.28 C 161.949 234.008 162.105 233.736 162.261 233.462 M 156.87 187.139 C 156.87 195.068 150.603 199.636 143.604 199.636 L 82.076 199.636 C 73.977 199.636 67.711 196.194 67.711 188.256 C 67.711 184.636 70.116 181.525 71.957 179.46 C 87.243 162.377 103.825 146.85 117.824 127.881 C 121.14 123.393 124.278 118.039 124.278 111.835 C 124.278 104.755 118.566 98.551 111.012 98.551 C 89.826 98.551 99.409 127.049 81.718 127.049 C 72.877 127.049 68.273 121.194 68.273 114.463 C 68.273 92.723 89.459 74.746 112.12 74.746 C 134.772 74.746 151.336 88.718 151.336 110.628 C 151.336 134.611 126.145 155.905 110.484 174.364 L 142.522 174.364 C 150.621 174.364 156.87 179.209 156.87 187.139 M 242.361 149.977 L 237.319 149.977 L 237.319 97.37 C 237.319 81.78 228.925 75.433 218.386 75.433 C 208.937 75.433 203.851 78.526 199.855 85.373 L 159.155 154.938 C 158.064 156.645 156.607 158.71 156.607 162.483 C 156.607 166.935 160.424 172.593 169.327 172.593 L 213.12 172.593 L 213.12 187.155 C 213.12 196.246 214.97 200.519 224.24 200.519 C 233.51 200.519 237.318 196.237 237.318 187.155 L 237.318 172.593 L 242.36 172.593 C 249.449 172.593 255.08 168.141 255.08 161.276 C 255.081 154.428 249.45 149.977 242.361 149.977 Z M 213.675 149.977 L 188.779 149.977 L 213.308 102.161 L 213.675 102.161 L 213.675 149.977 Z"/>'
+        , "cn.25h": '<path id="cn.25h" transform="scale(' + cn_const_scale + ')" \nd="M 320.896 143.027 C 320.896 222.023 273.867 286.054 215.862 286.054 C 196.449 286.054 178.266 278.882 162.664 266.379 C 146.219 280.664 126.658 288.948 105.668 288.948 C 47.313 288.948 0 224.917 0 145.921 C 0 66.934 47.313 2.894 105.668 2.894 C 125.204 2.894 143.5 10.069 159.199 22.579 C 175.547 8.288 194.994 0 215.862 0 C 273.867 0 320.896 64.04 320.896 143.027 Z M 162.261 233.462 C 176.911 249.582 195.558 259.236 215.862 259.236 C 262.996 259.236 301.202 207.21 301.202 143.027 C 301.202 78.844 262.996 26.818 215.862 26.818 C 194.603 26.818 175.161 37.401 160.221 54.909 C 160.171 54.826 160.121 54.744 160.07 54.661 C 159.91 54.936 159.751 55.212 159.593 55.488 C 144.855 39.366 126.095 29.712 105.668 29.712 C 58.25 29.712 19.813 81.738 19.813 145.921 C 19.813 210.104 58.25 262.13 105.668 262.13 C 127.055 262.13 146.614 251.547 161.644 234.039 C 161.693 234.12 161.742 234.2 161.792 234.28 C 161.949 234.008 162.105 233.736 162.261 233.462 M 154.049 186.195 C 154.049 194.124 147.782 198.692 140.783 198.692 L 79.255 198.692 C 71.156 198.692 64.89 195.25 64.89 187.312 C 64.89 183.692 67.295 180.581 69.136 178.516 C 84.422 161.433 101.004 145.906 115.003 126.937 C 118.319 122.449 121.457 117.095 121.457 110.891 C 121.457 103.811 115.745 97.607 108.191 97.607 C 87.005 97.607 96.588 126.105 78.897 126.105 C 70.056 126.105 65.452 120.25 65.452 113.519 C 65.452 91.779 86.638 73.802 109.299 73.802 C 131.951 73.802 148.515 87.774 148.515 109.684 C 148.515 133.667 123.324 154.961 107.663 173.42 L 139.701 173.42 C 147.8 173.42 154.049 178.265 154.049 186.195 M 253.691 159.249 C 253.691 188.122 236.733 207.145 204.874 207.145 C 191.796 207.145 164.353 199.189 164.353 183.975 C 164.353 177.584 170.056 172.22 176.868 172.22 C 184.234 172.22 193.084 183.278 205.429 183.278 C 218.319 183.278 224.952 171.532 224.952 160.635 C 224.952 150.257 218.685 143.177 207.261 143.177 C 196.57 143.177 194.916 148.88 185.521 148.88 C 178.343 148.88 174.66 143.695 174.66 140.754 C 174.66 138.51 175.026 136.776 175.214 134.881 L 179.818 98.4 C 181.471 84.911 185.351 81.97 194.183 81.97 L 238.584 81.97 C 247.05 81.97 252.029 86.636 252.029 92.858 C 252.029 104.792 242.455 105.829 239.139 105.829 L 204.509 105.829 L 201.747 124.154 C 206.163 123.305 210.945 122.438 215.558 122.438 C 237.852 122.438 253.692 139.029 253.691 159.249 Z"/>'
+        , "cn.34h": '<path id="cn.34h" transform="scale(' + cn_const_scale + ')" \nd="M 320.896 143.027 C 320.896 222.023 273.867 286.054 215.862 286.054 C 196.449 286.054 178.266 278.882 162.664 266.379 C 146.219 280.664 126.658 288.948 105.668 288.948 C 47.313 288.948 0 224.917 0 145.921 C 0 66.934 47.313 2.894 105.668 2.894 C 125.204 2.894 143.5 10.069 159.199 22.579 C 175.547 8.288 194.994 0 215.862 0 C 273.867 0 320.896 64.04 320.896 143.027 Z M 162.261 233.462 C 176.911 249.582 195.558 259.236 215.862 259.236 C 262.996 259.236 301.202 207.21 301.202 143.027 C 301.202 78.844 262.996 26.818 215.862 26.818 C 194.603 26.818 175.161 37.401 160.221 54.909 C 160.171 54.826 160.121 54.744 160.07 54.661 C 159.91 54.936 159.751 55.212 159.593 55.488 C 144.855 39.366 126.095 29.712 105.668 29.712 C 58.25 29.712 19.813 81.738 19.813 145.921 C 19.813 210.104 58.25 262.13 105.668 262.13 C 127.055 262.13 146.614 251.547 161.644 234.039 C 161.693 234.12 161.742 234.2 161.792 234.28 C 161.949 234.008 162.105 233.736 162.261 233.462 M 146.304 166.911 C 146.304 187.284 128.372 204.438 105.22 204.438 C 81.093 204.438 66.093 185.934 66.093 172.516 C 66.093 165.892 72.771 161.136 78.644 161.136 C 89.729 161.136 87.118 181.008 105.542 181.008 C 114.017 181.008 120.873 174.214 120.873 165.212 C 120.873 141.443 93.153 158.928 93.153 138.895 C 93.153 121.062 116.305 133.121 116.305 114.268 C 116.305 107.822 111.907 102.897 104.568 102.897 C 89.085 102.897 91.204 119.533 80.119 119.533 C 73.432 119.533 69.517 113.257 69.517 106.973 C 69.517 93.734 86.966 79.458 105.059 79.458 C 128.534 79.458 139.788 97.301 139.788 110.54 C 139.788 121.24 135.39 130.581 126.424 136.517 C 138.152 142.13 146.305 153.501 146.304 166.911 M 244.084 155.896 L 239.042 155.896 L 239.042 103.289 C 239.042 87.699 230.648 81.352 220.109 81.352 C 210.66 81.352 205.574 84.445 201.578 91.292 L 160.878 160.857 C 159.787 162.564 158.33 164.629 158.33 168.402 C 158.33 172.854 162.147 178.512 171.05 178.512 L 214.843 178.512 L 214.843 193.074 C 214.843 202.165 216.693 206.438 225.963 206.438 C 235.233 206.438 239.041 202.156 239.041 193.074 L 239.041 178.512 L 244.083 178.512 C 251.172 178.512 256.803 174.06 256.803 167.195 C 256.804 160.347 251.173 155.896 244.084 155.896 Z M 215.398 155.896 L 190.502 155.896 L 215.031 108.08 L 215.398 108.08 L 215.398 155.896 Z"/>'
+        , "cn.35h": '<path id="cn.35h" transform="scale(' + cn_const_scale + ')" \nd="M 320.896 143.027 C 320.896 222.023 273.867 286.054 215.862 286.054 C 196.449 286.054 178.266 278.882 162.664 266.379 C 146.219 280.664 126.658 288.948 105.668 288.948 C 47.313 288.948 0 224.917 0 145.921 C 0 66.934 47.313 2.894 105.668 2.894 C 125.204 2.894 143.5 10.069 159.199 22.579 C 175.547 8.288 194.994 0 215.862 0 C 273.867 0 320.896 64.04 320.896 143.027 Z M 162.261 233.462 C 176.911 249.582 195.558 259.236 215.862 259.236 C 262.996 259.236 301.202 207.21 301.202 143.027 C 301.202 78.844 262.996 26.818 215.862 26.818 C 194.603 26.818 175.161 37.401 160.221 54.909 C 160.171 54.826 160.121 54.744 160.07 54.661 C 159.91 54.936 159.751 55.212 159.593 55.488 C 144.855 39.366 126.095 29.712 105.668 29.712 C 58.25 29.712 19.813 81.738 19.813 145.921 C 19.813 210.104 58.25 262.13 105.668 262.13 C 127.055 262.13 146.614 251.547 161.644 234.039 C 161.693 234.12 161.742 234.2 161.792 234.28 C 161.949 234.008 162.105 233.736 162.261 233.462 M 250.888 154.38 C 250.888 183.253 233.93 202.276 202.071 202.276 C 188.993 202.276 161.55 194.32 161.55 179.106 C 161.55 172.715 167.253 167.351 174.065 167.351 C 181.431 167.351 190.281 178.409 202.626 178.409 C 215.516 178.409 222.149 166.663 222.149 155.766 C 222.149 145.388 215.882 138.308 204.458 138.308 C 193.767 138.308 192.113 144.011 182.718 144.011 C 175.54 144.011 171.857 138.826 171.857 135.885 C 171.857 133.641 172.223 131.907 172.411 130.012 L 177.015 93.531 C 178.668 80.042 182.548 77.101 191.38 77.101 L 235.781 77.101 C 244.247 77.101 249.226 81.767 249.226 87.989 C 249.226 99.923 239.652 100.96 236.336 100.96 L 201.706 100.96 L 198.944 119.285 C 203.36 118.436 208.142 117.569 212.755 117.569 C 235.049 117.569 250.889 134.16 250.888 154.38 M 149.904 161.495 C 149.904 181.868 131.972 199.022 108.82 199.022 C 84.693 199.022 69.693 180.518 69.693 167.1 C 69.693 160.476 76.371 155.72 82.244 155.72 C 93.329 155.72 90.718 175.592 109.142 175.592 C 117.617 175.592 124.473 168.798 124.473 159.796 C 124.473 136.027 96.753 153.512 96.753 133.479 C 96.753 115.646 119.905 127.705 119.905 108.852 C 119.905 102.406 115.507 97.481 108.168 97.481 C 92.685 97.481 94.804 114.117 83.719 114.117 C 77.032 114.117 73.117 107.841 73.117 101.557 C 73.117 88.318 90.566 74.042 108.659 74.042 C 132.134 74.042 143.388 91.885 143.388 105.124 C 143.388 115.824 138.99 125.165 130.024 131.101 C 141.752 136.714 149.905 148.085 149.904 161.495 Z"/>'
+        , "cn.45h": '<path id="cn.45h" transform="scale(' + cn_const_scale + ')" \nd="M 320.896 143.027 C 320.896 222.023 273.867 286.054 215.862 286.054 C 196.449 286.054 178.266 278.882 162.664 266.379 C 146.219 280.664 126.658 288.948 105.668 288.948 C 47.313 288.948 0 224.917 0 145.921 C 0 66.934 47.313 2.894 105.668 2.894 C 125.204 2.894 143.5 10.069 159.199 22.579 C 175.547 8.288 194.994 0 215.862 0 C 273.867 0 320.896 64.04 320.896 143.027 Z M 162.261 233.462 C 176.911 249.582 195.558 259.236 215.862 259.236 C 262.996 259.236 301.202 207.21 301.202 143.027 C 301.202 78.844 262.996 26.818 215.862 26.818 C 194.603 26.818 175.161 37.401 160.221 54.909 C 160.171 54.826 160.121 54.744 160.07 54.661 C 159.91 54.936 159.751 55.212 159.593 55.488 C 144.855 39.366 126.095 29.712 105.668 29.712 C 58.25 29.712 19.813 81.738 19.813 145.921 C 19.813 210.104 58.25 262.13 105.668 262.13 C 127.055 262.13 146.614 251.547 161.644 234.039 C 161.693 234.12 161.742 234.2 161.792 234.28 C 161.949 234.008 162.105 233.736 162.261 233.462 M 147.276 152.9 L 142.234 152.9 L 142.234 100.293 C 142.234 84.703 133.84 78.356 123.301 78.356 C 113.852 78.356 108.766 81.449 104.77 88.296 L 64.07 157.861 C 62.979 159.568 61.522 161.633 61.522 165.406 C 61.522 169.858 65.339 175.516 74.242 175.516 L 118.035 175.516 L 118.035 190.078 C 118.035 199.169 119.885 203.442 129.155 203.442 C 138.425 203.442 142.233 199.16 142.233 190.078 L 142.233 175.516 L 147.275 175.516 C 154.364 175.516 159.995 171.064 159.995 164.199 C 159.996 157.351 154.365 152.9 147.276 152.9 Z M 118.59 152.9 L 93.694 152.9 L 118.223 105.084 L 118.59 105.084 L 118.59 152.9 M 256.743 156.906 C 256.743 185.779 239.785 204.802 207.926 204.802 C 194.848 204.802 167.405 196.846 167.405 181.632 C 167.405 175.241 173.108 169.877 179.92 169.877 C 187.286 169.877 196.136 180.935 208.481 180.935 C 221.371 180.935 228.004 169.189 228.004 158.292 C 228.004 147.914 221.737 140.834 210.313 140.834 C 199.622 140.834 197.968 146.537 188.573 146.537 C 181.395 146.537 177.712 141.352 177.712 138.411 C 177.712 136.167 178.078 134.433 178.266 132.538 L 182.87 96.057 C 184.523 82.568 188.403 79.627 197.235 79.627 L 241.636 79.627 C 250.102 79.627 255.081 84.293 255.081 90.515 C 255.081 102.449 245.507 103.486 242.191 103.486 L 207.561 103.486 L 204.799 121.811 C 209.215 120.962 213.997 120.095 218.61 120.095 C 240.904 120.095 256.744 136.686 256.743 156.906 Z"/>'
+        , "cn.234h": '<path id="cn.234h" transform="scale(' + cn_const_scale + ')" \nd="\
+            M 436.159 143.027 C 436.159 222.023 372.119 286.054 293.132 286.054 C 266.586 286.054 241.728 278.821 220.422 266.219 C 198.112 280.602 171.543 288.948 143.027 288.948 C 64.04 288.948 0 224.917 0 145.921 C 0 66.934 64.04 2.894 143.027 2.894 C 169.575 2.894 194.434 10.127 215.739 22.73 C 238.049 8.347 264.617 0 293.132 0 C 372.119 0 436.159 64.04 436.159 143.027 Z M 220.143 233.462 C 240.093 249.582 265.484 259.236 293.132 259.236 C 357.315 259.236 409.341 207.21 409.341 143.027 C 409.341 78.844 357.315 26.818 293.132 26.818 C 264.184 26.818 237.71 37.401 217.366 54.909 C 217.213 54.724 217.059 54.539 216.905 54.354 C 216.607 54.73 216.311 55.108 216.017 55.488 C 196.068 39.366 170.675 29.712 143.027 29.712 C 78.844 29.712 26.818 81.738 26.818 145.921 C 26.818 210.104 78.844 262.13 143.027 262.13 C 171.975 262.13 198.449 251.547 218.793 234.039 C 218.947 234.225 219.101 234.411 219.255 234.596 C 219.553 234.219 219.849 233.841 220.143 233.462\
+            M 156.87 187.139 C 156.87 195.068 150.603 199.636 143.604 199.636 L 82.076 199.636 C 73.977 199.636 67.711 196.194 67.711 188.256 C 67.711 184.636 70.116 181.525 71.957 179.46 C 87.243 162.377 103.825 146.85 117.824 127.881 C 121.14 123.393 124.278 118.039 124.278 111.835 C 124.278 104.755 118.566 98.551 111.012 98.551 C 89.826 98.551 99.409 127.049 81.718 127.049 C 72.877 127.049 68.273 121.194 68.273 114.463 C 68.273 92.723 89.459 74.746 112.12 74.746 C 134.772 74.746 151.336 88.718 151.336 110.628 C 151.336 134.611 126.145 155.905 110.484 174.364 L 142.522 174.364 C 150.621 174.364 156.87 179.209 156.87 187.139\
+            M 258.532,165.598 c0,20.373 -17.932,37.527 -41.084,37.527c-24.127,0 -39.127,-18.504 -39.127,-31.922c0,-6.624 6.678,-11.38 12.551,-11.38c11.085,0 8.474,19.872 26.898,19.872c8.475,0 15.331,-6.794 15.331,-15.796c0,-23.769 -27.72,-6.284 -27.72,-26.317c0,-17.833 23.152,-5.774 23.152,-24.627c0,-6.446 -4.398,-11.371 -11.737,-11.371c-15.483,0 -13.364,16.636 -24.449,16.636c-6.687,0 -10.602,-6.276 -10.602,-12.56c0,-13.239 17.449,-27.515 35.542,-27.515c23.475,0 34.729,17.843 34.729,31.082c0,10.7 -4.398,20.041 -13.364,25.977c11.728,5.613 19.881,16.984 19.88,30.394\
+            M 362.591 156.718 C 362.591 185.591 345.633 204.614 313.774 204.614 C 300.696 204.614 273.253 196.658 273.253 181.444 C 273.253 175.053 278.956 169.689 285.768 169.689 C 293.134 169.689 301.984 180.747 314.329 180.747 C 327.219 180.747 333.852 169.001 333.852 158.104 C 333.852 147.726 327.585 140.646 316.161 140.646 C 305.47 140.646 303.816 146.349 294.421 146.349 C 287.243 146.349 283.56 141.164 283.56 138.223 C 283.56 135.979 283.926 134.245 284.114 132.35 L 288.718 95.869 C 290.371 82.38 294.251 79.439 303.083 79.439 L 347.484 79.439 C 355.95 79.439 360.929 84.105 360.929 90.327 C 360.929 102.261 351.355 103.298 348.039 103.298 L 313.409 103.298 L 310.647 121.623 C 315.063 120.774 319.845 119.907 324.458 119.907 C 346.752 119.907 362.592 136.498 362.591 156.718\
+        "/>'
+        , "cn.235h": '<path id="cn.235h" transform="scale(' + cn_const_scale + ')" \nd="\
+            M 436.159 143.027 C 436.159 222.023 372.119 286.054 293.132 286.054 C 266.586 286.054 241.728 278.821 220.422 266.219 C 198.112 280.602 171.543 288.948 143.027 288.948 C 64.04 288.948 0 224.917 0 145.921 C 0 66.934 64.04 2.894 143.027 2.894 C 169.575 2.894 194.434 10.127 215.739 22.73 C 238.049 8.347 264.617 0 293.132 0 C 372.119 0 436.159 64.04 436.159 143.027 Z M 220.143 233.462 C 240.093 249.582 265.484 259.236 293.132 259.236 C 357.315 259.236 409.341 207.21 409.341 143.027 C 409.341 78.844 357.315 26.818 293.132 26.818 C 264.184 26.818 237.71 37.401 217.366 54.909 C 217.213 54.724 217.059 54.539 216.905 54.354 C 216.607 54.73 216.311 55.108 216.017 55.488 C 196.068 39.366 170.675 29.712 143.027 29.712 C 78.844 29.712 26.818 81.738 26.818 145.921 C 26.818 210.104 78.844 262.13 143.027 262.13 C 171.975 262.13 198.449 251.547 218.793 234.039 C 218.947 234.225 219.101 234.411 219.255 234.596 C 219.553 234.219 219.849 233.841 220.143 233.462\
+            M 156.87 187.139 C 156.87 195.068 150.603 199.636 143.604 199.636 L 82.076 199.636 C 73.977 199.636 67.711 196.194 67.711 188.256 C 67.711 184.636 70.116 181.525 71.957 179.46 C 87.243 162.377 103.825 146.85 117.824 127.881 C 121.14 123.393 124.278 118.039 124.278 111.835 C 124.278 104.755 118.566 98.551 111.012 98.551 C 89.826 98.551 99.409 127.049 81.718 127.049 C 72.877 127.049 68.273 121.194 68.273 114.463 C 68.273 92.723 89.459 74.746 112.12 74.746 C 134.772 74.746 151.336 88.718 151.336 110.628 C 151.336 134.611 126.145 155.905 110.484 174.364 L 142.522 174.364 C 150.621 174.364 156.87 179.209 156.87 187.139\
+            M 258.532,165.598 c0,20.373 -17.932,37.527 -41.084,37.527c-24.127,0 -39.127,-18.504 -39.127,-31.922c0,-6.624 6.678,-11.38 12.551,-11.38c11.085,0 8.474,19.872 26.898,19.872c8.475,0 15.331,-6.794 15.331,-15.796c0,-23.769 -27.72,-6.284 -27.72,-26.317c0,-17.833 23.152,-5.774 23.152,-24.627c0,-6.446 -4.398,-11.371 -11.737,-11.371c-15.483,0 -13.364,16.636 -24.449,16.636c-6.687,0 -10.602,-6.276 -10.602,-12.56c0,-13.239 17.449,-27.515 35.542,-27.515c23.475,0 34.729,17.843 34.729,31.082c0,10.7 -4.398,20.041 -13.364,25.977c11.728,5.613 19.881,16.984 19.88,30.394\
+            M 362.591 156.718 C 362.591 185.591 345.633 204.614 313.774 204.614 C 300.696 204.614 273.253 196.658 273.253 181.444 C 273.253 175.053 278.956 169.689 285.768 169.689 C 293.134 169.689 301.984 180.747 314.329 180.747 C 327.219 180.747 333.852 169.001 333.852 158.104 C 333.852 147.726 327.585 140.646 316.161 140.646 C 305.47 140.646 303.816 146.349 294.421 146.349 C 287.243 146.349 283.56 141.164 283.56 138.223 C 283.56 135.979 283.926 134.245 284.114 132.35 L 288.718 95.869 C 290.371 82.38 294.251 79.439 303.083 79.439 L 347.484 79.439 C 355.95 79.439 360.929 84.105 360.929 90.327 C 360.929 102.261 351.355 103.298 348.039 103.298 L 313.409 103.298 L 310.647 121.623 C 315.063 120.774 319.845 119.907 324.458 119.907 C 346.752 119.907 362.592 136.498 362.591 156.718\
+        "/>'
+        , "cn.245h": '<path id="cn.245h" transform="scale(' + cn_const_scale + ')" \nd="\
+            M 436.159 143.027 C 436.159 222.023 372.119 286.054 293.132 286.054 C 266.586 286.054 241.728 278.821 220.422 266.219 C 198.112 280.602 171.543 288.948 143.027 288.948 C 64.04 288.948 0 224.917 0 145.921 C 0 66.934 64.04 2.894 143.027 2.894 C 169.575 2.894 194.434 10.127 215.739 22.73 C 238.049 8.347 264.617 0 293.132 0 C 372.119 0 436.159 64.04 436.159 143.027 Z M 220.143 233.462 C 240.093 249.582 265.484 259.236 293.132 259.236 C 357.315 259.236 409.341 207.21 409.341 143.027 C 409.341 78.844 357.315 26.818 293.132 26.818 C 264.184 26.818 237.71 37.401 217.366 54.909 C 217.213 54.724 217.059 54.539 216.905 54.354 C 216.607 54.73 216.311 55.108 216.017 55.488 C 196.068 39.366 170.675 29.712 143.027 29.712 C 78.844 29.712 26.818 81.738 26.818 145.921 C 26.818 210.104 78.844 262.13 143.027 262.13 C 171.975 262.13 198.449 251.547 218.793 234.039 C 218.947 234.225 219.101 234.411 219.255 234.596 C 219.553 234.219 219.849 233.841 220.143 233.462\
+            M 156.87 187.139 C 156.87 195.068 150.603 199.636 143.604 199.636 L 82.076 199.636 C 73.977 199.636 67.711 196.194 67.711 188.256 C 67.711 184.636 70.116 181.525 71.957 179.46 C 87.243 162.377 103.825 146.85 117.824 127.881 C 121.14 123.393 124.278 118.039 124.278 111.835 C 124.278 104.755 118.566 98.551 111.012 98.551 C 89.826 98.551 99.409 127.049 81.718 127.049 C 72.877 127.049 68.273 121.194 68.273 114.463 C 68.273 92.723 89.459 74.746 112.12 74.746 C 134.772 74.746 151.336 88.718 151.336 110.628 C 151.336 134.611 126.145 155.905 110.484 174.364 L 142.522 174.364 C 150.621 174.364 156.87 179.209 156.87 187.139\
+            M 250.44 152.87 L 245.398 152.87 L 245.398 100.263 C 245.398 84.673 237.004 78.326 226.465 78.326 C 217.016 78.326 211.93 81.419 207.934 88.266 L 167.234 157.831 C 166.143 159.538 164.686 161.603 164.686 165.376 C 164.686 169.828 168.503 175.486 177.406 175.486 L 221.199 175.486 L 221.199 190.048 C 221.199 199.139 223.049 203.412 232.319 203.412 C 241.589 203.412 245.397 199.13 245.397 190.048 L 245.397 175.486 L 250.439 175.486 C 257.528 175.486 263.159 171.034 263.159 164.169 C 263.16 157.321 257.529 152.87 250.44 152.87 Z M 221.754 152.87 L 196.858 152.87 L 221.387 105.054 L 221.754 105.054 L 221.754 152.87\
+            M 362.591 156.718 C 362.591 185.591 345.633 204.614 313.774 204.614 C 300.696 204.614 273.253 196.658 273.253 181.444 C 273.253 175.053 278.956 169.689 285.768 169.689 C 293.134 169.689 301.984 180.747 314.329 180.747 C 327.219 180.747 333.852 169.001 333.852 158.104 C 333.852 147.726 327.585 140.646 316.161 140.646 C 305.47 140.646 303.816 146.349 294.421 146.349 C 287.243 146.349 283.56 141.164 283.56 138.223 C 283.56 135.979 283.926 134.245 284.114 132.35 L 288.718 95.869 C 290.371 82.38 294.251 79.439 303.083 79.439 L 347.484 79.439 C 355.95 79.439 360.929 84.105 360.929 90.327 C 360.929 102.261 351.355 103.298 348.039 103.298 L 313.409 103.298 L 310.647 121.623 C 315.063 120.774 319.845 119.907 324.458 119.907 C 346.752 119.907 362.592 136.498 362.591 156.718\
+        "/>'
+        , "cn.23" : '<g id="cn.23" style="fill:' + cn_const_fill+'" transform="scale('+cn_const_scale+')">\n\
+            <path transform="rotate(90 147.6,162.0)" id="svg_0"d="m308.0305,160.57086c0,78.996 -47.029,143.027 -105.034,143.027c-19.413,0 -37.596,-7.172 -53.198,-19.675c-16.445,14.285 -36.006,22.569 -56.996,22.569c-58.355,0 -105.668,-64.031 -105.668,-143.027c0,-78.987 47.313,-143.027 105.668,-143.027c19.536,0 37.832,7.175 53.531,19.685c16.348,-14.291 35.795,-22.579 56.663,-22.579c58.005,0 105.034,64.04 105.034,143.027zm-158.635,90.435c14.65,16.12 33.297,25.774 53.601,25.774c47.134,0 85.34,-52.026 85.34,-116.209c0,-64.183 -38.206,-116.209 -85.34,-116.209c-21.259,0 -40.701,10.583 -55.641,28.091c-0.05,-0.083 -0.1,-0.165 -0.151,-0.248c-0.16,0.275 -0.319,0.551 -0.477,0.827c-14.738,-16.122 -33.498,-25.776 -53.925,-25.776c-47.418,0 -85.855,52.026 -85.855,116.209c0,64.183 38.437,116.209 85.855,116.209c21.387,0 40.946,-10.583 55.976,-28.091c0.049,0.081 0.098,0.161 0.148,0.241c0.157,-0.272 0.313,-0.544 0.469,-0.818z"/>\
+            <path id="svg_2" d="m195.46367,145.48256c0,7.929 -6.267,12.497 -13.266,12.497l-61.528,0c-8.099,0 -14.365,-3.442 -14.365,-11.38c0,-3.62 2.405,-6.731 4.246,-8.796c15.286,-17.083 31.868,-32.61 45.867,-51.579c3.316,-4.488 6.454,-9.842 6.454,-16.046c0,-7.08 -5.712,-13.284 -13.266,-13.284c-21.186,0 -11.603,28.498 -29.294,28.498c-8.841,0 -13.445,-5.855 -13.445,-12.586c0,-21.74 21.186,-39.717 43.847,-39.717c22.652,0 39.216,13.972 39.216,35.882c0,23.983 -25.191,45.277 -40.852,63.736l32.038,0c8.099,0 14.348,4.845 14.348,12.775z"/>\
+            <path id="svg_3" d="m190.21104,255.97289c0,20.373 -17.932,37.527 -41.084,37.527c-24.127,0 -39.127,-18.504 -39.127,-31.922c0,-6.624 6.678,-11.38 12.551,-11.38c11.085,0 8.474,19.872 26.898,19.872c8.475,0 15.331,-6.794 15.331,-15.796c0,-23.769 -27.72,-6.284 -27.72,-26.317c0,-17.833 23.152,-5.774 23.152,-24.627c0,-6.446 -4.398,-11.371 -11.737,-11.371c-15.483,0 -13.364,16.636 -24.449,16.636c-6.687,0 -10.602,-6.276 -10.602,-12.56c0,-13.239 17.449,-27.515 35.542,-27.515c23.475,0 34.729,17.843 34.729,31.082c0,10.7 -4.398,20.041 -13.364,25.977c11.728,5.613 19.881,16.984 19.88,30.394z"/>\
+        </g>'
+        , "cn.24": '<g id="cn.24" style="fill:' + cn_const_fill + '" transform="scale(' + cn_const_scale + ')">\n\
+            <path transform="rotate(90 147.6,162.0)" id="svg_0"d="m308.0305,160.57086c0,78.996 -47.029,143.027 -105.034,143.027c-19.413,0 -37.596,-7.172 -53.198,-19.675c-16.445,14.285 -36.006,22.569 -56.996,22.569c-58.355,0 -105.668,-64.031 -105.668,-143.027c0,-78.987 47.313,-143.027 105.668,-143.027c19.536,0 37.832,7.175 53.531,19.685c16.348,-14.291 35.795,-22.579 56.663,-22.579c58.005,0 105.034,64.04 105.034,143.027zm-158.635,90.435c14.65,16.12 33.297,25.774 53.601,25.774c47.134,0 85.34,-52.026 85.34,-116.209c0,-64.183 -38.206,-116.209 -85.34,-116.209c-21.259,0 -40.701,10.583 -55.641,28.091c-0.05,-0.083 -0.1,-0.165 -0.151,-0.248c-0.16,0.275 -0.319,0.551 -0.477,0.827c-14.738,-16.122 -33.498,-25.776 -53.925,-25.776c-47.418,0 -85.855,52.026 -85.855,116.209c0,64.183 38.437,116.209 85.855,116.209c21.387,0 40.946,-10.583 55.976,-28.091c0.049,0.081 0.098,0.161 0.148,0.241c0.157,-0.272 0.313,-0.544 0.469,-0.818z"/>\
+            <path id="svg_2" d="m195.46367,145.48256c0,7.929 -6.267,12.497 -13.266,12.497l-61.528,0c-8.099,0 -14.365,-3.442 -14.365,-11.38c0,-3.62 2.405,-6.731 4.246,-8.796c15.286,-17.083 31.868,-32.61 45.867,-51.579c3.316,-4.488 6.454,-9.842 6.454,-16.046c0,-7.08 -5.712,-13.284 -13.266,-13.284c-21.186,0 -11.603,28.498 -29.294,28.498c-8.841,0 -13.445,-5.855 -13.445,-12.586c0,-21.74 21.186,-39.717 43.847,-39.717c22.652,0 39.216,13.972 39.216,35.882c0,23.983 -25.191,45.277 -40.852,63.736l32.038,0c8.099,0 14.348,4.845 14.348,12.775z"/>\
+            <path id="svg_4" d="m177.44872,241.78987l-5.042,0l0,-52.607c0,-15.59 -8.394,-21.937 -18.933,-21.937c-9.449,0 -14.535,3.093 -18.531,9.94l-40.7,69.565c-1.091,1.707 -2.548,3.772 -2.548,7.545c0,4.452 3.817,10.11 12.72,10.11l43.793,0l0,14.562c0,9.091 1.85,13.364 11.12,13.364c9.27,0 13.078,-4.282 13.078,-13.364l0,-14.562l5.042,0c7.089,0 12.72,-4.452 12.72,-11.317c0.001,-6.848 -5.63,-11.299 -12.719,-11.299zm-28.686,0l-24.896,0l24.529,-47.816l0.367,0l0,47.816z"/>\
+        </g>'
+        , "cn.25": '<g id="cn.25" style="fill:' + cn_const_fill + '" transform="scale(' + cn_const_scale + ')">\n\
+            <path transform="rotate(90 147.6,162.0)" id="svg_0"d="m308.0305,160.57086c0,78.996 -47.029,143.027 -105.034,143.027c-19.413,0 -37.596,-7.172 -53.198,-19.675c-16.445,14.285 -36.006,22.569 -56.996,22.569c-58.355,0 -105.668,-64.031 -105.668,-143.027c0,-78.987 47.313,-143.027 105.668,-143.027c19.536,0 37.832,7.175 53.531,19.685c16.348,-14.291 35.795,-22.579 56.663,-22.579c58.005,0 105.034,64.04 105.034,143.027zm-158.635,90.435c14.65,16.12 33.297,25.774 53.601,25.774c47.134,0 85.34,-52.026 85.34,-116.209c0,-64.183 -38.206,-116.209 -85.34,-116.209c-21.259,0 -40.701,10.583 -55.641,28.091c-0.05,-0.083 -0.1,-0.165 -0.151,-0.248c-0.16,0.275 -0.319,0.551 -0.477,0.827c-14.738,-16.122 -33.498,-25.776 -53.925,-25.776c-47.418,0 -85.855,52.026 -85.855,116.209c0,64.183 38.437,116.209 85.855,116.209c21.387,0 40.946,-10.583 55.976,-28.091c0.049,0.081 0.098,0.161 0.148,0.241c0.157,-0.272 0.313,-0.544 0.469,-0.818z"/>\
+            <path id="svg_2" d="m195.46367,145.48256c0,7.929 -6.267,12.497 -13.266,12.497l-61.528,0c-8.099,0 -14.365,-3.442 -14.365,-11.38c0,-3.62 2.405,-6.731 4.246,-8.796c15.286,-17.083 31.868,-32.61 45.867,-51.579c3.316,-4.488 6.454,-9.842 6.454,-16.046c0,-7.08 -5.712,-13.284 -13.266,-13.284c-21.186,0 -11.603,28.498 -29.294,28.498c-8.841,0 -13.445,-5.855 -13.445,-12.586c0,-21.74 21.186,-39.717 43.847,-39.717c22.652,0 39.216,13.972 39.216,35.882c0,23.983 -25.191,45.277 -40.852,63.736l32.038,0c8.099,0 14.348,4.845 14.348,12.775z"/>\
+            <path id="svg_5" d="m190,250c0,28.873 -16.958,47.896 -48.817,47.896c-13.078,0 -40.521,-7.956 -40.521,-23.17c0,-6.391 5.703,-11.755 12.515,-11.755c7.366,0 16.216,11.058 28.561,11.058c12.89,0 19.523,-11.746 19.523,-22.643c0,-10.378 -6.267,-17.458 -17.691,-17.458c-10.691,0 -12.345,5.703 -21.74,5.703c-7.178,0 -10.861,-5.185 -10.861,-8.126c0,-2.244 0.366,-3.978 0.554,-5.873l4.604,-36.481c1.653,-13.489 5.533,-16.43 14.365,-16.43l44.401,0c8.466,0 13.445,4.666 13.445,10.888c0,11.934 -9.574,12.971 -12.89,12.971l-34.63,0l-2.762,18.325c4.416,-0.849 9.198,-1.716 13.811,-1.716c22.294,0 38.134,16.591 38.133,36.811z"/>\
+        </g>'
+        , "cn.34": '<g id="cn.34" style="fill:' + cn_const_fill + '" transform="scale(' + cn_const_scale + ')">\n\
+            <path transform="rotate(90 147.6,162.0)" id="svg_0"d="m308.0305,160.57086c0,78.996 -47.029,143.027 -105.034,143.027c-19.413,0 -37.596,-7.172 -53.198,-19.675c-16.445,14.285 -36.006,22.569 -56.996,22.569c-58.355,0 -105.668,-64.031 -105.668,-143.027c0,-78.987 47.313,-143.027 105.668,-143.027c19.536,0 37.832,7.175 53.531,19.685c16.348,-14.291 35.795,-22.579 56.663,-22.579c58.005,0 105.034,64.04 105.034,143.027zm-158.635,90.435c14.65,16.12 33.297,25.774 53.601,25.774c47.134,0 85.34,-52.026 85.34,-116.209c0,-64.183 -38.206,-116.209 -85.34,-116.209c-21.259,0 -40.701,10.583 -55.641,28.091c-0.05,-0.083 -0.1,-0.165 -0.151,-0.248c-0.16,0.275 -0.319,0.551 -0.477,0.827c-14.738,-16.122 -33.498,-25.776 -53.925,-25.776c-47.418,0 -85.855,52.026 -85.855,116.209c0,64.183 38.437,116.209 85.855,116.209c21.387,0 40.946,-10.583 55.976,-28.091c0.049,0.081 0.098,0.161 0.148,0.241c0.157,-0.272 0.313,-0.544 0.469,-0.818z"/>\
+            <path id="svg_3" d="m190.21104,120c0,20.373 -17.932,37.527 -41.084,37.527c-24.127,0 -39.127,-18.504 -39.127,-31.922c0,-6.624 6.678,-11.38 12.551,-11.38c11.085,0 8.474,19.872 26.898,19.872c8.475,0 15.331,-6.794 15.331,-15.796c0,-23.769 -27.72,-6.284 -27.72,-26.317c0,-17.833 23.152,-5.774 23.152,-24.627c0,-6.446 -4.398,-11.371 -11.737,-11.371c-15.483,0 -13.364,16.636 -24.449,16.636c-6.687,0 -10.602,-6.276 -10.602,-12.56c0,-13.239 17.449,-27.515 35.542,-27.515c23.475,0 34.729,17.843 34.729,31.082c0,10.7 -4.398,20.041 -13.364,25.977c11.728,5.613 19.881,16.984 19.88,30.394z"/>\
+            <path id="svg_4" d="m177.44872,241l-5.042,0l0,-52.607c0,-15.59 -8.394,-21.937 -18.933,-21.937c-9.449,0 -14.535,3.093 -18.531,9.94l-40.7,69.565c-1.091,1.707 -2.548,3.772 -2.548,7.545c0,4.452 3.817,10.11 12.72,10.11l43.793,0l0,14.562c0,9.091 1.85,13.364 11.12,13.364c9.27,0 13.078,-4.282 13.078,-13.364l0,-14.562l5.042,0c7.089,0 12.72,-4.452 12.72,-11.317c0.001,-6.848 -5.63,-11.299 -12.719,-11.299zm-28.686,0l-24.896,0l24.529,-47.816l0.367,0l0,47.816z"/>\
+        </g>'
+        , "cn.35": '<g id="cn.35" style="fill:' + cn_const_fill + '" transform="scale(' + cn_const_scale + ')">\n\
+            <path transform="rotate(90 147.6,162.0)" id="svg_0"d="m308.0305,160.57086c0,78.996 -47.029,143.027 -105.034,143.027c-19.413,0 -37.596,-7.172 -53.198,-19.675c-16.445,14.285 -36.006,22.569 -56.996,22.569c-58.355,0 -105.668,-64.031 -105.668,-143.027c0,-78.987 47.313,-143.027 105.668,-143.027c19.536,0 37.832,7.175 53.531,19.685c16.348,-14.291 35.795,-22.579 56.663,-22.579c58.005,0 105.034,64.04 105.034,143.027zm-158.635,90.435c14.65,16.12 33.297,25.774 53.601,25.774c47.134,0 85.34,-52.026 85.34,-116.209c0,-64.183 -38.206,-116.209 -85.34,-116.209c-21.259,0 -40.701,10.583 -55.641,28.091c-0.05,-0.083 -0.1,-0.165 -0.151,-0.248c-0.16,0.275 -0.319,0.551 -0.477,0.827c-14.738,-16.122 -33.498,-25.776 -53.925,-25.776c-47.418,0 -85.855,52.026 -85.855,116.209c0,64.183 38.437,116.209 85.855,116.209c21.387,0 40.946,-10.583 55.976,-28.091c0.049,0.081 0.098,0.161 0.148,0.241c0.157,-0.272 0.313,-0.544 0.469,-0.818z"/>\
+            <path id="svg_3" d="m190.21104,120c0,20.373 -17.932,37.527 -41.084,37.527c-24.127,0 -39.127,-18.504 -39.127,-31.922c0,-6.624 6.678,-11.38 12.551,-11.38c11.085,0 8.474,19.872 26.898,19.872c8.475,0 15.331,-6.794 15.331,-15.796c0,-23.769 -27.72,-6.284 -27.72,-26.317c0,-17.833 23.152,-5.774 23.152,-24.627c0,-6.446 -4.398,-11.371 -11.737,-11.371c-15.483,0 -13.364,16.636 -24.449,16.636c-6.687,0 -10.602,-6.276 -10.602,-12.56c0,-13.239 17.449,-27.515 35.542,-27.515c23.475,0 34.729,17.843 34.729,31.082c0,10.7 -4.398,20.041 -13.364,25.977c11.728,5.613 19.881,16.984 19.88,30.394z"/>\
+            <path id="svg_5" d="m190,250c0,28.873 -16.958,47.896 -48.817,47.896c-13.078,0 -40.521,-7.956 -40.521,-23.17c0,-6.391 5.703,-11.755 12.515,-11.755c7.366,0 16.216,11.058 28.561,11.058c12.89,0 19.523,-11.746 19.523,-22.643c0,-10.378 -6.267,-17.458 -17.691,-17.458c-10.691,0 -12.345,5.703 -21.74,5.703c-7.178,0 -10.861,-5.185 -10.861,-8.126c0,-2.244 0.366,-3.978 0.554,-5.873l4.604,-36.481c1.653,-13.489 5.533,-16.43 14.365,-16.43l44.401,0c8.466,0 13.445,4.666 13.445,10.888c0,11.934 -9.574,12.971 -12.89,12.971l-34.63,0l-2.762,18.325c4.416,-0.849 9.198,-1.716 13.811,-1.716c22.294,0 38.134,16.591 38.133,36.811z"/>\
+        </g>'
+        , "cn.45" : '<g id="cn.45" style="fill:' + cn_const_fill + '" transform="scale(' + cn_const_scale + ')">\n\
+            <path transform="rotate(90 147.6,162.0)" id="svg_0"d="m308.0305,160.57086c0,78.996 -47.029,143.027 -105.034,143.027c-19.413,0 -37.596,-7.172 -53.198,-19.675c-16.445,14.285 -36.006,22.569 -56.996,22.569c-58.355,0 -105.668,-64.031 -105.668,-143.027c0,-78.987 47.313,-143.027 105.668,-143.027c19.536,0 37.832,7.175 53.531,19.685c16.348,-14.291 35.795,-22.579 56.663,-22.579c58.005,0 105.034,64.04 105.034,143.027zm-158.635,90.435c14.65,16.12 33.297,25.774 53.601,25.774c47.134,0 85.34,-52.026 85.34,-116.209c0,-64.183 -38.206,-116.209 -85.34,-116.209c-21.259,0 -40.701,10.583 -55.641,28.091c-0.05,-0.083 -0.1,-0.165 -0.151,-0.248c-0.16,0.275 -0.319,0.551 -0.477,0.827c-14.738,-16.122 -33.498,-25.776 -53.925,-25.776c-47.418,0 -85.855,52.026 -85.855,116.209c0,64.183 38.437,116.209 85.855,116.209c21.387,0 40.946,-10.583 55.976,-28.091c0.049,0.081 0.098,0.161 0.148,0.241c0.157,-0.272 0.313,-0.544 0.469,-0.818z"/>\
+            <path id="svg_4" d="m177,117l-5.042,0l0,-52.607c0,-15.59 -8.394,-21.937 -18.933,-21.937c-9.449,0 -14.535,3.093 -18.531,9.94l-40.7,69.565c-1.091,1.707 -2.548,3.772 -2.548,7.545c0,4.452 3.817,10.11 12.72,10.11l43.793,0l0,14.562c0,9.091 1.85,13.364 11.12,13.364c9.27,0 13.078,-4.282 13.078,-13.364l0,-14.562l5.042,0c7.089,0 12.72,-4.452 12.72,-11.317c0.001,-6.848 -5.63,-11.299 -12.719,-11.299zm-28.686,0l-24.896,0l24.529,-47.816l0.367,0l0,47.816z"/>\
+            <path id="svg_5" d="m190,250c0,28.873 -16.958,47.896 -48.817,47.896c-13.078,0 -40.521,-7.956 -40.521,-23.17c0,-6.391 5.703,-11.755 12.515,-11.755c7.366,0 16.216,11.058 28.561,11.058c12.89,0 19.523,-11.746 19.523,-22.643c0,-10.378 -6.267,-17.458 -17.691,-17.458c-10.691,0 -12.345,5.703 -21.74,5.703c-7.178,0 -10.861,-5.185 -10.861,-8.126c0,-2.244 0.366,-3.978 0.554,-5.873l4.604,-36.481c1.653,-13.489 5.533,-16.43 14.365,-16.43l44.401,0c8.466,0 13.445,4.666 13.445,10.888c0,11.934 -9.574,12.971 -12.89,12.971l-34.63,0l-2.762,18.325c4.416,-0.849 9.198,-1.716 13.811,-1.716c22.294,0 38.134,16.591 38.133,36.811z"/>\
+        </g>'
+        , "cn.234": '<g id="cn.234" style="fill:#f00" transform="scale(' + cn_const_scale + ')">\n\
+            <path transform="rotate(90 150.8,221.0)" d="m368.90754,219.63518c0,78.996 -64.04,143.027 -143.027,143.027c-26.546,0 -51.404,-7.233 -72.71,-19.835c-22.31,14.383 -48.879,22.729 -77.395,22.729c-78.987,0 -143.027,-64.031 -143.027,-143.027c0,-78.987 64.04,-143.027 143.027,-143.027c26.548,0 51.407,7.233 72.712,19.836c22.31,-14.383 48.878,-22.73 77.393,-22.73c78.987,0 143.027,64.04 143.027,143.027zm-216.016,90.435c19.95,16.12 45.341,25.774 72.989,25.774c64.183,0 116.209,-52.026 116.209,-116.209c0,-64.183 -52.026,-116.209 -116.209,-116.209c-28.948,0 -55.422,10.583 -75.766,28.091c-0.153,-0.185 -0.307,-0.37 -0.461,-0.555c-0.298,0.376 -0.594,0.754 -0.888,1.134c-19.949,-16.122 -45.342,-25.776 -72.99,-25.776c-64.183,0 -116.209,52.026 -116.209,116.209c0,64.183 52.026,116.209 116.209,116.209c28.948,0 55.422,-10.583 75.766,-28.091c0.154,0.186 0.308,0.372 0.462,0.557c0.298,-0.377 0.594,-0.755 0.888,-1.134"/>\
+            <path d="m198.39047,143.86415c0,7.929 -6.267,12.497 -13.266,12.497l-61.528,0c-8.099,0 -14.365,-3.442 -14.365,-11.38c0,-3.62 2.405,-6.731 4.246,-8.796c15.286,-17.083 31.868,-32.61 45.867,-51.579c3.316,-4.488 6.454,-9.842 6.454,-16.046c0,-7.08 -5.712,-13.284 -13.266,-13.284c-21.186,0 -11.603,28.498 -29.294,28.498c-8.841,0 -13.445,-5.855 -13.445,-12.586c0,-21.74 21.186,-39.717 43.847,-39.717c22.652,0 39.216,13.972 39.216,35.882c0,23.983 -25.191,45.277 -40.852,63.736l32.038,0c8.099,0 14.348,4.845 14.348,12.775"/>\
+            <path d="m194.78972,245.71521c0,20.373 -17.932,37.527 -41.084,37.527c-24.127,0 -39.127,-18.504 -39.127,-31.922c0,-6.624 6.678,-11.38 12.551,-11.38c11.085,0 8.474,19.872 26.898,19.872c8.475,0 15.331,-6.794 15.331,-15.796c0,-23.769 -27.72,-6.284 -27.72,-26.317c0,-17.833 23.152,-5.774 23.152,-24.627c0,-6.446 -4.398,-11.371 -11.737,-11.371c-15.483,0 -13.364,16.636 -24.449,16.636c-6.687,0 -10.602,-6.276 -10.602,-12.56c0,-13.239 17.449,-27.515 35.542,-27.515c23.475,0 34.729,17.843 34.729,31.082c0,10.7 -4.398,20.041 -13.364,25.977c11.728,5.613 19.881,16.984 19.88,30.394"/>\
+            <path d="m186.60374,353.43725l-5.042,0l0,-52.607c0,-15.59 -8.394,-21.937 -18.933,-21.937c-9.449,0 -14.535,3.093 -18.531,9.94l-40.7,69.565c-1.091,1.707 -2.548,3.772 -2.548,7.545c0,4.452 3.817,10.11 12.72,10.11l43.793,0l0,14.562c0,9.091 1.85,13.364 11.12,13.364c9.27,0 13.078,-4.282 13.078,-13.364l0,-14.562l5.042,0c7.089,0 12.72,-4.452 12.72,-11.317c0.001,-6.848 -5.63,-11.299 -12.719,-11.299zm-28.686,0l-24.896,0l24.529,-47.816l0.367,0l0,47.816z" />\
+        </g >'
+        , "cn.235": '<g id="cn.235" style="fill:#f00" transform="scale(' + cn_const_scale + ')">\n\
+            <path transform="rotate(90 150.8,221.0)" d="m368.90754,219.63518c0,78.996 -64.04,143.027 -143.027,143.027c-26.546,0 -51.404,-7.233 -72.71,-19.835c-22.31,14.383 -48.879,22.729 -77.395,22.729c-78.987,0 -143.027,-64.031 -143.027,-143.027c0,-78.987 64.04,-143.027 143.027,-143.027c26.548,0 51.407,7.233 72.712,19.836c22.31,-14.383 48.878,-22.73 77.393,-22.73c78.987,0 143.027,64.04 143.027,143.027zm-216.016,90.435c19.95,16.12 45.341,25.774 72.989,25.774c64.183,0 116.209,-52.026 116.209,-116.209c0,-64.183 -52.026,-116.209 -116.209,-116.209c-28.948,0 -55.422,10.583 -75.766,28.091c-0.153,-0.185 -0.307,-0.37 -0.461,-0.555c-0.298,0.376 -0.594,0.754 -0.888,1.134c-19.949,-16.122 -45.342,-25.776 -72.99,-25.776c-64.183,0 -116.209,52.026 -116.209,116.209c0,64.183 52.026,116.209 116.209,116.209c28.948,0 55.422,-10.583 75.766,-28.091c0.154,0.186 0.308,0.372 0.462,0.557c0.298,-0.377 0.594,-0.755 0.888,-1.134"/>\
+            <path d="m198.39047,143.86415c0,7.929 -6.267,12.497 -13.266,12.497l-61.528,0c-8.099,0 -14.365,-3.442 -14.365,-11.38c0,-3.62 2.405,-6.731 4.246,-8.796c15.286,-17.083 31.868,-32.61 45.867,-51.579c3.316,-4.488 6.454,-9.842 6.454,-16.046c0,-7.08 -5.712,-13.284 -13.266,-13.284c-21.186,0 -11.603,28.498 -29.294,28.498c-8.841,0 -13.445,-5.855 -13.445,-12.586c0,-21.74 21.186,-39.717 43.847,-39.717c22.652,0 39.216,13.972 39.216,35.882c0,23.983 -25.191,45.277 -40.852,63.736l32.038,0c8.099,0 14.348,4.845 14.348,12.775"/>\
+            <path d="m194.78972,245.71521c0,20.373 -17.932,37.527 -41.084,37.527c-24.127,0 -39.127,-18.504 -39.127,-31.922c0,-6.624 6.678,-11.38 12.551,-11.38c11.085,0 8.474,19.872 26.898,19.872c8.475,0 15.331,-6.794 15.331,-15.796c0,-23.769 -27.72,-6.284 -27.72,-26.317c0,-17.833 23.152,-5.774 23.152,-24.627c0,-6.446 -4.398,-11.371 -11.737,-11.371c-15.483,0 -13.364,16.636 -24.449,16.636c-6.687,0 -10.602,-6.276 -10.602,-12.56c0,-13.239 17.449,-27.515 35.542,-27.515c23.475,0 34.729,17.843 34.729,31.082c0,10.7 -4.398,20.041 -13.364,25.977c11.728,5.613 19.881,16.984 19.88,30.394"/>\
+            <path d="m199.43311,362.56595c0,28.873 -16.958,47.896 -48.817,47.896c-13.078,0 -40.521,-7.956 -40.521,-23.17c0,-6.391 5.703,-11.755 12.515,-11.755c7.366,0 16.216,11.058 28.561,11.058c12.89,0 19.523,-11.746 19.523,-22.643c0,-10.378 -6.267,-17.458 -17.691,-17.458c-10.691,0 -12.345,5.703 -21.74,5.703c-7.178,0 -10.861,-5.185 -10.861,-8.126c0,-2.244 0.366,-3.978 0.554,-5.873l4.604,-36.481c1.653,-13.489 5.533,-16.43 14.365,-16.43l44.401,0c8.466,0 13.445,4.666 13.445,10.888c0,11.934 -9.574,12.971 -12.89,12.971l-34.63,0l-2.762,18.325c4.416,-0.849 9.198,-1.716 13.811,-1.716c22.294,0 38.134,16.591 38.133,36.811"/>\
+        </g >'
+        , "cn.245": '<g id="cn.245" style="fill:#f00" transform="scale(' + cn_const_scale + ')">\n\
+            <path transform="rotate(90 150.8,221.0)" d="m368.90754,219.63518c0,78.996 -64.04,143.027 -143.027,143.027c-26.546,0 -51.404,-7.233 -72.71,-19.835c-22.31,14.383 -48.879,22.729 -77.395,22.729c-78.987,0 -143.027,-64.031 -143.027,-143.027c0,-78.987 64.04,-143.027 143.027,-143.027c26.548,0 51.407,7.233 72.712,19.836c22.31,-14.383 48.878,-22.73 77.393,-22.73c78.987,0 143.027,64.04 143.027,143.027zm-216.016,90.435c19.95,16.12 45.341,25.774 72.989,25.774c64.183,0 116.209,-52.026 116.209,-116.209c0,-64.183 -52.026,-116.209 -116.209,-116.209c-28.948,0 -55.422,10.583 -75.766,28.091c-0.153,-0.185 -0.307,-0.37 -0.461,-0.555c-0.298,0.376 -0.594,0.754 -0.888,1.134c-19.949,-16.122 -45.342,-25.776 -72.99,-25.776c-64.183,0 -116.209,52.026 -116.209,116.209c0,64.183 52.026,116.209 116.209,116.209c28.948,0 55.422,-10.583 75.766,-28.091c0.154,0.186 0.308,0.372 0.462,0.557c0.298,-0.377 0.594,-0.755 0.888,-1.134"/>\
+            <path d="m198.39047,143.86415c0,7.929 -6.267,12.497 -13.266,12.497l-61.528,0c-8.099,0 -14.365,-3.442 -14.365,-11.38c0,-3.62 2.405,-6.731 4.246,-8.796c15.286,-17.083 31.868,-32.61 45.867,-51.579c3.316,-4.488 6.454,-9.842 6.454,-16.046c0,-7.08 -5.712,-13.284 -13.266,-13.284c-21.186,0 -11.603,28.498 -29.294,28.498c-8.841,0 -13.445,-5.855 -13.445,-12.586c0,-21.74 21.186,-39.717 43.847,-39.717c22.652,0 39.216,13.972 39.216,35.882c0,23.983 -25.191,45.277 -40.852,63.736l32.038,0c8.099,0 14.348,4.845 14.348,12.775"/>\
+            <path d="m186.60374,233.43725l-5.042,0l0,-52.607c0,-15.59 -8.394,-21.937 -18.933,-21.937c-9.449,0 -14.535,3.093 -18.531,9.94l-40.7,69.565c-1.091,1.707 -2.548,3.772 -2.548,7.545c0,4.452 3.817,10.11 12.72,10.11l43.793,0l0,14.562c0,9.091 1.85,13.364 11.12,13.364c9.27,0 13.078,-4.282 13.078,-13.364l0,-14.562l5.042,0c7.089,0 12.72,-4.452 12.72,-11.317c0.001,-6.848 -5.63,-11.299 -12.719,-11.299zm-28.686,0l-24.896,0l24.529,-47.816l0.367,0l0,47.816z" />\
+            <path d="m199.43311,362.56595c0,28.873 -16.958,47.896 -48.817,47.896c-13.078,0 -40.521,-7.956 -40.521,-23.17c0,-6.391 5.703,-11.755 12.515,-11.755c7.366,0 16.216,11.058 28.561,11.058c12.89,0 19.523,-11.746 19.523,-22.643c0,-10.378 -6.267,-17.458 -17.691,-17.458c-10.691,0 -12.345,5.703 -21.74,5.703c-7.178,0 -10.861,-5.185 -10.861,-8.126c0,-2.244 0.366,-3.978 0.554,-5.873l4.604,-36.481c1.653,-13.489 5.533,-16.43 14.365,-16.43l44.401,0c8.466,0 13.445,4.666 13.445,10.888c0,11.934 -9.574,12.971 -12.89,12.971l-34.63,0l-2.762,18.325c4.416,-0.849 9.198,-1.716 13.811,-1.716c22.294,0 38.134,16.591 38.133,36.811"/>\
+        </g >'
+        , "cn.345h": '<path id="cn.345h" transform="scale(' + cn_const_scale + ')" \nd="\
+            M 436.159 143.027 C 436.159 222.023 372.119 286.054 293.132 286.054 C 266.586 286.054 241.728 278.821 220.422 266.219 C 198.112 280.602 171.543 288.948 143.027 288.948 C 64.04 288.948 0 224.917 0 145.921 C 0 66.934 64.04 2.894 143.027 2.894 C 169.575 2.894 194.434 10.127 215.739 22.73 C 238.049 8.347 264.617 0 293.132 0 C 372.119 0 436.159 64.04 436.159 143.027 Z M 220.143 233.462 C 240.093 249.582 265.484 259.236 293.132 259.236 C 357.315 259.236 409.341 207.21 409.341 143.027 C 409.341 78.844 357.315 26.818 293.132 26.818 C 264.184 26.818 237.71 37.401 217.366 54.909 C 217.213 54.724 217.059 54.539 216.905 54.354 C 216.607 54.73 216.311 55.108 216.017 55.488 C 196.068 39.366 170.675 29.712 143.027 29.712 C 78.844 29.712 26.818 81.738 26.818 145.921 C 26.818 210.104 78.844 262.13 143.027 262.13 C 171.975 262.13 198.449 251.547 218.793 234.039 C 218.947 234.225 219.101 234.411 219.255 234.596 C 219.553 234.219 219.849 233.841 220.143 233.462\
+            M 158.702 167.031 C 158.702 187.404 140.77 204.558 117.618 204.558 C 93.491 204.558 78.491 186.054 78.491 172.636 C 78.491 166.012 85.169 161.256 91.042 161.256 C 102.127 161.256 99.516 181.128 117.94 181.128 C 126.415 181.128 133.271 174.334 133.271 165.332 C 133.271 141.563 105.551 159.048 105.551 139.015 C 105.551 121.182 128.703 133.241 128.703 114.388 C 128.703 107.942 124.305 103.017 116.966 103.017 C 101.483 103.017 103.602 119.653 92.517 119.653 C 85.83 119.653 81.915 113.377 81.915 107.093 C 81.915 93.854 99.364 79.578 117.457 79.578 C 140.932 79.578 152.186 97.421 152.186 110.66 C 152.186 121.36 147.788 130.701 138.822 136.637 C 150.55 142.25 158.703 153.621 158.702 167.031\
+            M 250.44 152.87 L 245.398 152.87 L 245.398 100.263 C 245.398 84.673 237.004 78.326 226.465 78.326 C 217.016 78.326 211.93 81.419 207.934 88.266 L 167.234 157.831 C 166.143 159.538 164.686 161.603 164.686 165.376 C 164.686 169.828 168.503 175.486 177.406 175.486 L 221.199 175.486 L 221.199 190.048 C 221.199 199.139 223.049 203.412 232.319 203.412 C 241.589 203.412 245.397 199.13 245.397 190.048 L 245.397 175.486 L 250.439 175.486 C 257.528 175.486 263.159 171.034 263.159 164.169 C 263.16 157.321 257.529 152.87 250.44 152.87 Z M 221.754 152.87 L 196.858 152.87 L 221.387 105.054 L 221.754 105.054 L 221.754 152.87\
+            M 362.591 156.718 C 362.591 185.591 345.633 204.614 313.774 204.614 C 300.696 204.614 273.253 196.658 273.253 181.444 C 273.253 175.053 278.956 169.689 285.768 169.689 C 293.134 169.689 301.984 180.747 314.329 180.747 C 327.219 180.747 333.852 169.001 333.852 158.104 C 333.852 147.726 327.585 140.646 316.161 140.646 C 305.47 140.646 303.816 146.349 294.421 146.349 C 287.243 146.349 283.56 141.164 283.56 138.223 C 283.56 135.979 283.926 134.245 284.114 132.35 L 288.718 95.869 C 290.371 82.38 294.251 79.439 303.083 79.439 L 347.484 79.439 C 355.95 79.439 360.929 84.105 360.929 90.327 C 360.929 102.261 351.355 103.298 348.039 103.298 L 313.409 103.298 L 310.647 121.623 C 315.063 120.774 319.845 119.907 324.458 119.907 C 346.752 119.907 362.592 136.498 362.591 156.718\
+        "/>'
+        , "cn.345": '<g id="cn.345" style="fill:#f00" transform="scale(' + cn_const_scale + ')">\n\
+            <path transform="rotate(90 150.8,221.0)" d="m368.90754,219.63518c0,78.996 -64.04,143.027 -143.027,143.027c-26.546,0 -51.404,-7.233 -72.71,-19.835c-22.31,14.383 -48.879,22.729 -77.395,22.729c-78.987,0 -143.027,-64.031 -143.027,-143.027c0,-78.987 64.04,-143.027 143.027,-143.027c26.548,0 51.407,7.233 72.712,19.836c22.31,-14.383 48.878,-22.73 77.393,-22.73c78.987,0 143.027,64.04 143.027,143.027zm-216.016,90.435c19.95,16.12 45.341,25.774 72.989,25.774c64.183,0 116.209,-52.026 116.209,-116.209c0,-64.183 -52.026,-116.209 -116.209,-116.209c-28.948,0 -55.422,10.583 -75.766,28.091c-0.153,-0.185 -0.307,-0.37 -0.461,-0.555c-0.298,0.376 -0.594,0.754 -0.888,1.134c-19.949,-16.122 -45.342,-25.776 -72.99,-25.776c-64.183,0 -116.209,52.026 -116.209,116.209c0,64.183 52.026,116.209 116.209,116.209c28.948,0 55.422,-10.583 75.766,-28.091c0.154,0.186 0.308,0.372 0.462,0.557c0.298,-0.377 0.594,-0.755 0.888,-1.134"/>\
+            <path d="m194.78972,120 c0,20.373 -17.932,37.527 -41.084,37.527c-24.127,0 -39.127,-18.504 -39.127,-31.922c0,-6.624 6.678,-11.38 12.551,-11.38c11.085,0 8.474,19.872 26.898,19.872c8.475,0 15.331,-6.794 15.331,-15.796c0,-23.769 -27.72,-6.284 -27.72,-26.317c0,-17.833 23.152,-5.774 23.152,-24.627c0,-6.446 -4.398,-11.371 -11.737,-11.371c-15.483,0 -13.364,16.636 -24.449,16.636c-6.687,0 -10.602,-6.276 -10.602,-12.56c0,-13.239 17.449,-27.515 35.542,-27.515c23.475,0 34.729,17.843 34.729,31.082c0,10.7 -4.398,20.041 -13.364,25.977c11.728,5.613 19.881,16.984 19.88,30.394"/>\
+            <path d="m186.60374,233.43725l-5.042,0l0,-52.607c0,-15.59 -8.394,-21.937 -18.933,-21.937c-9.449,0 -14.535,3.093 -18.531,9.94l-40.7,69.565c-1.091,1.707 -2.548,3.772 -2.548,7.545c0,4.452 3.817,10.11 12.72,10.11l43.793,0l0,14.562c0,9.091 1.85,13.364 11.12,13.364c9.27,0 13.078,-4.282 13.078,-13.364l0,-14.562l5.042,0c7.089,0 12.72,-4.452 12.72,-11.317c0.001,-6.848 -5.63,-11.299 -12.719,-11.299zm-28.686,0l-24.896,0l24.529,-47.816l0.367,0l0,47.816z" />\
+            <path d="m199.43311,362.56595c0,28.873 -16.958,47.896 -48.817,47.896c-13.078,0 -40.521,-7.956 -40.521,-23.17c0,-6.391 5.703,-11.755 12.515,-11.755c7.366,0 16.216,11.058 28.561,11.058c12.89,0 19.523,-11.746 19.523,-22.643c0,-10.378 -6.267,-17.458 -17.691,-17.458c-10.691,0 -12.345,5.703 -21.74,5.703c-7.178,0 -10.861,-5.185 -10.861,-8.126c0,-2.244 0.366,-3.978 0.554,-5.873l4.604,-36.481c1.653,-13.489 5.533,-16.43 14.365,-16.43l44.401,0c8.466,0 13.445,4.666 13.445,10.888c0,11.934 -9.574,12.971 -12.89,12.971l-34.63,0l-2.762,18.325c4.416,-0.849 9.198,-1.716 13.811,-1.716c22.294,0 38.134,16.591 38.133,36.811"/>\
+        </g >'
+        , "cn.2345h": '<path id="cn.2345h" transform="scale(' + cn_const_scale + ')" \nd="\
+            M 444.58 144.08 C 444.58 223.076 375.277 286.054 296.29 286.054 C 269.744 286.054 244.886 278.821 223.58 266.219 C 201.27 280.602 174.701 288.948 146.185 288.948 C 67.198 288.948 0 224.917 0 145.921 C 0 66.934 67.198 2.894 146.185 2.894 C 172.733 2.894 197.592 10.127 218.897 22.73 C 241.207 8.347 267.775 0 296.29 0 C 375.277 0 444.58 65.093 444.58 144.08 Z M 223.301 233.462 C 243.251 249.582 268.642 259.236 296.29 259.236 C 360.473 259.236 417.762 208.263 417.762 144.08 C 417.762 79.897 360.473 26.818 296.29 26.818 C 267.342 26.818 240.868 37.401 220.524 54.909 C 220.371 54.724 220.217 54.539 220.063 54.354 C 219.765 54.73 219.469 55.108 219.175 55.488 C 199.226 39.366 173.833 29.712 146.185 29.712 C 82.002 29.712 26.818 81.738 26.818 145.921 C 26.818 210.104 82.002 262.13 146.185 262.13 C 175.133 262.13 201.607 251.547 221.951 234.039 C 222.105 234.225 222.259 234.411 222.413 234.596 C 222.711 234.219 223.007 233.841 223.301 233.462\
+            M 130.344 188.824 C 130.344 196.753 124.077 201.321 117.078 201.321 L 55.55 201.321 C 47.451 201.321 41.185 197.879 41.185 189.941 C 41.185 186.321 43.59 183.21 45.431 181.145 C 60.717 164.062 77.299 148.535 91.298 129.566 C 94.614 125.078 97.752 119.724 97.752 113.52 C 97.752 106.44 92.04 100.236 84.486 100.236 C 63.3 100.236 72.883 128.734 55.192 128.734 C 46.351 128.734 41.747 122.879 41.747 116.148 C 41.747 94.408 62.933 76.431 85.594 76.431 C 108.246 76.431 124.81 90.403 124.81 112.313 C 124.81 136.296 99.619 157.59 83.958 176.049 L 115.996 176.049 C 124.095 176.049 130.344 180.894 130.344 188.824\
+            M 208.702 167.302 C 208.702 187.675 190.77 204.829 167.618 204.829 C 143.491 204.829 128.491 186.325 128.491 172.907 C 128.491 166.283 135.169 161.527 141.042 161.527 C 152.127 161.527 149.516 181.399 167.94 181.399 C 176.415 181.399 183.271 174.605 183.271 165.603 C 183.271 141.834 155.551 159.319 155.551 139.286 C 155.551 121.453 178.703 133.512 178.703 114.659 C 178.703 108.213 174.305 103.288 166.966 103.288 C 151.483 103.288 153.602 119.924 142.517 119.924 C 135.83 119.924 131.915 113.648 131.915 107.364 C 131.915 94.125 149.364 79.849 167.457 79.849 C 190.932 79.849 202.186 97.692 202.186 110.931 C 202.186 121.631 197.788 130.972 188.822 136.908 C 200.55 142.521 208.703 153.892 208.702 167.302\
+            M 296.44 153.141 L 291.398 153.141 L 291.398 100.534 C 291.398 84.944 283.004 78.597 272.465 78.597 C 263.016 78.597 257.93 81.69 253.934 88.537 L 213.234 158.102 C 212.143 159.809 210.686 161.874 210.686 165.647 C 210.686 170.099 214.503 175.757 223.406 175.757 L 267.199 175.757 L 267.199 190.319 C 267.199 199.41 269.049 203.683 278.319 203.683 C 287.589 203.683 291.397 199.401 291.397 190.319 L 291.397 175.757 L 296.439 175.757 C 303.528 175.757 309.159 171.305 309.159 164.44 C 309.16 157.592 303.529 153.141 296.44 153.141 Z M 267.754 153.141 L 242.858 153.141 L 267.387 105.325 L 267.754 105.325 L 267.754 153.141\
+            M 395.591 156.989 C 395.591 185.862 378.633 204.885 346.774 204.885 C 333.696 204.885 306.253 196.929 306.253 181.715 C 306.253 175.324 311.956 169.96 318.768 169.96 C 326.134 169.96 334.984 181.018 347.329 181.018 C 360.219 181.018 366.852 169.272 366.852 158.375 C 366.852 147.997 360.585 140.917 349.161 140.917 C 338.47 140.917 336.816 146.62 327.421 146.62 C 320.243 146.62 316.56 141.435 316.56 138.494 C 316.56 136.25 316.926 134.516 317.114 132.621 L 321.718 96.14 C 323.371 82.651 327.251 79.71 336.083 79.71 L 380.484 79.71 C 388.95 79.71 393.929 84.376 393.929 90.598 C 393.929 102.532 384.355 103.569 381.039 103.569 L 346.409 103.569 L 343.647 121.894 C 348.063 121.045 352.845 120.178 357.458 120.178 C 379.752 120.178 395.592 136.769 395.591 156.989\
+        "/>'
+        , "tabformat": '<path id="tabformat" transform="scale(' + cn_const_scale + ')" \nd="\
+            M 897.43 57.624 C 865.946 110.616 747.118 251.357 724.087 279.674 C 564.786 475.546 405.59 671.495 246.221 867.317 C 237.295 878.286 161.172 983.148 129.431 983.634 C 111.624 983.905 96.229 959.483 104.439 941.615 C 128.063 890.209 175.645 849.616 211.932 804.096 C 247.1 759.983 283.173 716.528 318.788 672.739 C 425.434 541.615 532.044 410.463 638.697 279.344 C 694.581 210.642 747.419 139.535 806.363 73.249 C 823.058 54.475 843.482 38.763 864.381 25.55 C 872.176 20.621 881.858 19.211 889.638 20.599 C 895.549 21.652 902.131 49.711 897.43 57.624 Z\
+            M 382.345 536.895 C 382.345 619.907 298.682 689.803 190.664 689.803 C 78.097 689.803 8.114 614.406 8.114 559.732 C 8.114 532.743 39.271 513.364 66.671 513.364 C 118.389 513.364 106.207 594.335 192.166 594.335 C 231.707 594.335 263.695 566.651 263.695 529.971 C 263.695 433.122 134.364 504.367 134.364 422.74 C 134.364 350.078 242.382 399.214 242.382 322.394 C 242.382 296.129 221.862 276.062 187.623 276.062 C 115.384 276.062 125.272 343.848 73.554 343.848 C 42.355 343.848 24.089 318.275 24.089 292.671 C 24.089 238.726 105.498 180.556 189.913 180.556 C 299.437 180.556 351.944 253.26 351.944 307.204 C 351.944 350.803 331.424 388.864 289.593 413.051 C 344.312 435.921 382.349 482.254 382.345 536.895 Z\
+            M 873.122 832.246 C 873.122 915.258 789.458 985.155 681.442 985.155 C 568.875 985.155 498.89 909.758 498.89 855.085 C 498.89 828.095 530.048 808.715 557.449 808.715 C 609.167 808.715 596.985 889.686 682.943 889.686 C 722.484 889.686 754.471 862.003 754.471 825.324 C 754.471 728.474 625.142 799.719 625.142 718.092 C 625.142 645.429 733.159 694.565 733.159 617.746 C 733.159 591.48 712.64 571.413 678.399 571.413 C 606.162 571.413 616.048 639.199 564.33 639.199 C 533.131 639.199 514.867 613.626 514.867 588.022 C 514.867 534.078 596.276 475.909 680.69 475.909 C 790.215 475.909 842.721 548.612 842.721 602.555 C 842.721 646.155 822.202 684.216 780.37 708.402 C 835.088 731.273 873.127 777.605 873.122 832.246 Z\
+            M 548.496 280.438 C 548.496 299.036 535.069 309.749 520.073 309.749 L 388.241 309.749 C 370.889 309.749 357.463 301.677 357.463 283.058 C 357.463 274.568 362.616 267.272 366.56 262.428 C 399.312 222.362 434.841 185.946 464.836 141.457 C 471.941 130.93 478.664 118.373 478.664 103.822 C 478.664 87.217 466.426 72.667 450.241 72.667 C 404.846 72.667 425.38 139.505 387.475 139.505 C 368.531 139.505 358.668 125.773 358.668 109.986 C 358.668 58.998 404.06 16.835 452.615 16.835 C 501.149 16.835 536.639 49.605 536.639 100.992 C 536.639 157.242 482.664 207.184 449.108 250.477 L 517.754 250.477 C 535.108 250.477 548.496 261.84 548.496 280.438 Z\
+            M 892.441 376.978 C 892.186 377.005 891.246 377.099 890.354 377.166 C 879.015 378.185 868.163 382.422 858.934 389.462 C 849.172 396.904 840.975 407.336 836.21 418.331 C 831.7 428.764 829.763 440.201 830.343 453.061 C 831.074 469.312 834.737 481.689 841.902 492.081 C 843.525 494.427 847.247 498.745 849.253 500.569 C 853.612 504.565 858.006 507.421 863.258 509.66 C 869.09 512.141 875.177 513.441 882.794 513.83 C 889.623 514.179 895.362 513.227 901.02 510.8 C 903.478 509.754 904.626 509.137 908.092 507.005 C 909.182 506.335 911.478 504.98 913.194 503.975 C 923.06 498.276 928.776 495.996 931.594 496.64 C 935.489 497.525 939.419 503.157 941.182 510.411 C 942.109 514.206 942.376 516.847 942.364 522.224 C 942.341 535.084 940.625 547.782 937.193 560.601 C 932.069 579.682 922.782 598.736 910.052 616.248 C 905.391 622.671 898.956 630.14 893.252 635.772 C 876.8 652.01 856.661 664.883 833.079 674.242 L 830.297 675.355 L 830.262 688.643 C 830.25 695.951 830.25 701.932 830.274 701.932 C 830.285 701.932 831.607 701.422 833.195 700.805 C 867.177 687.598 895.235 671.292 917.518 651.836 C 931.223 639.848 942.121 627.311 952.069 612.051 C 961.205 598.039 968.683 583.101 973.935 568.351 C 982.827 543.357 986.375 517.504 984.729 489.667 C 983.268 465.089 977.796 444.224 968.103 426.31 C 961.877 414.791 952.776 403.421 942.99 394.933 C 934.805 387.839 926.156 382.811 917.171 379.928 C 914.597 379.097 911.976 378.44 909.484 377.97 C 904.8 377.112 903.606 377.005 897.89 376.965 C 895.154 376.951 892.696 376.951 892.441 376.978 Z\
+        "/>'
+        , "cn.2345": '<path id="cn.2345" style="fill:#f00" transform="scale(' + cn_const_scale + ')" d="M 234.985 204.226 C 234.985 224.599 217.053 241.753 193.901 241.753 C 169.774 241.753 154.774 223.249 154.774 209.831 C 154.774 203.207 161.452 198.451 167.325 198.451 C 178.41 198.451 175.799 218.323 194.223 218.323 C 202.698 218.323 209.554 211.529 209.554 202.527 C 209.554 178.758 181.834 196.243 181.834 176.21 C 181.834 158.377 204.986 170.436 204.986 151.583 C 204.986 145.137 200.588 140.212 193.249 140.212 C 177.766 140.212 179.885 156.848 168.8 156.848 C 162.113 156.848 158.198 150.572 158.198 144.288 C 158.198 131.049 175.647 116.773 193.74 116.773 C 217.215 116.773 228.469 134.616 228.469 147.855 C 228.469 158.555 224.071 167.896 215.105 173.832 C 226.833 179.445 234.986 190.816 234.985 204.226 Z M 147.684 447.764 C 68.688 447.764 5.71 378.461 5.71 299.474 C 5.71 272.928 12.943 248.07 25.545 226.764 C 11.162 204.454 2.816 177.885 2.816 149.369 C 2.816 70.382 66.847 3.184 145.843 3.184 C 224.83 3.184 288.87 70.382 288.87 149.369 C 288.87 175.917 281.637 200.776 269.034 222.081 C 283.417 244.391 291.764 270.959 291.764 299.474 C 291.764 378.461 226.671 447.764 147.684 447.764 Z M 58.302 226.485 C 42.182 246.435 32.528 271.826 32.528 299.474 C 32.528 363.657 83.501 420.946 147.684 420.946 C 211.867 420.946 264.946 363.657 264.946 299.474 C 264.946 270.526 254.363 244.052 236.855 223.708 C 237.04 223.555 237.225 223.401 237.41 223.247 C 237.034 222.949 236.656 222.653 236.276 222.359 C 252.398 202.41 262.052 177.017 262.052 149.369 C 262.052 85.186 210.026 30.002 145.843 30.002 C 81.66 30.002 29.634 85.186 29.634 149.369 C 29.634 178.317 40.217 204.791 57.725 225.135 C 57.539 225.289 57.353 225.443 57.168 225.597 C 57.545 225.895 57.923 226.191 58.302 226.485 Z M 138.788 266.078 L 133.746 266.078 L 133.746 213.471 C 133.746 197.881 125.352 191.534 114.813 191.534 C 105.364 191.534 100.278 194.627 96.282 201.474 L 55.582 271.039 C 54.491 272.746 53.034 274.811 53.034 278.584 C 53.034 283.036 56.851 288.694 65.754 288.694 L 109.547 288.694 L 109.547 303.256 C 109.547 312.347 111.397 316.62 120.667 316.62 C 129.937 316.62 133.745 312.338 133.745 303.256 L 133.745 288.694 L 138.787 288.694 C 145.876 288.694 151.507 284.242 151.507 277.377 C 151.508 270.529 145.877 266.078 138.788 266.078 Z M 110.102 266.078 L 85.206 266.078 L 109.735 218.262 L 110.102 218.262 L 110.102 266.078 Z M 234.939 347.253 C 234.939 376.126 217.981 395.149 186.122 395.149 C 173.044 395.149 145.601 387.193 145.601 371.979 C 145.601 365.588 151.304 360.224 158.116 360.224 C 165.482 360.224 174.332 371.282 186.677 371.282 C 199.567 371.282 206.2 359.536 206.2 348.639 C 206.2 338.261 199.933 331.181 188.509 331.181 C 177.818 331.181 176.164 336.884 166.769 336.884 C 159.591 336.884 155.908 331.699 155.908 328.758 C 155.908 326.514 156.274 324.78 156.462 322.885 L 161.066 286.404 C 162.719 272.915 166.599 269.974 175.431 269.974 L 219.832 269.974 C 228.298 269.974 233.277 274.64 233.277 280.862 C 233.277 292.796 223.703 293.833 220.387 293.833 L 185.757 293.833 L 182.995 312.158 C 187.411 311.309 192.193 310.442 196.806 310.442 C 219.1 310.442 234.94 327.033 234.939 347.253 Z M 153.134 158.556 C 153.134 166.485 146.867 171.053 139.868 171.053 L 78.34 171.053 C 70.241 171.053 63.975 167.611 63.975 159.673 C 63.975 156.053 66.38 152.942 68.221 150.877 C 83.507 133.794 100.089 118.267 114.088 99.298 C 117.404 94.81 120.542 89.456 120.542 83.252 C 120.542 76.172 114.83 69.968 107.276 69.968 C 86.09 69.968 95.673 98.466 77.982 98.466 C 69.141 98.466 64.537 92.611 64.537 85.88 C 64.537 64.14 85.723 46.163 108.384 46.163 C 131.036 46.163 147.6 60.135 147.6 82.045 C 147.6 106.028 122.409 127.322 106.748 145.781 L 138.786 145.781 C 146.885 145.781 153.134 150.626 153.134 158.556 Z"/>'
+        ,"n.0": '<path id="n.0" transform="scale(0.95)" \nd="@@"/>'
+        ,"n.1": '<path id="n.1" transform="scale(0.95)" \nd="@@"/>'
+        ,"n.2": '<path id="n.2" transform="scale(0.95)" \nd="@@"/>'
+        ,"n.3": '<path id="n.3" transform="scale(0.95)" \nd="@@"/>'
+        ,"n.4": '<path id="n.4" transform="scale(0.95)" \nd="@@"/>'
+        ,"n.5": '<path id="n.5" transform="scale(0.95)" \nd="@@"/>'
+        ,"n.6": '<path id="n.6" transform="scale(0.95)" \nd="@@"/>'
+        ,"n.7": '<path id="n.7" transform="scale(0.95)" \nd="@@"/>'
+        ,"n.8": '<path id="n.8" transform="scale(0.95)" \nd="@@"/>'
+        ,"n.9": '<path id="n.9" transform="scale(0.95)" \nd="@@"/>'
+        ,"f": '<path id="n.f" transform="scale(0.95)" \nd="@@"/>'
+        ,"m": '<path id="n.m" transform="scale(0.95)" \nd="@@"/>'
+        ,"p": '<path id="n.p" transform="scale(0.95)" \nd="@@"/>'
+        ,"r": '<path id="n.r" transform="scale(0.95)" \nd="@@"/>'
+        ,"s": '<path id="n.s" transform="scale(0.95)" \nd="@@"/>'
+        ,"z": '<path id="n.z" transform="scale(0.95)" \nd="@@"/>'
+        ,"+": '<path id="+" transform="scale(0.95)" \nd="@@"/>'
+        ,",": '<path id="," transform="scale(0.95)" \nd="@@"/>'
+        ,"-": '<path id="-" transform="scale(0.95)" \nd="@@"/>'
+        ,".": '<path id="." transform="scale(0.95)" \nd="@@"/>'
+        ,"accidentals.nat": '<path id="accidentals.nat" transform="scale(0.8)" \nd="@@"/>'
+        ,"accidentals.sharp": '<path id="accidentals.sharp" transform="scale(0.8)" \nd="@@"/>'
+        ,"accidentals.flat": '<path id="accidentals.flat" transform="scale(0.8)" \nd="@@"/>'
+        ,"accidentals.halfsharp": '<path id="accidentals.halfsharp" transform="scale(0.8)" \nd="@@"/>'
+        ,"accidentals.dblsharp": '<path id="accidentals.dblsharp" transform="scale(0.8)" \nd="@@"/>'
+        ,"accidentals.halfflat": '<path id="accidentals.halfflat" transform="scale(0.8)" \nd="@@"/>'
+        ,"accidentals.dblflat": '<path id="accidentals.dblflat" transform="scale(0.8)" \nd="@@"/>'
+        ,"clefs.C": '<path id="clefs.C" \nd="@@"/>'
+        ,"clefs.F": '<path id="clefs.F" \nd="@@"/>'
+        ,"clefs.G": '<path id="clefs.G" \nd="@@"/>'
+        ,"clefs.perc": '<path id="clefs.perc" \nd="@@"/>'
+        ,"clefs.tab": '<path id="clefs.tab" transform="scale(0.9)" \nd="@@"/>'
+        ,"dots.dot": '<path id="dots.dot" \nd="@@"/>'
+        ,"flags.d8th": '<path id="flags.d8th" \nd="@@"/>'
+        ,"flags.d16th": '<path id="flags.d16th" \nd="@@"/>'
+        ,"flags.d32nd": '<path id="flags.d32nd" \nd="@@"/>'
+        ,"flags.d64th": '<path id="flags.d64th" \nd="@@"/>'
+        ,"flags.dgrace": '<path id="flags.dgrace" \nd="@@"/>'
+        ,"flags.u8th": '<path id="flags.u8th" \nd="@@"/>'
+        ,"flags.u16th": '<path id="flags.u16th" \nd="@@"/>'
+        ,"flags.u32nd": '<path id="flags.u32nd" \nd="@@"/>'
+        ,"flags.u64th": '<path id="flags.u64th" \nd="@@"/>'
+        ,"flags.ugrace": '<path id="flags.ugrace" \nd="@@"/>'
+        ,"graceheads.quarter": '<g id="graceheads.quarter" transform="scale(0.6)" ><use xlink:href="#noteheads.quarter" /></g>'
+        ,"graceflags.d8th": '<g id="graceflags.d8th" transform="scale(0.6)" ><use xlink:href="#flags.d8th" /></g>'
+        ,"graceflags.u8th": '<g id="graceflags.u8th" transform="scale(0.6)" ><use xlink:href="#flags.u8th" /></g>'
+        ,"noteheads.quarter": '<path id="noteheads.quarter" \nd="@@"/>'
+        ,"noteheads.whole": '<path id="noteheads.whole" \nd="@@"/>'
+        ,"notehesad.dbl": '<path id="noteheads.dbl" \nd="@@"/>'
+        ,"noteheads.half": '<path id="noteheads.half" \nd="@@"/>'
+        ,"rests.whole": '<path id="rests.whole" \nd="@@"/>'
+        ,"rests.half": '<path id="rests.half" \nd="@@"/>'
+        ,"rests.quarter": '<path id="rests.quarter" \nd="@@"/>'
+        ,"rests.8th": '<path id="rests.8th" \nd="@@"/>'
+        ,"rests.16th": '<path id="rests.16th" \nd="@@"/>'
+        ,"rests.32nd": '<path id="rests.32nd" \nd="@@"/>'
+        ,"rests.64th": '<path id="rests.64th" \nd="@@"/>'
+        ,"rests.128th": '<path id="rests.128th" \nd="@@"/>'
+        ,"scripts.rarrow": '<path id="scripts.rarrow" \nd="M -6 -5 h 8 v -3 l 4 4 l -4 4 v -3 h -8 z"/>'
+        ,"scripts.tabrest": '<path id="scripts.tabrest" \nd="M -5 5 h 10 v 2 h -10 z"/>'
+        ,"scripts.lbrace": '<path id="scripts.lbrace" \nd="@@"/>'
+        ,"scripts.ufermata": '<path id="scripts.ufermata" \nd="@@"/>'
+        ,"scripts.dfermata": '<path id="scripts.dfermata" \nd="@@"/>'
+        ,"scripts.sforzato": '<path id="scripts.sforzato" \nd="@@"/>'
+        ,"scripts.staccato": '<path id="scripts.staccato" \nd="@@"/>'
+        ,"scripts.tenuto": '<path id="scripts.tenuto" \nd="@@"/>'
+        ,"scripts.umarcato": '<path id="scripts.umarcato" \nd="@@"/>'
+        ,"scripts.dmarcato": '<path id="scripts.dmarcato" \nd="@@"/>'
+        ,"scripts.stopped": '<path id="scripts.stopped" \nd="@@"/>'
+        ,"scripts.upbow": '<path id="scripts.upbow" \nd="@@"/>'
+        ,"scripts.downbow": '<path id="scripts.downbow" \nd="@@"/>'
+        ,"scripts.turn": '<path id="scripts.turn" \nd="@@"/>'
+        ,"scripts.trill": '<path id="scripts.trill" \nd="@@"/>'
+        ,"scripts.segno": '<path id="scripts.segno" transform="scale(0.8)" \nd="@@"/>'
+        ,"scripts.coda": '<path id="scripts.coda" transform="scale(0.8)" \nd="@@"/>'
+        ,"scripts.comma": '<path id="scripts.comma" \nd="@@"/>'
+        ,"scripts.roll": '<path id="scripts.roll" \nd="@@"/>'
+        ,"scripts.prall": '<path id="scripts.prall" \nd="@@"/>'
+        ,"scripts.mordent": '<path id="scripts.mordent" \nd="@@"/>'
+        ,"timesig.common": '<path id="timesig.common" \nd="@@"/>'
+        ,"timesig.cut": '<path id="timesig.cut" \nd="@@"/>'
+        ,"it.punto": '<path id="it.punto" \nd="@@"/>'
+        ,"it.l": '<path id="it.l" \nd="@@"/>'
+        ,"it.f": '<path id="it.f" \nd="@@"/>'
+        ,"it.F": '<path id="it.F" \nd="@@"/>'
+        ,"it.i": '<path id="it.i" \nd="@@"/>'
+        ,"it.n": '<path id="it.n" \nd="@@"/>'
+        ,"it.e": '<path id="it.e" \nd="@@"/>'
+        ,"it.D": '<path id="it.D" \nd="@@"/>'
+        ,"it.d": '<path id="it.d" \nd="@@"/>'
+        ,"it.a": '<path id="it.a" \nd="@@"/>'
+        ,"it.C": '<path id="it.C" \nd="@@"/>'
+        ,"it.c": '<path id="it.c" \nd="@@"/>'
+        ,"it.p": '<path id="it.p" \nd="@@"/>'
+        ,"it.o": '<path id="it.o" \nd="@@"/>'
+        ,"it.S": '<path id="it.S" \nd="@@"/>'
+        ,"it.s": '<path id="it.s" \nd="@@"/>'
+        ,"it.Fine": '<g id="it.Fine" ><use xlink:href="#it.F" x="0" y="3" /><use xlink:href="#it.i" x="12" y="3" /><use xlink:href="#it.n" x="17.5" y="3" /><use xlink:href="#it.e" x="27" y="3" /></g>'
+        ,"it.Coda": '<g id="it.Coda" ><use xlink:href="#it.C" x="0" y="3" /><use xlink:href="#it.o" x="12" y="3" /><use xlink:href="#it.d" x="20" y="3" /><use xlink:href="#it.a" x="30" y="3" /></g>'
+        ,"it.Da": '<g id="it.Da"><use xlink:href="#it.D" x="0" y="3" /><use xlink:href="#it.a" x="14" y="3" /></g>'
+        ,"it.DaCoda": '<g id="it.DaCoda"><use xlink:href="#it.Da" x="0" y="0" /><use xlink:href="#scripts.coda" x="32" y="0" /></g>'
+        ,"it.DaSegno": '<g id="it.DaSegno"><use xlink:href="#it.Da" x="0" y="0" /><use xlink:href="#scripts.segno" x="32" y="-3" /></g>'
+        ,"it.DC": '<g id="it.DC"><use xlink:href="#it.D" x="0" y="1" /><use xlink:href="#it.punto" x="12" y="2" /><use xlink:href="#it.C" x="18" y="1" /><use xlink:href="#it.punto" x="29" y="2" /></g>'
+        ,"it.DS": '<g id="it.DS"><use xlink:href="#it.D" x="0" y="1" /><use xlink:href="#it.punto" x="12" y="2" /><use xlink:href="#it.S" x="18" y="1" /><use xlink:href="#it.punto" x="29" y="2" /></g>'
+        ,"it.al": '<g id="it.al"><use xlink:href="#it.a" x="0" y="2" /><use xlink:href="#it.l" x="10" y="2" /></g>'
+        ,"it.DCalFine": '<g id="it.DCalFine"><use xlink:href="#it.DC" x="-14" y="1" /><use xlink:href="#it.al" x="25" y="1" /><use xlink:href="#it.Fine" x="46" y="-1" /></g>'
+        ,"it.DCalCoda": '<g id="it.DCalCoda"><use xlink:href="#it.DC" x="-14" y="1" /><use xlink:href="#it.al" x="25" y="1" /><use xlink:href="#it.Coda" x="46" y="-1" /></g>'
+        ,"it.DSalFine": '<g id="it.DSalFine"><use xlink:href="#it.DS" x="-14" y="1" /><use xlink:href="#it.al" x="25" y="1" /><use xlink:href="#it.Fine" x="46" y="-1" /></g>'
+        ,"it.DSalCoda": '<g id="it.DSalCoda"><use xlink:href="#it.DS" x="-14" y="1" /><use xlink:href="#it.al" x="25" y="1" /><use xlink:href="#it.Coda" x="46" y="-1" /></g>'
+    };
+    
+    this.getDefinition = function (gl) {
+        
+        
+        var g = glyphs[gl];
+        
+        if (!g) {
+            return "";
+        }
+        
+        // expande path se houver, buscando a definicao do original do ABCJS.
+        g = g.replace('@@', abc_glyphs.getSymbolPathTxt(gl) );
+        
+        var i = 0, j = 0;
+
+        while (i>=0) {
+            i = g.indexOf('xlink:href="#', j );
+            if (i < 0) continue;
+            i += 13;
+            j = g.indexOf('"', i);
+            g += this.getDefinition(g.slice(i, j));
+        }
+
+        return '\n' +  g;
+    };
+};
+/* abc_selectors.js
+   Implenta alguns objetos para controle de tela, tais como o um seletor de acordeons e um seletor de tonalidades
+ */
+
+if (!window.ABCXJS)
+	window.ABCXJS = {};
+
+if (!ABCXJS.edit)
+	ABCXJS.edit = {};
+
+ABCXJS.edit.AccordionSelector = function (id, divId, callBack, extraItems ) {
+    
+    this.extraItems = extraItems || [];
+    this.ddmId = id;
+    
+    if (divId instanceof DRAGGABLE.ui.DropdownMenu) {
+        this.menu = divId;   
+    } else {
+        this.menu = new DRAGGABLE.ui.DropdownMenu(
+               divId
+            ,  callBack
+            ,  [{title: 'Acordeons', ddmId: this.ddmId, itens: []}]
+        );
+    }
+    
+    // tratar os casos os o listener não possui um acordeon definido
+    if (callBack && callBack.listener && callBack.listener.accordion) {
+        this.accordion = callBack.listener.accordion;
+    }
+};
+    
+ABCXJS.edit.AccordionSelector.prototype.populate = function(changeTitle, selectId ) {
+    var m, selectItem, title;
+
+    this.menu.emptySubMenu( this.ddmId );    
+    
+    for (var i = 0; i < this.accordion.accordions.length; i++) {
+        m = this.menu.addItemSubMenu( 
+            this.ddmId, 
+            this.accordion.accordions[i].getFullName() + '|' 
+                + this.accordion.accordions[i].getId() );
+        
+        // identifica o item a ser selecionado
+        if( typeof selectId === "undefined"  ) {
+            if( this.accordion.getId() === this.accordion.accordions[i].getId() ) {
+                selectItem = m;
+                title = this.accordion.getFullName();
+            }
+        } else {
+            if( selectId === this.accordion.accordions[i].getId() ) {
+                selectItem = m;
+                title = this.accordion.accordions[i].getFullName();
+            }
+        }
+    }
+    
+    // adiciona os itens extra
+    for (var i = 0; i < this.extraItems.length; i++) {
+        var m = this.menu.addItemSubMenu( this.ddmId, this.extraItems[i] );
+    }
+    
+    if(changeTitle && title )
+        this.menu.setSubMenuTitle(this.ddmId, title );
+    
+    if( selectItem )
+        this.menu.selectItem(this.ddmId, selectItem );
+    
+};
+
+ABCXJS.edit.KeySelector = function(id, divId, callBack ) {
+    
+    this.ddmId = id;
+    if (divId instanceof DRAGGABLE.ui.DropdownMenu) {
+        this.menu = divId;   
+    } else {
+        this.menu = new DRAGGABLE.ui.DropdownMenu(
+               divId
+            ,  callBack
+            ,  [{title: 'Keys', ddmId: this.ddmId, itens: []}]
+        );
+    }
+};
+
+ABCXJS.edit.KeySelector.prototype.setVisible = function (visible) {
+    this.menu.setVisible(visible);
+};
+
+ABCXJS.edit.KeySelector.prototype.populate = function(offSet) {
+    var cromaticSize = 12;
+    this.menu.emptySubMenu( this.ddmId );    
+    
+    for (var i = +(cromaticSize+offSet-1); i > -(cromaticSize-offSet); i--) {
+        var opt; 
+        if(i > offSet) 
+            opt = ABCXJS.parse.number2keysharp[(i+cromaticSize)%cromaticSize] ;
+        else
+            opt = ABCXJS.parse.number2keyflat[(i+cromaticSize)%cromaticSize] ;
+        
+        var e = this.menu.addItemSubMenu( this.ddmId, opt + '|' + (i-offSet) );
+        
+        if( i === offSet ) {
+            this.menu.setSubMenuTitle( this.ddmId, opt );
+            this.menu.selectItem( this.ddmId, e );
+        }
+      
+    }
+};
+
+// EditArea is an example of using a ace editor as the control that is shown to the user. As long as
+// the same interface is used, ABCXJS.Editor can use a different type of object.
+//
+// EditArea:
+// - constructor(editor_id, listener)REA
+//		This contains the id of a textarea control that will be used.
+// - addChangeListener(listener)
+//		A callback class that contains the entry point fireChanged()
+// - getSelection()
+//		returns the object { start: , end: } with the current selection in characters
+// - clearSelection(abcelem)
+//		limpa seleção do elemento no texto abc.
+// - setSelection(abcelem)
+//		seleciona elemento no texto abc.
+// - getString()
+//		returns the ABC text that is currently displayed.
+// - setString(str)
+//		sets the ABC text that is currently displayed, and resets the initialText variable
+// - string initialText
+//		Contains the starting text. This can be compared against the current text to see if anything changed.
+//
+
+if (!window.ABCXJS)
+	window.ABCXJS = {};
+
+if (!ABCXJS.edit)
+	ABCXJS.edit = {};
+
+ABCXJS.edit.EditArea = function (editor_id, callback, options ) {
+    
+    var self = this;
+    
+    options = options? options : {};
+    
+    this.parentCallback = callback;
+    this.callback = { listener: this, method: 'editareaCallback' };
+    
+    this.container = {};
+    
+    var aToolBotoes = [ 
+         'gutter'
+        ,'download'
+        ,'undoall'
+        ,'undo'
+        ,'redo'
+        ,'redoall'
+        ,'refresh'
+        ,'findNreplace'
+        ,'fontSize'
+        ,'DROPDOWN|selKey'
+        ,'octavedown'
+        ,'octaveup'
+        ,'lighton'
+        ,'readonly' 
+    ] ;
+    
+    options.draggable = typeof( options.draggable ) === 'undefined'? true: options.draggable;
+    this.draggagle = options.draggable;
+    this.compileOnChange = typeof( options.compileOnChange ) === 'undefined'? false: options.compileOnChange;
+    this.maximized = typeof( options.maximized ) === 'undefined'? false: options.maximized;
+    this.translator = options.translator ? options.translator : null;
+    
+    var topDiv;
+    
+    if(typeof editor_id === 'string'  )
+        topDiv = document.getElementById( editor_id );
+    else 
+        topDiv = editor_id;
+    
+    if(!topDiv) {
+        alert( 'this.container: elemento "'+editor_id+'" não encontrado.');
+    }
+    
+    this.container = new DRAGGABLE.ui.Window( 
+          topDiv
+        , [ 'move', 'popin', 'popout' , 'restore', 'maximize' ]
+        , options
+        , this.callback
+        , aToolBotoes
+    );
+    
+    this.keySelector = new ABCXJS.edit.KeySelector( 
+        'selKey', this.container.menu['selKey'], this.callback );
+
+    this.setFloating(this.draggable);
+    
+    this.currrentFontSize = '15px';
+    this.aceEditor = ace.edit(this.container.dataDiv);
+    this.aceEditor.setOptions( {highlightActiveLine: true, selectionStyle: "text", cursorStyle: "smooth"/*, maxLines: Infinity*/ } );
+    this.aceEditor.setOptions( {fontFamily: "'DejaVuSansMono','Monospace'", fontSize: this.currrentFontSize, fontWeight: "normal" });
+    this.aceEditor.setOptions( {tabSize: 4, useSoftTabs: false, showInvisibles: false });
+    this.aceEditor.renderer.setOptions( {highlightGutterLine: true, showPrintMargin: false, showFoldWidgets: false } );
+    this.aceEditor.session.setNewLineMode('unix');
+    this.aceEditor.$blockScrolling = Infinity;
+    this.Range = require("ace/range").Range;
+    this.gutterVisible = true;
+    this.readOnly = false;
+    this.showHiddenChar = false;
+    this.syntaxHighLightVisible = true;
+    this.selectionEnabled = true;
+
+    this.restartUndoManager();
+    this.createStyleSheet();
+    
+    this.aceEditor.on("focus", function() { 
+        self.aceEditor.focus(); 
+        self.container.focus(); 
+    });
+    
+    this.aceEditor.on("blur", function() { 
+        self.aceEditor.blur(); 
+        self.container.blur(); 
+    });
+
+    if(callback.listener)
+        this.addChangeListener(callback.listener);
+};
+
+ABCXJS.edit.EditArea.prototype.setCompileOnChange = function ( value ) {
+    this.compileOnChange = value;
+};
+
+ABCXJS.edit.EditArea.prototype.setMaximized = function ( value ) {
+    this.maximized = value;
+    this.container.draggable = ! value;
+    this.container.setButtonVisible( 'maximize', this.draggable && !this.maximized);
+    this.container.setButtonVisible( 'restore', this.draggable && this.maximized);
+};
+
+ABCXJS.edit.EditArea.prototype.setFloating = function ( floating ) {
+    this.draggable = floating;
+    
+    this.container.setButtonVisible( 'popout', !this.draggable);
+    this.container.setButtonVisible( 'popin', this.draggable );
+    this.container.setButtonVisible( 'maximize', this.draggable && !this.maximized);
+    this.container.setButtonVisible( 'restore', this.draggable && this.maximized);
+    this.container.setButtonVisible( 'move', this.draggable );
+    
+    this.container.setFloating(floating);
+    
+};
+
+ABCXJS.edit.EditArea.prototype.editareaCallback = function ( action, elem, searchTerm, replaceTerm, matchCase, wholeWord ) {
+    this.container.setStatusMessage( "" );
+    switch(action) {
+        case 'UNDO': 
+            this.undoManager.hasUndo() && this.undoManager.undo(false);
+            break;
+        case 'REDO': 
+            this.undoManager.hasRedo() && this.undoManager.redo(false);
+            break;
+        case 'UNDOALL': 
+            while( this.undoManager.hasUndo() )
+                this.undoManager.undo(false);
+            break;
+        case 'REDOALL': 
+            while( this.undoManager.hasRedo() )
+                this.undoManager.redo(false);
+            break;
+        case 'FONTSIZE': 
+            switch(this.currrentFontSize) {
+                case '15px': this.currrentFontSize = '18px'; break;
+                case '18px': this.currrentFontSize = '22px'; break;
+                case '22px': this.currrentFontSize = '15px'; break;
+            }
+            this.aceEditor.setOptions( { fontSize: this.currrentFontSize });
+            break;
+        case 'FINDNREPLACE': 
+            this.alert = new DRAGGABLE.ui.ReplaceDialog( this.container, {translator: this.translator}  );
+            break;
+        case 'DO-SEARCH': 
+            if( searchTerm === "") {
+                this.container.setStatusMessage( this.translator.getResource( 'search_field_empty' ) );
+                break;
+            }
+            this.searchRange = this.aceEditor.find(searchTerm, {
+                wrap: true,
+                caseSensitive: matchCase, 
+                wholeWord: wholeWord,
+                regExp: false,
+                preventScroll: true // do not change selection
+            });
+            if(this.searchRange) {
+                this.aceEditor.selection.setRange(this.searchRange);
+            } else {
+                this.container.setStatusMessage( this.translator.getResource( 'not_found' ) );
+            }   
+            break;
+        case 'DO-REPLACE': 
+            if( searchTerm === "") {
+                this.container.setStatusMessage( this.translator.getResource( 'search_field_empty' ) );
+                break;
+            }
+            if( ! this.searchRange ) {
+                this.searchRange = this.aceEditor.find(searchTerm, {
+                    wrap: true,
+                    caseSensitive: matchCase, 
+                    wholeWord: wholeWord,
+                    regExp: false,
+                    preventScroll: true // do not change selection
+                });
+                if(this.searchRange) {
+                    this.aceEditor.selection.setRange(this.searchRange);
+                } else {
+                    this.container.setStatusMessage( this.translator.getResource( 'not_found' ) );
+                    break;
+                }   
+            } 
+            this.aceEditor.session.replace(this.searchRange, replaceTerm );
+            
+            this.searchRange = this.aceEditor.find(searchTerm, {
+                wrap: true,
+                caseSensitive: matchCase, 
+                wholeWord: wholeWord,
+                regExp: false,
+                preventScroll: true // do not change selection
+            });
+            
+            if(this.searchRange) {
+                this.aceEditor.selection.setRange(this.searchRange);
+            }    
+            
+            break;
+        case 'DO-REPLACEALL': 
+            if( searchTerm === "") {
+                this.container.setStatusMessage( this.translator.getResource( 'search_field_empty' ) );
+                break;
+            }
+            this.searchRange = true;
+            var c = 0;
+            while(this.searchRange) {
+                this.searchRange = this.aceEditor.find(searchTerm, {
+                    wrap: true,
+                    caseSensitive: matchCase, 
+                    wholeWord: wholeWord,
+                    regExp: false,
+                    preventScroll: true // do not change selection
+                });
+                if(this.searchRange) {
+                    this.aceEditor.session.replace(this.searchRange, replaceTerm );
+                    c ++;
+                } else {
+                    if( c === 0  ) {
+                        this.container.setStatusMessage( this.translator.getResource( 'not_found' ) );
+                    } else {
+                        this.container.setStatusMessage( c + ' ' + this.translator.getResource( 'occurrence_replaced' ) );
+                    }
+                }
+            }
+            break;
+        case 'GUTTER': // liga/desliga a numeracao de linhas
+            this.setGutter();
+            break;
+        case 'READONLY': // habilita/bloqueia a edição
+            this.setReadOnly();
+            var i = elem.getElementsByTagName("i")[0];
+            i.className = (this.readOnly? "ico-lock ico-black ico-large" : "ico-lock-open ico-black ico-large" );
+            break;
+        case 'LIGHTON': // liga/desliga realce de sintaxe
+            this.setSyntaxHighLight();
+            var i = elem.getElementsByTagName("i")[0];
+            i.className = (this.syntaxHighLightVisible? "ico-lightbulb-on ico-black ico-large" : "ico-lightbulb-off ico-black ico-large" );
+            break;
+        case 'HIDDENCHAR':
+            this.showHiddenChars();
+            break;
+        case 'RESIZE':
+            this.resize();
+            this.parentCallback.listener[this.parentCallback.method](action, elem);
+            break;
+        default:
+            this.parentCallback.listener[this.parentCallback.method](action, elem);
+    }
+    this.aceEditor.focus();
+
+};
+
+// Este css é usado apenas quando o playback da partitura está funcionando
+// e então a cor de realce é no edidor fica igual a cor de destaque da partitura.
+ABCXJS.edit.EditArea.prototype.createStyleSheet = function () {
+    this.style = document.createElement('style');
+    this.style.type = 'text/css';
+    document.getElementsByTagName('head')[0].appendChild(this.style);        
+};
+
+ABCXJS.edit.EditArea.prototype.setEditorHighLightStyle = function () {
+    this.style.innerHTML = '.ABCXHighLight { background-color: '+ABCXJS.write.color.highLight+' !important; opacity: 0.15; }';
+};
+
+ABCXJS.edit.EditArea.prototype.clearEditorHighLightStyle = function () {
+    this.style.innerHTML = '.ABCXHighLight { }';
+};
+
+ABCXJS.edit.EditArea.prototype.showHiddenChars = function (showHiddenChar) {
+    if(typeof showHiddenChar === 'boolean') {
+        this.showHiddenChar = showHiddenChar;
+    } else {
+        this.showHiddenChar = !this.showHiddenChar;
+    }
+    
+    
+    this.aceEditor.setOption("showInvisibles", this.showHiddenChar);
+};
+
+ABCXJS.edit.EditArea.prototype.setGutter = function (visible) {
+    if(typeof visible === 'boolean') {
+        this.gutterVisible = visible;
+    } else {
+        this.gutterVisible = ! this.gutterVisible;
+    }
+    this.aceEditor.renderer.setShowGutter(this.gutterVisible);
+};
+
+ABCXJS.edit.EditArea.prototype.setReadOnly = function (readOnly) {
+    
+    if(typeof readOnly === 'boolean') {
+        this.readOnly = readOnly;
+    } else {
+        this.readOnly = !this.readOnly;
+    }
+    
+    this.aceEditor.setOptions({
+        readOnly: this.readOnly,
+        highlightActiveLine: !this.readOnly,
+        highlightGutterLine: !this.readOnly
+    });
+    
+    this.aceEditor.textInput.getElement().disabled=this.readOnly;  
+};
+
+ABCXJS.edit.EditArea.prototype.setSyntaxHighLight = function (visible) {
+    if(typeof visible === 'boolean') {
+        this.syntaxHighLightVisible = visible;
+    } else {
+        this.syntaxHighLightVisible = ! this.syntaxHighLightVisible;
+    }
+    this.aceEditor.getSession().setMode( this.syntaxHighLightVisible?'ace/mode/abcx':'ace/mode/text');
+};
+
+ABCXJS.edit.EditArea.prototype.setStatusBarVisible = function (visible) {
+    this.container.setStatusBarVisible(visible);
+    this.resize();
+};
+
+ABCXJS.edit.EditArea.prototype.setToolBarVisible = function (visible) {
+    this.container.setToolBarVisible(visible);
+    this.resize();
+};
+
+ABCXJS.edit.EditArea.prototype.setVisible = function (visible) {
+    this.container.setVisible(visible);
+};
+
+ABCXJS.edit.EditArea.prototype.resize = function () {
+    this.container.resize();
+    this.aceEditor.resize();
+};
+
+ABCXJS.edit.EditArea.prototype.setOptions = function (editorOptions, rendererOptions ) {
+    if(editorOptions) {
+        this.aceEditor.setOptions( editorOptions );
+    }
+    if(rendererOptions) {
+        this.aceEditor.renderer.setOptions( rendererOptions );
+    }
+};
+
+ABCXJS.edit.EditArea.prototype.addChangeListener = function (listener) {
+    var that = this;
+    
+    that.aceEditor.textInput.getElement().addEventListener('keyup', function () {
+        if(that.timerId1) clearTimeout(that.timerId1);
+        that.timerId1 = setTimeout(function () { listener.updateSelection(); }, 100);	
+    });
+   
+    that.aceEditor.on('dblclick', function () {
+        if(that.timerId2) clearTimeout(that.timerId2);
+        that.timerId2 = setTimeout(function () { listener.updateSelection(); }, 100);	
+    });
+    
+    that.aceEditor.on('mousedown', function () {
+        that.aceEditor.on('mouseup', function () {
+            if(that.timerId3) clearTimeout(that.timerId3);
+            that.timerId3 = setTimeout(function () { listener.updateSelection(); }, 100);	
+        });
+    });
+    
+    that.aceEditor.on('change', function () {
+        
+        var text  = that.aceEditor.getValue();
+        
+        if( that.compileOnChange && text !== that.initialText ) {
+            that.initialText = text;
+            if(that.timerId4) clearTimeout(that.timerId4);
+            that.timerId4 = setTimeout(function () { listener.fireChanged( 0, {force:false, showProgress:false} ); }, 300);	
+        }
+    });
+};
+
+ABCXJS.edit.EditArea.prototype.getString = function() {
+  return this.aceEditor.getValue(); 
+};
+
+ABCXJS.edit.EditArea.prototype.setString = function ( str ) {
+    if( str === this.aceEditor.getValue() ) return;
+    var cursorPosition = this.aceEditor.getCursorPosition();
+    this.aceEditor.setValue(str);
+    this.aceEditor.clearSelection();
+    this.initialText = this.getString();
+    this.aceEditor.moveCursorToPosition(cursorPosition); 
+    
+};
+
+ABCXJS.edit.EditArea.prototype.restartUndoManager = function ( ) {
+    this.aceEditor.getSession().setUndoManager(new ace.UndoManager());
+    this.undoManager = this.aceEditor.getSession().getUndoManager();
+};
+
+ABCXJS.edit.EditArea.prototype.getSelection = function() {
+    return this.aceEditor.selection.getAllRanges();
+};
+
+ABCXJS.edit.EditArea.prototype.setSelection = function (abcelem) {
+    if (abcelem && abcelem.position) {
+        this.searchRange = null;
+        var range = new this.Range(
+            abcelem.position.anchor.line, abcelem.position.anchor.ch, 
+            abcelem.position.head.line, abcelem.position.head.ch
+        );
+
+        this.aceEditor.selection.addRange(range);
+        
+        if(abcelem.position.selectable || !this.selectionEnabled)
+            this.aceEditor.renderer.scrollCursorIntoView(range.end, 1 );
+    }   
+};
+
+ABCXJS.edit.EditArea.prototype.clearSelection = function (abcelem) {
+    if (abcelem && abcelem.position) {
+        
+        var range = new this.Range(
+            abcelem.position.anchor.line, abcelem.position.anchor.ch, 
+            abcelem.position.head.line, abcelem.position.head.ch
+        );
+
+        this.aceEditor.selection.clearRange(range); 
+    }
+};
+
+ABCXJS.edit.EditArea.prototype.clearSelection = function (abcelem) {
+    if (abcelem && abcelem.position) {
+        
+        var range = new this.Range(
+            abcelem.position.anchor.line, abcelem.position.anchor.ch, 
+            abcelem.position.head.line, abcelem.position.head.ch
+        );
+
+        this.aceEditor.selection.clearRange(range); 
+    }
+};
+
+ABCXJS.edit.EditArea.prototype.maximizeWindow = function( maximize, props ) {
+
+    this.setMaximized(maximize);
+    props.maximized = maximize;
+    
+    if( maximize ) {
+        this.container.move(0,0);
+        this.container.setSize( "100%", "calc( 100% - 7px)" );
+    } else {
+        var k = this.container.topDiv.style;
+        k.left = props.left;
+        k.top = props.top;
+        k.width = props.width;
+        k.height = props.height;
+    }
+    this.resize();
+};
+
+ABCXJS.edit.EditArea.prototype.dockWindow = function(dock, props, x, y, w, h ) {
+    
+    props.floating = !dock;
+    this.setFloating(props.floating);
+    this.setToolBarVisible(props.floating);
+    this.setStatusBarVisible(props.floating);
+        
+    if( props.floating ) {
+        this.maximizeWindow(props.maximized, props);
+    } else {
+        this.container.move(x,y);
+        this.container.setSize( w, h);
+        this.resize();
+    } 
+};
+
+ABCXJS.edit.EditArea.prototype.retrieveProps = function( props ) {
+    if(props.floating && !props.maximized){
+        var k = this.container.topDiv.style;
+        props.left = k.left;
+        props.top = k.top;
+        props.width = k.width;
+        props.height = k.height;
+    }
+};
+if (!window.ABCXJS)
+    window.ABCXJS = {};
+
+if (!window.ABCXJS.midi) 
+    window.ABCXJS.midi = {}; 
+
+window.ABCXJS.midi.keyToNote = {}; // C8  == 108
+window.ABCXJS.midi.minNote = 0x15; //  A0 = first note
+window.ABCXJS.midi.maxNote = 0x6C; //  C8 = last note
+
+// popular array keyToNote com o valor midi de cada nota nomeada
+for (var n = window.ABCXJS.midi.minNote; n <= window.ABCXJS.midi.maxNote; n++) {
+    var octave = (n - 12) / 12 >> 0;
+    var name = ABCXJS.parse.number2keysharp[n % 12] + octave;
+    ABCXJS.midi.keyToNote[name] = n;
+    name = ABCXJS.parse.number2keyflat[n % 12] + octave;
+    ABCXJS.midi.keyToNote[name] = n;
+}
+/* 
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+/*
+ * TODO:
+ *   - BUG: não há mais informação sobre o início de cada compasso.
+ *   - implementar: segno, coda, capo e fine
+ *     Nota: aparentemente o ABC não implementa simbolos como D.S al fine
+ *   - Ok - imprimir endings somente no compasso onde ocorrem
+ *   - Ok - tratar endings em compassos com repeat bar (tratar adequadamente endings/skippings)
+ *   - Ok - tratar notas longas - tanto quganto possível, as notas longas serão reiniciadas
+ *          porém a qualidade não é boa pois o reinício é perceptível
+ */
+
+if (!window.ABCXJS)
+    window.ABCXJS = {};
+
+if (!window.ABCXJS.midi) 
+    window.ABCXJS.midi = {}; 
+
+ABCXJS.midi.Parse = function( options ) {
+    options = options || {};
+    this.vars = { warnings: [] };
+    this.scale = [0, 2, 4, 5, 7, 9, 11];
+    
+    this.wholeNote = 32;
+    this.minNote = 1 / this.wholeNote;
+    this.oneMinute = 60000;
+    
+    this.reset();
+    
+    this.addWarning = function(str) {
+        this.vars.warnings.push(str);
+    };
+    
+    this.getWarnings = function() {
+        return this.vars.warnings;    
+    };
+};
+
+ABCXJS.midi.Parse.prototype.reset = function() {
+    
+    this.vars = { warnings: [] };
+    this.globalJumps = [];
+    
+    this.addingBarNumbers = -1;
+    this.channel = -1;
+    this.timecount = 0;
+    this.playlistpos = 0;
+    this.maxPass = 2;
+    this.countBar = 0;
+    this.next = null;
+    this.restart = {line: 0, staff: 0, voice: 0, pos: 0};
+    
+    
+    this.multiplier = 1;
+    this.alertedMin = false;
+    
+    this.startTieInterval = [];
+    this.lastTabElem = [];
+    this.baraccidentals = [];
+    this.parsedElements = [];
+    
+    this.pass = [];
+    
+    this.midiTune = { 
+        tempo: this.oneMinute/640 // duração de cada intervalo em mili
+       ,playlist: [] // nova strutura, usando 2 elementos de array por intervalo de tempo (um para ends e outro para starts) 
+       ,measures: [] // marks the start time for each measure - used for learning mode playing
+    }; 
+};
+
+ABCXJS.midi.Parse.prototype.parse = function(tune, keyboard) {
+    
+    var self = this;
+    var currBar = 0; // marcador do compasso corrente - não conta os compassos repetidos por ritornellos
+
+    this.reset();
+
+    this.abctune = tune;
+    
+    this.transposeTab = 0;
+    if(tune.hasTablature){
+        this.transposeTab = tune.lines[0].staffs[tune.tabStaffPos].clef.transpose || 0;
+    }
+    
+    this.midiTune.keyboard = keyboard;
+
+    if ( tune.metaText && tune.metaText.tempo) {
+        var bpm = tune.metaText.tempo.bpm || 80;
+        var duration = tune.metaText.tempo.duration[0] || 0.25;
+        this.midiTune.tempo = this.oneMinute / (bpm * duration * this.wholeNote);
+    }
+
+    //faz o parse dos elementos abcx 
+    this.staffcount = 1;
+    for (this.staff = 0; this.staff < this.staffcount; this.staff++) {
+        this.voicecount = 1;
+        for (this.voice = 0; this.voice < this.voicecount; this.voice++) {
+            this.startTrack();
+            for (this.line = 0; !this.endTrack && this.line < this.abctune.lines.length; this.line++) {
+                if ( this.getStaff() ) {
+                    this.pos = 0;
+                    if(!this.capo){
+                        this.capo = this.restart = this.getMark();
+                    }    
+                    this.next = null;
+                    this.staffcount = this.getLine().staffs.length;
+                    this.voicecount = this.getStaff().voices.length;
+                    this.setKeySignature(this.getStaff().key);
+                    while (!this.endTrack && this.pos < this.getVoice().length ) {
+                        var elem = this.getElem();
+
+                        switch (elem.el_type) {
+                            case "note":
+                                if( this.skipping ) break;
+                                if (this.getStaff().clef.type !== "accordionTab") {
+                                  this.writeNote(elem);
+                                } else {
+                                  this.selectButtons(elem);
+                                }
+                                break;
+                            case "key":
+                                if( this.skipping ) break;
+                                this.setKeySignature(elem);
+                                break;
+                            case "bar":
+                                if(!this.handleBar(elem)) {
+                                    return null;
+                                }
+                                break;
+                            case "meter":
+                            case "clef":
+                                break;
+                            default:
+                        }
+                        if (this.next) {
+                            this.line = this.next.line;
+                            this.staff = this.next.staff;
+                            this.voice = this.next.voice;
+                            this.pos = this.next.pos;
+                            this.next = null;
+                        } else {
+                            this.pos++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if(this.lookingForCoda ){
+        this.addWarning('Simbolo não encontrado: "Coda"!');
+    }
+    
+    //cria a playlist a partir dos elementos obtidos acima  
+    this.parsedElements.forEach( function( item, time ) {
+        
+        if( item.end.pitches.length + item.end.abcelems.length /* fka + item.end.buttons.length > 0*/ ) {
+            self.midiTune.playlist.push( {item: item.end, time: time, start: false } );
+        }
+        
+        if( item.start.pitches.length + item.start.abcelems.length + item.start.buttons.length > 0 ) {
+            var pl = {item: null, time: time, start: true };
+            if( item.start.barNumber ) {
+                this.lastBar = null; // identifica o compasso onde os botões da tablatura não condizem com a partitura
+                if( item.start.barNumber > currBar ) {
+                    currBar = this.lastBar = item.start.barNumber;
+                    self.midiTune.measures[currBar] = self.midiTune.playlist.length;
+                }
+                pl.barNumber = item.start.barNumber;
+            } 
+            delete item.start.barNumber;
+            self.handleButtons(item.start.pitches, item.start.buttons );
+            delete item.start.buttons; 
+            pl.item = item.start;
+            self.midiTune.playlist.push( pl );
+        }
+    });
+    
+    
+    tune.midi = this.midiTune;
+    
+    return this.midiTune;
+};
+
+ABCXJS.midi.Parse.prototype.handleButtons = function(pitches, buttons ) {
+    var note, midipitch, key, pitch;
+    var self = this;
+    buttons.forEach( function( item ) {
+        if(!item.button.button) {
+            //waterbug.log( 'ABCXJS.midi.Parse.prototype.handleButtons: botão não encontrado.');
+            return;
+        }
+        if( item.button.closing )  {
+            note = ABCXJS.parse.clone(item.button.button.closeNote);
+        } else {
+            note = ABCXJS.parse.clone(item.button.button.openNote);
+        }
+        if(note.isBass) {
+            if(note.isChord){
+                key = note.key.toUpperCase();
+            } else{
+                key = note.key;
+            }
+        } else {
+            
+            if( self.transposeTab ) {
+                switch(self.transposeTab){
+                    case 8: note.octave --; break;
+                    case -8: note.octave ++; break;
+                    default:
+                        this.addWarning('Possível transpor a tablatura uma oitava acima ou abaixo +/-8. Ignorando transpose.') ;
+                }
+            }
+            
+            midipitch = 12 + 12 * note.octave + ABCXJS.parse.key2number[ note.key ];
+        }
+        
+        // TODO:  no caso dos baixos, quando houver o baixo e o acorde simultaneamente
+        // preciso garantir que estou atribuindo o botão à nota certa, visto que  podem ter tempos diferentes
+        // por hora, procuro a primeira nota que corresponda e não esteja com botão associado (! pitches[r].button)
+        var hasBass=false, hasTreble=false;
+        for( var r = 0; r < pitches.length; r ++ ) {
+            if(note.isBass && pitches[r].midipitch.clef === 'bass') {
+                pitch = pitches[r].midipitch.midipitch % 12;
+                hasBass=true;
+                if( pitch === ABCXJS.parse.key2number[ key ] && ! pitches[r].button ){
+                    pitches[r].button = item.button;
+                    item.button = null;
+                    return;
+                }
+            } else if(!note.isBass && pitches[r].midipitch.clef !== 'bass') { 
+                hasTreble=true;
+                if( pitches[r].midipitch.midipitch === midipitch ) {
+                    pitches[r].button = item.button;
+                    item.button = null;
+                    return;
+                }
+            }
+        }
+        if(this.lastBar && ((note.isBass && hasBass) || (!note.isBass && hasTreble /* flavio && this.lastBar */))) {
+            var b = item.button.button;
+            self.addWarning( 'Compasso '+this.lastBar+': Botao '+b.tabButton+' ('+b.closeNote.key+'/'+b.openNote.key+') não corresponde a nenhuma nota em execução.');
+        }    
+    });
+};
+            
+ABCXJS.midi.Parse.prototype.writeNote = function(elem) {
+    
+    if (elem.startTriplet) {
+        this.multiplier = (elem.startTriplet.num === 2) ? 3 / 2 : (elem.startTriplet.num - 1) / elem.startTriplet.num;
+    }
+
+    var mididuration = this.checkMinNote(elem.duration * this.wholeNote * this.multiplier);
+
+    if (elem.pitches) {
+        var midipitch;
+        for (var i = 0; i < elem.pitches.length; i++) {
+            var note = elem.pitches[i];
+            var pitch = note.pitch;
+            if (note.accidental) {
+                // change that pitch (not other octaves) for the rest of the bar
+                this.baraccidentals[pitch] = this.getAccOffset(note.accidental);
+            }
+
+            midipitch = 60 + 12 * this.extractOctave(pitch) + this.scale[this.extractNote(pitch)];
+
+            if (this.baraccidentals[pitch] !== undefined) {
+                midipitch += this.baraccidentals[pitch];
+            } else { // use normal accidentals
+                midipitch += this.accidentals[this.extractNote(pitch)];
+            }
+
+            if (note.tie) {
+                this.handleTie( elem, note, midipitch, mididuration );
+            } else {
+                if (this.startTieInterval[midipitch] && this.startTieInterval[midipitch][0]) {
+                    // ligadura do tipo slur - nota contida
+                    this.addWarning( 'Linha '+(elem.line+1)+': Nota sendo ignorada porque já está contida na ligadura!' );
+                    // apenas informa o inicio e o fim do elemento na playlist (sem som)
+                    this.addStart( this.timecount, null, elem, null );
+                    this.addEnd( this.timecount + mididuration, null, elem );
+                } else { // o básico - inicia e termina a nota
+                    var mp = {channel: this.channel, midipitch: midipitch, mididuration: mididuration};
+                    // elemento completo + som: inicia e termina no seu próprio tempo
+                    this.addStart( this.timecount, mp, elem, null );
+                    this.addEnd( this.timecount + mididuration, mp, elem );
+                }
+            }
+        }
+    } else {
+        // rest
+        this.addStart( this.timecount, null, elem, null );
+        this.addEnd( this.timecount + mididuration, null, elem );
+        
+    }
+
+    this.setTimeCount( mididuration );
+    
+    if (elem.endTriplet) {
+        this.multiplier = 1;
+    }
+};
+
+ABCXJS.midi.Parse.prototype.handleTie = function ( elem, note, midipitch, mididuration ) {
+    
+    if (note.tie && note.tie.id_end) { // termina
+        
+        var startInterval = this.startTieInterval[midipitch];
+        
+        if( note.tie.id_start ) { // termina ligadura e recomeça
+            //inclui o inicio do elemento (sem som na playlist), mas não o seu fim
+            this.addStart( this.timecount, null, elem, null );
+            // guarda junto com o elemento que iniciou a ligadura, também, este elemento
+            startInterval.otrElems.push( elem );
+            
+         }  else {
+            
+            // adiciona o ínicio e o fim do último elemento da ligadura, sem som
+            this.addStart( this.timecount, null, elem, null );
+            this.addEnd( this.timecount+mididuration, null, elem );
+            
+            if(!startInterval ) {
+               this.addWarning( 'Verifique as ligaduras: possivel ligacao de notas com alturas diferentes');
+               return;
+            }
+            
+            // para todos os elementos intermediários, adiciona o fim sem som
+            for(var i=0; i < startInterval.otrElems.length; i++ ) {
+                this.addEnd( this.timecount+mididuration, null, startInterval.otrElems[i] );
+            }
+            
+            // trata a duração total da ligadura
+            var duration = this.timecount-startInterval.startTime + mididuration;
+            // atualiza a informação de tempo do elemento inicial
+            startInterval.midipitch.mididuration = duration;
+            // insere o final do som e do elemento inicial da ligadura
+            this.addEnd( this.timecount+mididuration, startInterval.midipitch, startInterval.elem  );
+            
+            // zera a informação de ligadura para esta nota
+            this.startTieInterval[midipitch] = null;
+            
+        }
+    } else if (note.tie && note.tie.id_start ) { // só inicia
+        var mp = {channel:this.channel, midipitch:midipitch, mididuration: mididuration};
+        // informa o inicio do midi (e elemento) na playlist, mas nao o seu final 
+        this.addStart( this.timecount, mp, elem, null );
+        // registra dados do elemento que iniciou a ligadura 
+        this.startTieInterval[midipitch] = { elem:elem, startTime: this.timecount, midipitch:mp, otrElems:[] };
+    } 
+};
+
+ABCXJS.midi.Parse.prototype.clearTies = function() {
+    // esta função é usada em caso de ritornellos em que haja alguma ligadura em aberto.
+    var self = this;
+    self.startTieInterval.forEach( function ( obj, index ) {
+        if( ! obj ) return; 
+        self.addEnd( self.timecount, obj.midipitch, obj.elem ); 
+        self.startTieInterval[index] = null;
+    });
+};
+
+ABCXJS.midi.Parse.prototype.setTimeCount = function(dur) {
+    this.timecount += dur;
+    // corrigir erro de arredondamento
+    if( this.timecount%1.0 > 0.9999 ) {
+        this.timecount = Math.round( this.timecount );
+    }
+};
+
+ABCXJS.midi.Parse.prototype.checkMinNote = function(dur) {
+    if( dur < 0.99 ) {
+        dur = 1;
+        if( !this.alertedMin ) {
+            this.addWarning( 'Nota(s) com duração menor que o mínimo suportado: 1/' + this.wholeNote + '.');
+            this.alertedMin = true;
+        }    
+    }
+    
+    return dur;
+    
+};
+
+ABCXJS.midi.Parse.prototype.selectButtons = function(elem) {
+    
+    if (elem.startTriplet) {
+        this.multiplier = (elem.startTriplet.num === 2) ? 3 / 2 : (elem.startTriplet.num - 1) / elem.startTriplet.num;
+    }
+    
+    var mididuration = elem.duration * this.wholeNote * this.multiplier;
+    
+    if (elem.pitches) {
+        
+        var button;
+        var bassCounter = 0; // gato para resolver o problema de agora ter um ou dois botões de baixos
+        for (var i = 0; i < elem.pitches.length; i++) {
+            var tie = false;
+            if (elem.pitches[i].bass ) 
+                bassCounter++;
+            
+            if (elem.pitches[i].type === "rest") 
+                continue;
+            
+            if (elem.pitches[i].bass) {
+                if (elem.pitches[i].c === 'scripts.rarrow') {
+                    button = this.lastTabElem[i];
+                    elem.pitches[i].lastButton = (button? button.tabButton: 'x');
+                    tie = true;
+                } else {
+                    button = this.getBassButton(elem.bellows, elem.pitches[i].c, elem.pitches[i].variant);
+                    this.lastTabElem[i] = button;
+                }
+            } else {
+                if ( elem.pitches[i].c === 'scripts.rarrow') {
+                    button = this.lastTabElem[10+i-bassCounter];
+                    elem.pitches[i].lastButton = (button? button.tabButton: 'x');
+                    tie = true;
+                } else {
+                    button = this.getButton(elem.pitches[i].c);
+                    this.lastTabElem[10+i-bassCounter] = button;
+                }
+            }
+            if( ! tie ) {
+                this.addStart( this.timecount, null, null, { button: button, closing: (elem.bellows === '+'), duration: elem.duration } );
+            }    
+        }
+    }
+    
+    this.addStart( this.timecount, null, elem, null );
+    this.addEnd( this.timecount+mididuration, null, elem );
+    
+    this.setTimeCount( mididuration );
+    
+    if (elem.endTriplet) {
+        this.multiplier = 1;
+    }
+    
+};
+
+// Esta função é fundamental pois controla todo o fluxo de execução das notas do MIDI
+ABCXJS.midi.Parse.prototype.handleBar = function (elem) {
+    
+    this.countBar++; // para impedir loop infinito em caso de erro
+    if(this.countBar > 10000) {
+      this.addWarning('Impossível gerar o MIDI para esta partitura após 10.000 ciclos.') ;
+      return false;
+    }
+    
+    this.maxPass = elem.repeat;
+
+    if( elem.barNumber ) {
+        this.addBarNumber = elem.barNumber; 
+    }
+    
+    this.baraccidentals = [];
+    
+    if( this.lookingForCoda ) {
+        if( !elem.jumpInfo || elem.jumpInfo.type!=='coda' ) {
+            return true;
+        } else {
+            this.codaPoint = this.getMark(); 
+            this.lookingForCoda = false;
+            this.skipping = false;
+        }
+    }
+    
+    //implementa jump ao final do compasso
+    //if(this.nextBarJump ) {
+    //    this.next = this.nextBarJump;
+    //    delete this.nextBarJump;
+    //}
+
+    var pass = this.setPass();
+    
+    if(elem.type === "bar_left_repeat") {
+        this.restart = this.getMark();   
+    } 
+    
+    if (elem.type === "bar_right_repeat" || elem.type === "bar_dbl_repeat" ) {
+        if( pass < this.maxPass ) {
+            delete this.currEnding; // apaga qualquer ending em ação
+            this.clearTies(); // limpa ties
+            this.next = this.restart;// vai repetir
+            return true;
+        } else {
+            if( elem.type === "bar_dbl_repeat" ) {
+                // não vai repetir e, além de tudo, é um novo restart
+                this.restart = this.getMark();   
+            }
+        }
+    }
+    
+   // encerra uma chave de finalização
+    if (elem.endEnding) {
+        delete this.currEnding;
+    }
+
+   // inicia uma chave de finalização e faz o parse da quantidade repetições necessarias
+   // a chave de finalização imediatamente  após um bloco de repetição ter sido terminado será ignorada
+   // e enquanto o bloco estiver sendo repetido, também
+    if (elem.startEnding ) {
+        var a = elem.startEnding.split('-');
+        this.currEnding = {};
+        this.currEnding.min = parseInt(a[0]);
+        this.currEnding.max = a.length > 1 ? parseInt(a[1]) : this.currEnding.min;
+        this.currEnding.measuresInEnding = [];
+        this.maxPass = Math.max(this.currEnding.max, 2);
+        
+        // casa "2" não precisa de semantica
+        // rever isso: não precisa de semântica se a casa dois vier depois de um 
+        // simbolo de repetição, seja um ritornello ou qualquer outro.
+        // pergunta: casa 2 sem sinal de repetição faz sentido?
+        if(this.currEnding.min > 1) delete this.currEnding;  
+    }
+    
+    if(this.currEnding) {
+        // registra os compassos debaixo deste ending
+        this.currEnding.measuresInEnding.push( this.getMark() ); 
+    }
+    
+    this.skipping = (this.currEnding && ( pass < this.currEnding.min || pass > this.currEnding.max) ) || false;
+
+    if(elem.jumpPoint ) {
+        
+        switch (elem.jumpPoint.type) {
+            case "coda":     
+                this.codaPoint = this.getMark(); 
+                break;
+            case "segno":    
+                this.segnoPoint = this.getMark(); 
+                break;
+            case "fine":     
+                if(this.fineFlagged) {
+                    this.endTrack = true;
+                    return true;
+                } 
+                break;
+        }
+    }
+    
+    if(elem.jumpInfo ) {
+        switch (elem.jumpInfo.type) {
+            case "dacapo":   
+                if(!this.daCapoFlagged) {
+                    this.next = this.capo;
+                    this.daCapoFlagged = true;
+                    this.resetPass();
+                } 
+                break;
+            case "dasegno":
+                if( this.segnoPoint ){
+                    if(!this.daSegnoFlagged){
+                        this.next = this.segnoPoint;
+                        this.daSegnoFlagged = true;
+                        this.resetPass();
+                    }
+                } else {
+                    this.addWarning( 'Ignorando Da segno!');
+                }
+                break;
+            case "dcalfine": 
+                if(!this.daCapoFlagged) {
+                    this.next = this.capo;
+                    this.daCapoFlagged = true;
+                    this.fineFlagged = true;
+                    this.resetPass();
+                } 
+                break;
+            case "dsalfine": 
+                if( this.segnoPoint ){
+                    if(!this.daSegnoFlagged){
+                        this.next = this.segnoPoint;
+                        this.fineFlagged = true;
+                        this.daSegnoFlagged = true;
+                        this.resetPass();
+                    }
+                } else {
+                    this.addWarning( 'Ignorando Da segno al fine!');
+                }
+                break;
+            case "dacoda":
+                if( this.codaPoint ){
+                    if(pass >= this.maxPass || this.daCodaFlagged){
+                        this.next = this.codaPoint;
+                        this.daCodaFlagged = false;
+                        this.resetPass();
+                    }
+                } else if(this.daCodaFlagged) {
+                    this.lookingForCoda = true;
+                    this.skipping = true;
+                }
+                break;
+            case "dsalcoda": 
+                if( this.segnoPoint ){
+                    if(!this.daSegnoFlagged){
+                        this.next = this.segnoPoint;
+                        this.daSegnoFlagged = true;
+                        this.daCodaFlagged = true;
+                        this.resetPass();
+
+                    }
+                } else {
+                    this.addWarning( 'Ignorando "D.S. al coda"!');
+                }
+                break;
+            case "dcalcoda": 
+                if(!this.daCapoFlagged) {
+                    this.next = this.capo;
+                    this.daCapoFlagged = true;
+                    this.daCodaFlagged = true;
+                    this.resetPass();
+                } 
+                break;
+        }
+    }
+    return true;
+};
+
+ABCXJS.midi.Parse.prototype.getParsedElement = function(time) {
+    if( ! this.parsedElements[time] ) {
+        this.parsedElements[time] = {
+            start:{pitches:[], abcelems:[], buttons:[], barNumber: null}
+            ,end:{pitches:[], abcelems:[]}
+        };
+    }
+    return this.parsedElements[time];
+};
+
+ABCXJS.midi.Parse.prototype.addStart = function( time, midipitch, abcelem, button ) {
+    var delay = (time%1.0);
+    time -= delay;
+    
+    var pE = this.getParsedElement(time);
+    
+    if( abcelem ) {
+        pE.start.abcelems.push({abcelem:abcelem,channel:this.channel, delay:delay});
+        
+        // a ideia é: a primeira voz que chegar com o barNumber 1, será a única considera para numerar os compassos
+        // assim depois que a var addingBarNumbers for inicializada, somente nrs. de compasso restantes daquela voz serão incluidos
+        if( this.addBarNumber && ( ( this.addBarNumber === 1 && this.addingBarNumbers < 0 ) || this.addingBarNumbers === ((this.staff+1)*10 + this.voice ) ) ) {
+            pE.start.barNumber = this.addBarNumber;
+            this.addingBarNumbers = ((this.staff+1)*10 + this.voice );
+            delete this.addBarNumber;
+        }
+    }    
+    if( midipitch ) {
+        midipitch.clef = this.getStaff().clef.type;
+        pE.start.pitches.push( {midipitch: midipitch, delay:delay} );
+    }
+    if( button ) {
+        pE.start.buttons.push({button:button, abcelem:abcelem, delay:delay});
+    }
+};
+
+ABCXJS.midi.Parse.prototype.addEnd = function( time, midipitch, abcelem/*, button*/ ) {
+    var delay = (time%1);
+    time -= delay;
+    var pE = this.getParsedElement(time);
+    if( abcelem   ) pE.end.abcelems.push({abcelem:abcelem, delay:delay});
+    if( midipitch ) pE.end.pitches.push({midipitch: midipitch, delay:delay});
+};
+
+ABCXJS.midi.Parse.prototype.getMark = function() {
+    return {line: this.line, staff: this.staff,
+        voice: this.voice, pos: this.pos};
+};
+
+ABCXJS.midi.Parse.prototype.getMarkString = function(mark) {
+    mark = mark || this;
+    return "line" + mark.line + "staff" + mark.staff +
+           "voice" + mark.voice + "pos" + mark.pos;
+};
+
+ABCXJS.midi.Parse.prototype.getMarkValue = function(mark) {
+    mark = mark || this;
+    return (mark.line+1) *1e6 + mark.staff *1e4 + mark.voice *1e2 + mark.pos;
+};
+
+ABCXJS.midi.Parse.prototype.setPass = function(mark) {
+    var compasso = this.getMarkValue(mark);
+    //registra e retorna o número de vezes que já passou por compasso.
+    //a cada (salto D.C., D.S., dacoda) deve-se zerar a contagem
+    if( this.pass[compasso]){
+        this.pass[compasso] = this.pass[compasso]+1;
+    } else {
+        this.pass[compasso] = 1;
+    }
+    return this.pass[compasso];
+};
+
+ABCXJS.midi.Parse.prototype.resetPass = function() {
+    //limpa contadores de passagem, mas caso em ending, preserva a contagem de passagem dos compassos debaixo do ending corrente  
+    this.pass = [];
+    var self = this;
+    if( this.currEnding ) {
+        this.currEnding.measuresInEnding.forEach( function( item, index ) {
+            self.setPass(item);
+        });
+    }
+    //this.currEnding && this.setPass(); 
+};
+
+ABCXJS.midi.Parse.prototype.hasTablature = function() {
+    return this.abctune.hasTablature;
+};
+
+ABCXJS.midi.Parse.prototype.getLine = function() {
+    return this.abctune.lines[this.line];
+};
+
+ABCXJS.midi.Parse.prototype.getStaff = function() {
+    var l = this.getLine();
+    if ( !l.staffs ) return undefined;
+    return l.staffs[this.staff];
+};
+
+ABCXJS.midi.Parse.prototype.getVoice = function() {
+    return this.getStaff().voices[this.voice];
+};
+
+ABCXJS.midi.Parse.prototype.getElem = function() {
+    return this.getVoice()[this.pos];
+};
+
+ABCXJS.midi.Parse.prototype.startTrack = function() {
+    this.channel ++;
+    this.timecount = 0;
+    this.playlistpos = 0;
+    this.maxPass = 2;
+    this.countBar = 0;
+    
+    this.next = null;
+    
+    this.pass = [];
+    
+    this.endTrack = false;    
+    
+    //delete this.nextBarJump;
+    delete this.codaFlagged;
+    delete this.fineFlagged;
+    delete this.daSegnoFlagged;
+    delete this.daCapoFlagged;
+    delete this.capo;
+    delete this.daCodaFlagged;
+    delete this.lookingForCoda;
+    delete this.segnoPoint;
+    delete this.codaPoint;
+};
+
+ABCXJS.midi.Parse.prototype.getAccOffset = function(txtAcc) {
+// a partir do nome do acidente, retorna o offset no modelo cromatico
+    var ret = 0;
+
+    switch (txtAcc) {
+        case 'accidentals.dblsharp':
+        case 'dblsharp':
+            ret = 2;
+            break;
+        case 'accidentals.sharp':
+        case 'sharp':
+            ret = 1;
+            break;
+        case 'accidentals.nat':
+        case 'nat':
+        case 'natural':
+            ret = 0;
+            break;
+        case 'accidentals.flat':
+        case 'flat':
+            ret = -1;
+            break;
+        case 'accidentals.dblflat':
+        case 'dblflat':
+            ret = -2;
+            break;
+    }
+    return ret;
+};
+
+ABCXJS.midi.Parse.prototype.setKeySignature = function(elem) {
+    this.accidentals = [0, 0, 0, 0, 0, 0, 0];
+    if (this.abctune.formatting.bagpipes) {
+        elem.accidentals = [{acc: 'natural', note: 'g'}, {acc: 'sharp', note: 'f'}, {acc: 'sharp', note: 'c'}];
+    }
+    if (!elem.accidentals)  return;
+    
+    window.ABCXJS.parse.each(elem.accidentals, function(acc) {
+        var d = (acc.acc === "sharp") ? 1 : (acc.acc === "natural") ? 0 : -1;
+        var lowercase = acc.note.toLowerCase();
+        var note = this.extractNote(lowercase.charCodeAt(0) - 'c'.charCodeAt(0));
+        this.accidentals[note] += d;
+    }, this);
+
+};
+
+ABCXJS.midi.Parse.prototype.extractNote = function(pitch) {
+    pitch = pitch % 7;
+    return (pitch < 0)? pitch+7 : pitch;
+};
+
+ABCXJS.midi.Parse.prototype.extractOctave = function(pitch) {
+    return Math.floor(pitch / 7);
+};
+
+ABCXJS.midi.Parse.prototype.setSelection = function(tabElem) {
+    
+    if(! tabElem.bellows) return;
+    
+    for( var p=0; p < tabElem.pitches.length; p ++ ) {
+        
+        var pitch = tabElem.pitches[p];
+        
+        if( pitch.type === 'rest' ) continue;
+        
+        var button;
+        var tabButton = pitch.c === 'scripts.rarrow'? pitch.lastButton : pitch.c;
+        
+        
+        //quando o baixo não está "in Tie", label do botão é uma letra (G, g, etc)
+        //de outra forma o label é número do botão (1, 1', 1'', etc)
+        if(pitch.bass && pitch.c !== 'scripts.rarrow')
+            // quando label é uma letra
+            button = this.getBassButton(tabElem.bellows, tabButton, pitch.variant);
+        else
+            // quando label é número do botão
+            button = this.getButton(tabButton);
+        
+        if(button) {
+            if(tabElem.bellows === '-') {
+                button.setOpen();
+            } else {
+                button.setClose();
+            }
+        }
+    }
+};
+
+ABCXJS.midi.Parse.prototype.getBassButton = function( bellows, b, variant ) {
+    if( b === 'x' ||  !this.midiTune.keyboard ) return null;
+    var kb = this.midiTune.keyboard;
+    
+    // há uma pequena conversão: na tablatura registramos os acordes menores com "m"
+    // no mapeamento da gaita, escrevemos a1:m, por exemplo.
+    // então trocar "m" por ":m"
+    var nota = kb.parseNote(b.replace( "m", ":m" ), true );
+    nota.variant = variant;
+    
+    for( var j = kb.keyMap.length; j > kb.keyMap.length - 2; j-- ) {
+      for( var i = 0; i < kb.keyMap[j-1].length; i++ ) {
+          var tecla = kb.keyMap[j-1][i];
+          if(bellows === '+') {
+            if(tecla.closeNote.key === nota.key  && nota.isMinor === tecla.closeNote.isMinor && nota.variant === tecla.closeNote.variant ) return tecla;
+          } else {  
+            if(tecla.openNote.key === nota.key && nota.isMinor === tecla.openNote.isMinor && nota.variant === tecla.openNote.variant ) return tecla;
+          }
+      }   
+    }
+    return null;
+};
+
+ABCXJS.midi.Parse.prototype.getButton = function( b ) {
+    if( b === 'x' || !this.midiTune.keyboard ) return null;
+    var kb = this.midiTune.keyboard;
+    var p = parseInt( isNaN(b.substr(0,2)) || b.length === 1 ? 1 : 2 );
+    var button = b.substr(0, p) -1;
+    var row = b.length - p;
+    if(kb.keyMap[row][button]) 
+        return kb.keyMap[row][button];
+    return null;
+};
+/* 
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+if (!window.ABCXJS)
+    window.ABCXJS = {};
+
+if (!window.ABCXJS.midi) 
+    window.ABCXJS.midi = {}; 
+
+ABCXJS.midi.Player = function( options ) {
+    
+    this.reset(options);
+   
+    this.playableClefs = "TB"; // indica que baixo (B) e melodia (T) serao executadas.
+    this.ticksPerInterval = 1;
+    
+    this.callbackOnStart = null;
+    this.callbackOnEnd = null;
+    this.callbackOnPlay = null;
+    this.callbackOnScroll = null;
+    this.callbackOnChangeBar = null;
+    
+};
+
+ABCXJS.midi.Player.prototype.setPlayableClefs = function(letters) {
+    this.playableClefs = letters;
+};
+
+ABCXJS.midi.Player.prototype.playClef = function(letter) {
+    return this.playableClefs.indexOf( letter.toUpperCase() )>=0;
+};
+
+ABCXJS.midi.Player.prototype.reset = function(options) {
+    
+    options = options || {};
+    
+    this.i = 0;
+    this.tempo = 250;
+    this.playing = false;
+    this.playlist = [];
+    this.playInterval = null;
+    this.currentAndamento = 1;
+    
+    this.onError = null;
+    this.warnings = [];
+    
+    this.printer = {};
+    this.currentTime = 0;
+    this.currentMeasure = 1;
+    
+    this.currAbsElem = null;   
+};
+
+ABCXJS.midi.Player.prototype.addWarning = function(str) {
+    this.warnings.push(str);
+};
+
+ABCXJS.midi.Player.prototype.getWarnings = function() {
+    return this.warnings.length>0?this.warnings:null;    
+};
+
+ABCXJS.midi.Player.prototype.defineCallbackOnStart = function( cb ) {
+    this.callbackOnStart = cb;
+};
+ABCXJS.midi.Player.prototype.defineCallbackOnEnd = function( cb ) {
+    this.callbackOnEnd = cb;
+};
+ABCXJS.midi.Player.prototype.defineCallbackOnPlay = function( cb ) {
+    this.callbackOnPlay = cb;
+};
+ABCXJS.midi.Player.prototype.defineCallbackOnScroll = function( cb ) {
+    this.callbackOnScroll = cb;
+};
+ABCXJS.midi.Player.prototype.defineCallbackOnChangeBar = function( cb ) {
+    this.callbackOnChangeBar = cb;
+};
+
+ABCXJS.midi.Player.prototype.setAndamento = function(value) {
+    var that = this;
+    // aceita valores entre 10% e 200% do valor original
+    if(value < 10 ) value = 10;
+    if(value > 200 ) value = 200;
+    
+    if( this.playing ) {
+        // newAndamento funciona como um flag para a rotina que 
+        this.newAndamento = value/100.0; 
+    } else {
+        try{
+            that.currentAndamento = value/100.0; 
+            that.currentTime = that.playlist[that.i].time*(1/that.currentAndamento);
+        } catch(e){
+        };
+    }
+};
+
+ABCXJS.midi.Player.prototype.stopPlay = function() {
+    this.i = 0;
+    this.currentTime = 0;
+    this.pausePlay();
+    if( this.callbackOnEnd ) this.callbackOnEnd(this);
+    return this.getWarnings();
+};
+
+ABCXJS.midi.Player.prototype.pausePlay = function(nonStop) {
+    if(!(false||nonStop)) MIDI.stopAllNotes();
+    window.clearInterval(this.playInterval);
+    this.playing = false;
+};
+
+ABCXJS.midi.Player.prototype.doResume = function(nonStop) {
+    MIDI.stopAllNotes();
+    // to be compliant with autoplay-policy-changes #webaudio
+    MIDI.resume();
+    // não pergunte pq: no IOS tenho que tocar uma nota para garantir que não começe com pausa.
+    MIDI.noteOn(0, 40, 1, 0);
+    MIDI.noteOff(0, 40, 0.01);
+    MIDI.noteOn(1, 40, 1, 0);
+    MIDI.noteOff(1, 40, 0.01);
+    MIDI.noteOn(2, 40, 1, 0);
+    MIDI.noteOff(2, 40, 0.01);
+};
+
+ABCXJS.midi.Player.prototype.startPlay = function(what) {
+
+    if(this.playing || !what ) return false;
+    
+    if(this.currentTime === 0 ) {
+        this.doResume();
+    }
+     
+    this.playlist = what.playlist;
+    this.tempo    = what.tempo;
+    this.printer  = what.printer;
+    this.type     = null; // definido somente para o modo didatico
+
+    this.playing = true;
+    this.onError = null;
+  
+    var self = this;
+    
+    //this.doPlay();
+    this.playInterval = window.setInterval(function() { self.doPlay(); }, this.tempo);
+    
+    return true;
+};
+
+ABCXJS.midi.Player.prototype.clearDidacticPlay = function() {
+    this.i = 0;
+    this.currentTime = 0;
+    this.currentMeasure = 1;
+    this.pausePlay(true);
+};
+
+ABCXJS.midi.Player.prototype.startDidacticPlay = function(what, type, value, valueF ) {
+
+    if(this.playing) return false;
+
+    if(this.currentTime === 0 ) {
+        this.doResume();
+    }
+     
+    this.playlist = what.playlist;
+    this.tempo    = what.tempo;
+    this.printer  = what.printer;
+    this.measures = what.measures;
+    this.type     = type;
+    
+    this.playing  = true;
+    this.onError  = null;
+    
+    var criteria = null;
+    var that = this;
+    
+    switch( type ) {
+        case 'note': // step-by-step
+            what.printer.clearSelection();
+            what.keyboard.clear(true);
+            if(!that.playlist[that.i]) return false;
+            that.initTime = that.playlist[that.i].time;
+            criteria = function () { 
+                return that.initTime === that.playlist[that.i].time;
+            };
+            break;
+        case 'goto':   //goto-measure or goto-interval
+        case 'repeat': // repeat-measure or repeat-interval
+            that.currentMeasure = parseInt(value)? parseInt(value): that.currentMeasure;
+            that.endMeasure = parseInt(valueF)? parseInt(valueF): that.currentMeasure;
+            that.initMeasure = that.currentMeasure;
+            if(that.measures[that.currentMeasure] !== undefined ) {
+                //flavio - era assim that.i = that.currentMeasure === 1 ? 0 : that.measures[that.currentMeasure];
+                that.i = that.measures[that.currentMeasure];
+                that.currentTime = that.playlist[that.i].time*(1/that.currentAndamento);
+                criteria = function () { 
+                    return (that.initMeasure <= that.currentMeasure) && (that.currentMeasure <= that.endMeasure);
+                };
+            } else {
+               waterbug.log('goto-measure or repeat-measure:  measure \''+value+'\' not found!');
+               this.pausePlay(true);
+               return;
+            }   
+            break;
+        case 'measure': // play-measure
+            that.currentMeasure = parseInt(value)? parseInt(value): that.currentMeasure;
+            that.initMeasure = that.currentMeasure;
+            if(that.measures[that.currentMeasure] !== undefined ) {
+                //flavio - era assim that.i = that.currentMeasure === 1 ? 0 : that.measures[that.currentMeasure];
+                that.i = that.measures[that.currentMeasure];
+                that.currentTime = that.playlist[that.i].time*(1/that.currentAndamento);
+                criteria = function () { 
+                    return that.initMeasure === that.currentMeasure;
+                };
+            } else {
+               waterbug.log('play-measure: measure \''+value+'\' not found!');
+               this.pausePlay(true);
+               return false;
+            }   
+            break;
+    }
+  
+    this.playInterval = window.setInterval(function() { that.doDidacticPlay(criteria); }, this.tempo);
+    return true;
+};
+
+ABCXJS.midi.Player.prototype.handleBar = function() {
+    if(this.playlist[this.i] && this.playlist[this.i].barNumber) {
+        this.currentMeasure = this.playlist[this.i].barNumber;
+        if( this.callbackOnChangeBar ) {
+            this.callbackOnChangeBar(this);
+        }
+    }    
+};
+
+ABCXJS.midi.Player.prototype.doPlay = function() {
+    
+    if( this.callbackOnPlay ) {
+        this.callbackOnPlay(this);
+    }
+    
+    while (!this.onError && this.playlist[this.i] &&
+           (this.playlist[this.i].time*(1/this.currentAndamento)) <= this.currentTime) {
+        this.executa(this.playlist[this.i]);
+        this.i++;
+        this.handleBar();
+    }
+    if (!this.onError && this.playlist[this.i]) {
+        this.currentTime += this.ticksPerInterval;
+    } else {
+        this.stopPlay();
+    }
+};
+
+ABCXJS.midi.Player.prototype.doDidacticPlay = function(criteria) {
+    var that = this;
+    
+    if( this.callbackOnPlay ) {
+        this.callbackOnPlay(this);
+    }
+
+    while (!this.onError && this.playlist[this.i] && criteria() &&
+    (this.playlist[this.i].time*(1/this.currentAndamento)) < this.currentTime ) {
+        this.executa(this.playlist[this.i]);
+        this.i++;
+        this.handleBar();
+
+        if( this.type == 'repeat' ) { // loop until external event
+            if(!this.onError && !( this.playlist[this.i] && criteria() ) ) {
+                this.currentMeasure = this.initMeasure;
+                this.i = this.measures[this.currentMeasure];
+                this.currentTime = this.playlist[this.i].time*(1/this.currentAndamento);
+                this.currentTime += this.ticksPerInterval;
+            }
+        }
+    }
+
+    if(this.onError) {
+        this.stopPlay();
+    } else if( this.playlist[this.i] && criteria() ) {
+        this.currentTime += this.ticksPerInterval;
+    } else {
+        this.pausePlay(true);
+    }
+};
+
+ABCXJS.midi.Player.prototype.executa = function(pl) {
+    
+    var self = this;
+    var loudness = 128;
+    var delay = 0;
+    var aqui;
+
+    try {
+        
+        if( this.newAndamento ) {
+            try{
+                this.currentAndamento = this.newAndamento; 
+                this.currentTime = this.playlist[this.i].time*(1/this.currentAndamento);
+                delete this.newAndamento;
+            } catch(e){
+            };
+        }
+        
+        if( pl.start ) {
+            
+            pl.item.pitches.forEach( function( elem ) {
+                
+                delay = self.calcTempo( elem.delay );
+                
+                if(  self.playClef( elem.midipitch.clef.charAt(0) ) ) {
+                    MIDI.noteOn(elem.midipitch.channel, elem.midipitch.midipitch, loudness, delay);
+                    var k = 2.38, t = k, resto = self.calcTempo( elem.midipitch.mididuration ) - k;
+
+                    // a nota midi dura k segundos (k), então notas mais longas são reiniciadas quantas vezes forem necessárias
+                    while( resto > 0 ) {
+                        MIDI.noteOff(elem.midipitch.channel, elem.midipitch.midipitch,  t+delay);
+                        MIDI.noteOn(elem.midipitch.channel, elem.midipitch.midipitch, loudness, t+delay);
+                        t += k;
+                        resto -= k;
+                    }
+                }
+                
+                if( !debug && elem.button && elem.button.button && elem.button.button.SVG && elem.button.button.SVG.button !==null) {
+                    aqui=1;
+
+                    if(elem.button.closing) {
+                        elem.button.button.setClose(delay);
+                    }else{
+                        elem.button.button.setOpen(delay);
+                    }
+                    aqui=2;
+                    if( self.type !== 'note' ) {
+                        
+                        var andamento = (1/self.currentAndamento);
+                        //limpa o botão uma fração de tempo antes do fim da nota para dar ideia visual de botão pressionado/liberado antes da proxima nota
+                        var delta = Math.max(elem.midipitch.mididuration * 0.1, 0.5);
+                        
+                        elem.button.button.clear( self.calcTempo( (elem.midipitch.mididuration-delta)*andamento ) + delay );
+                    }    
+                    aqui=3;
+               }
+                
+            });
+            
+            var ja = '.'; // controla quais elementos absolutos foram marcados para highlight no mesmo item da playlist - evita dupla seleção do mesmo item
+            pl.item.abcelems.forEach( function( elem ) {
+                delay = self.calcTempo( elem.delay );
+                aqui=4;
+                self.currAbsElem = elem.abcelem.parent;
+                if( self.callbackOnScroll ) {
+                    self.callbackOnScroll(self);
+                }
+                aqui=5;
+                if( ja.indexOf('.'+self.currAbsElem.gid+'.') < 0 ) {
+                    // absElem ainda não sofreu highlight
+                    ja += self.currAbsElem.gid+'.';
+                    self.highlight(self.currAbsElem , true, delay);
+                }
+            });
+            
+        } else {
+            pl.item.pitches.forEach( function( elem ) {
+                delay = self.calcTempo( elem.delay );
+                MIDI.noteOff(elem.midipitch.channel, elem.midipitch.midipitch, delay);
+            });
+            var ja = '.'; // controla quais elementos absolutos foram marcados para unhighlight no mesmo item da playlist - evita dupla seleção do mesmo item
+            pl.item.abcelems.forEach( function( elem ) {
+                delay = self.calcTempo( elem.delay );
+                if( ja.indexOf('.'+elem.abcelem.parent+'.') < 0 ) {
+                    // absElem ainda não sofreu unhighlight
+                    ja += elem.abcelem.parent.gid+'.';
+                    self.highlight(elem.abcelem.parent, false, delay);
+                }
+            });
+        }
+    } catch( err ) {
+        this.onError = { erro: err.message, idx: this.i, item: pl };
+        this.addWarning( 'PlayList['+this.onError.idx+'] - Erro: ' + this.onError.erro + '. DebugPoint: ' + aqui );
+    }
+};
+
+ABCXJS.midi.Player.prototype.calcTempo = function( val ) {
+  return  val * this.tempo / 1000;   
+};
+
+ABCXJS.midi.Player.prototype.highlight = function( abselem, select, delay ) {
+    if(debug || !this.printer ) return;
+    var that = this;
+    
+    if(delay) {
+        window.setTimeout(function(){ that.highlight(abselem, select); }, delay*1000);
+        return;
+    }   
+    
+    if(select) {
+       that.printer.notifySelect(abselem);
+    } else {
+       that.printer.notifyClear(abselem);
+    }
+};
+
+
+ABCXJS.midi.Player.prototype.getTime = function() {
+    var pad =  function(n, width, z) {
+        z = z || '0';
+        n = n + '';
+        return n.length >= width ? n : new Array(width - n.length + 1).join(z) + n;
+    };
+    
+    var time = 0;
+    
+    if( this.playlist && this.playlist[this.i] ) {
+        time = this.playlist[this.i].time*this.tempo*(1/this.currentAndamento);
+    } else {
+        this.addWarning( 'PlayList['+this.i+'] não existe. DebugPoint: midi.Player.getTime' );
+    }
+    
+    var secs  = Math.floor(time/1000);
+    var cs    = Math.floor((time - secs*1000)/10);
+    var mins  = Math.floor(secs/60);
+    var secs  = secs - mins*60;
+    var cTimeMiS  = pad(mins,2) + ':' + pad(secs,2) ;
+    var cTimeMiScs  = pad(mins,2) + ':' + pad(secs,2) + '.' + pad(cs,2);
+    return { cTime: cTimeMiS, cTimeMiScs: cTimeMiScs, time: time };
+};
+
+/*!
+ * perfect-scrollbar v1.3.0
+ * (c) 2017 Hyunje Jun
+ * @license MIT
+ */
+(function (global, factory) {
+	typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
+	typeof define === 'function' && define.amd ? define(factory) :
+	(global.PerfectScrollbar = factory());
+}(this, (function () { 'use strict';
+
+function get(element) {
+  return getComputedStyle(element);
+}
+
+function set(element, obj) {
+  for (var key in obj) {
+    var val = obj[key];
+    if (typeof val === 'number') {
+      val = val + "px";
+    }
+    element.style[key] = val;
+  }
+  return element;
+}
+
+function div(className) {
+  var div = document.createElement('div');
+  div.className = className;
+  return div;
+}
+
+var elMatches =
+  typeof Element !== 'undefined' &&
+  (Element.prototype.matches ||
+    Element.prototype.webkitMatchesSelector ||
+    Element.prototype.msMatchesSelector);
+
+function matches(element, query) {
+  if (!elMatches) {
+    throw new Error('No element matching method supported');
+  }
+
+  return elMatches.call(element, query);
+}
+
+function remove(element) {
+  if (element.remove) {
+    element.remove();
+  } else {
+    if (element.parentNode) {
+      element.parentNode.removeChild(element);
+    }
+  }
+}
+
+function queryChildren(element, selector) {
+  return Array.prototype.filter.call(element.children, function (child) { return matches(child, selector); }
+  );
+}
+
+var cls = {
+  main: 'ps',
+  element: {
+    thumb: function (x) { return ("ps__thumb-" + x); },
+    rail: function (x) { return ("ps__rail-" + x); },
+    consuming: 'ps__child--consume'
+  },
+  state: {
+    focus: 'ps--focus',
+    active: function (x) { return ("ps--active-" + x); },
+    scrolling: function (x) { return ("ps--scrolling-" + x); }
+  }
+};
+
+/*
+ * Helper methods
+ */
+var scrollingClassTimeout = { x: null, y: null };
+
+function addScrollingClass(i, x) {
+  var classList = i.element.classList;
+  var className = cls.state.scrolling(x);
+
+  if (classList.contains(className)) {
+    clearTimeout(scrollingClassTimeout[x]);
+  } else {
+    classList.add(className);
+  }
+}
+
+function removeScrollingClass(i, x) {
+  scrollingClassTimeout[x] = setTimeout(
+    function () { return i.isAlive && i.element.classList.remove(cls.state.scrolling(x)); },
+    i.settings.scrollingThreshold
+  );
+}
+
+function setScrollingClassInstantly(i, x) {
+  addScrollingClass(i, x);
+  removeScrollingClass(i, x);
+}
+
+var EventElement = function EventElement(element) {
+  this.element = element;
+  this.handlers = {};
+};
+
+var prototypeAccessors = { isEmpty: { configurable: true } };
+
+EventElement.prototype.bind = function bind (eventName, handler) {
+  if (typeof this.handlers[eventName] === 'undefined') {
+    this.handlers[eventName] = [];
+  }
+  this.handlers[eventName].push(handler);
+  if(handler === 'touch' || handler === 'touchstart' )
+    this.element.addEventListener(eventName, handler, {passive:true});
+  else
+    this.element.addEventListener(eventName, handler, {passive:false});
+};
+
+EventElement.prototype.unbind = function unbind (eventName, target) {
+    var this$1 = this;
+
+  this.handlers[eventName] = this.handlers[eventName].filter(function (handler) {
+    if (target && handler !== target) {
+      return true;
+    }
+    this$1.element.removeEventListener(eventName, handler, false);
+    return false;
+  });
+};
+
+EventElement.prototype.unbindAll = function unbindAll () {
+    var this$1 = this;
+
+  for (var name in this$1.handlers) {
+    this$1.unbind(name);
+  }
+};
+
+prototypeAccessors.isEmpty.get = function () {
+    var this$1 = this;
+
+  return Object.keys(this.handlers).every(
+    function (key) { return this$1.handlers[key].length === 0; }
+  );
+};
+
+Object.defineProperties( EventElement.prototype, prototypeAccessors );
+
+var EventManager = function EventManager() {
+  this.eventElements = [];
+};
+
+EventManager.prototype.eventElement = function eventElement (element) {
+  var ee = this.eventElements.filter(function (ee) { return ee.element === element; })[0];
+  if (!ee) {
+    ee = new EventElement(element);
+    this.eventElements.push(ee);
+  }
+  return ee;
+};
+
+EventManager.prototype.bind = function bind (element, eventName, handler) {
+  this.eventElement(element).bind(eventName, handler);
+};
+
+EventManager.prototype.unbind = function unbind (element, eventName, handler) {
+  var ee = this.eventElement(element);
+  ee.unbind(eventName, handler);
+
+  if (ee.isEmpty) {
+    // remove
+    this.eventElements.splice(this.eventElements.indexOf(ee), 1);
+  }
+};
+
+EventManager.prototype.unbindAll = function unbindAll () {
+  this.eventElements.forEach(function (e) { return e.unbindAll(); });
+  this.eventElements = [];
+};
+
+EventManager.prototype.once = function once (element, eventName, handler) {
+  var ee = this.eventElement(element);
+  var onceHandler = function (evt) {
+    ee.unbind(eventName, onceHandler);
+    handler(evt);
+  };
+  ee.bind(eventName, onceHandler);
+};
+
+function createEvent(name) {
+  if (typeof window.CustomEvent === 'function') {
+    return new CustomEvent(name);
+  } else {
+    var evt = document.createEvent('CustomEvent');
+    evt.initCustomEvent(name, false, false, undefined);
+    return evt;
+  }
+}
+
+var processScrollDiff = function(
+  i,
+  axis,
+  diff,
+  useScrollingClass,
+  forceFireReachEvent
+) {
+  if ( useScrollingClass === void 0 ) useScrollingClass = true;
+  if ( forceFireReachEvent === void 0 ) forceFireReachEvent = false;
+
+  var fields;
+  if (axis === 'top') {
+    fields = [
+      'contentHeight',
+      'containerHeight',
+      'scrollTop',
+      'y',
+      'up',
+      'down' ];
+  } else if (axis === 'left') {
+    fields = [
+      'contentWidth',
+      'containerWidth',
+      'scrollLeft',
+      'x',
+      'left',
+      'right' ];
+  } else {
+    throw new Error('A proper axis should be provided');
+  }
+
+  processScrollDiff$1(i, diff, fields, useScrollingClass, forceFireReachEvent);
+};
+
+function processScrollDiff$1(
+  i,
+  diff,
+  ref,
+  useScrollingClass,
+  forceFireReachEvent
+) {
+  var contentHeight = ref[0];
+  var containerHeight = ref[1];
+  var scrollTop = ref[2];
+  var y = ref[3];
+  var up = ref[4];
+  var down = ref[5];
+  if ( useScrollingClass === void 0 ) useScrollingClass = true;
+  if ( forceFireReachEvent === void 0 ) forceFireReachEvent = false;
+
+  var element = i.element;
+
+  // reset reach
+  i.reach[y] = null;
+
+  // 1 for subpixel rounding
+  if (element[scrollTop] < 1) {
+    i.reach[y] = 'start';
+  }
+
+  // 1 for subpixel rounding
+  if (element[scrollTop] > i[contentHeight] - i[containerHeight] - 1) {
+    i.reach[y] = 'end';
+  }
+
+  if (diff) {
+    element.dispatchEvent(createEvent(("ps-scroll-" + y)));
+
+    if (diff < 0) {
+      element.dispatchEvent(createEvent(("ps-scroll-" + up)));
+    } else if (diff > 0) {
+      element.dispatchEvent(createEvent(("ps-scroll-" + down)));
+    }
+
+    if (useScrollingClass) {
+      setScrollingClassInstantly(i, y);
+    }
+  }
+
+  if (i.reach[y] && (diff || forceFireReachEvent)) {
+    element.dispatchEvent(createEvent(("ps-" + y + "-reach-" + (i.reach[y]))));
+  }
+}
+
+function toInt(x) {
+  return parseInt(x, 10) || 0;
+}
+
+function isEditable(el) {
+  return (
+    matches(el, 'input,[contenteditable]') ||
+    matches(el, 'select,[contenteditable]') ||
+    matches(el, 'textarea,[contenteditable]') ||
+    matches(el, 'button,[contenteditable]')
+  );
+}
+
+function outerWidth(element) {
+  var styles = get(element);
+  return (
+    toInt(styles.width) +
+    toInt(styles.paddingLeft) +
+    toInt(styles.paddingRight) +
+    toInt(styles.borderLeftWidth) +
+    toInt(styles.borderRightWidth)
+  );
+}
+
+var env = {
+  isWebKit:
+    typeof document !== 'undefined' &&
+    'WebkitAppearance' in document.documentElement.style,
+  supportsTouch:
+    typeof window !== 'undefined' &&
+    ('ontouchstart' in window ||
+      (window.DocumentTouch && document instanceof window.DocumentTouch)),
+  supportsIePointer:
+    typeof navigator !== 'undefined' && navigator.msMaxTouchPoints,
+  isChrome:
+    typeof navigator !== 'undefined' &&
+    /Chrome/i.test(navigator && navigator.userAgent)
+};
+
+var updateGeometry = function(i) {
+  var element = i.element;
+
+  i.containerWidth = element.clientWidth;
+  i.containerHeight = element.clientHeight;
+  i.contentWidth = element.scrollWidth;
+  i.contentHeight = element.scrollHeight;
+
+  if (!element.contains(i.scrollbarXRail)) {
+    // clean up and append
+    queryChildren(element, cls.element.rail('x')).forEach(function (el) { return remove(el); }
+    );
+    element.appendChild(i.scrollbarXRail);
+  }
+  if (!element.contains(i.scrollbarYRail)) {
+    // clean up and append
+    queryChildren(element, cls.element.rail('y')).forEach(function (el) { return remove(el); }
+    );
+    element.appendChild(i.scrollbarYRail);
+  }
+
+  if (
+    !i.settings.suppressScrollX &&
+    i.containerWidth + i.settings.scrollXMarginOffset < i.contentWidth
+  ) {
+    i.scrollbarXActive = true;
+    i.railXWidth = i.containerWidth - i.railXMarginWidth;
+    i.railXRatio = i.containerWidth / i.railXWidth;
+    i.scrollbarXWidth = getThumbSize(
+      i,
+      toInt(i.railXWidth * i.containerWidth / i.contentWidth)
+    );
+    i.scrollbarXLeft = toInt(
+      (i.negativeScrollAdjustment + element.scrollLeft) *
+        (i.railXWidth - i.scrollbarXWidth) /
+        (i.contentWidth - i.containerWidth)
+    );
+  } else {
+    i.scrollbarXActive = false;
+  }
+
+  if (
+    !i.settings.suppressScrollY &&
+    i.containerHeight + i.settings.scrollYMarginOffset < i.contentHeight
+  ) {
+    i.scrollbarYActive = true;
+    i.railYHeight = i.containerHeight - i.railYMarginHeight;
+    i.railYRatio = i.containerHeight / i.railYHeight;
+    i.scrollbarYHeight = getThumbSize(
+      i,
+      toInt(i.railYHeight * i.containerHeight / i.contentHeight)
+    );
+    i.scrollbarYTop = toInt(
+      element.scrollTop *
+        (i.railYHeight - i.scrollbarYHeight) /
+        (i.contentHeight - i.containerHeight)
+    );
+  } else {
+    i.scrollbarYActive = false;
+  }
+
+  if (i.scrollbarXLeft >= i.railXWidth - i.scrollbarXWidth) {
+    i.scrollbarXLeft = i.railXWidth - i.scrollbarXWidth;
+  }
+  if (i.scrollbarYTop >= i.railYHeight - i.scrollbarYHeight) {
+    i.scrollbarYTop = i.railYHeight - i.scrollbarYHeight;
+  }
+
+  updateCss(element, i);
+
+  if (i.scrollbarXActive) {
+    element.classList.add(cls.state.active('x'));
+  } else {
+    element.classList.remove(cls.state.active('x'));
+    i.scrollbarXWidth = 0;
+    i.scrollbarXLeft = 0;
+    element.scrollLeft = 0;
+  }
+  if (i.scrollbarYActive) {
+    element.classList.add(cls.state.active('y'));
+  } else {
+    element.classList.remove(cls.state.active('y'));
+    i.scrollbarYHeight = 0;
+    i.scrollbarYTop = 0;
+    element.scrollTop = 0;
+  }
+};
+
+function getThumbSize(i, thumbSize) {
+  if (i.settings.minScrollbarLength) {
+    thumbSize = Math.max(thumbSize, i.settings.minScrollbarLength);
+  }
+  if (i.settings.maxScrollbarLength) {
+    thumbSize = Math.min(thumbSize, i.settings.maxScrollbarLength);
+  }
+  return thumbSize;
+}
+
+function updateCss(element, i) {
+  var xRailOffset = { width: i.railXWidth };
+  if (i.isRtl) {
+    xRailOffset.left =
+      i.negativeScrollAdjustment +
+      element.scrollLeft +
+      i.containerWidth -
+      i.contentWidth;
+  } else {
+    xRailOffset.left = element.scrollLeft;
+  }
+  if (i.isScrollbarXUsingBottom) {
+    xRailOffset.bottom = i.scrollbarXBottom - element.scrollTop;
+  } else {
+    xRailOffset.top = i.scrollbarXTop + element.scrollTop;
+  }
+  set(i.scrollbarXRail, xRailOffset);
+
+  var yRailOffset = { top: element.scrollTop, height: i.railYHeight };
+  if (i.isScrollbarYUsingRight) {
+    if (i.isRtl) {
+      yRailOffset.right =
+        i.contentWidth -
+        (i.negativeScrollAdjustment + element.scrollLeft) -
+        i.scrollbarYRight -
+        i.scrollbarYOuterWidth;
+    } else {
+      yRailOffset.right = i.scrollbarYRight - element.scrollLeft;
+    }
+  } else {
+    if (i.isRtl) {
+      yRailOffset.left =
+        i.negativeScrollAdjustment +
+        element.scrollLeft +
+        i.containerWidth * 2 -
+        i.contentWidth -
+        i.scrollbarYLeft -
+        i.scrollbarYOuterWidth;
+    } else {
+      yRailOffset.left = i.scrollbarYLeft + element.scrollLeft;
+    }
+  }
+  set(i.scrollbarYRail, yRailOffset);
+
+  set(i.scrollbarX, {
+    left: i.scrollbarXLeft,
+    width: i.scrollbarXWidth - i.railBorderXWidth
+  });
+  set(i.scrollbarY, {
+    top: i.scrollbarYTop,
+    height: i.scrollbarYHeight - i.railBorderYWidth
+  });
+}
+
+var clickRail = function(i) {
+  i.event.bind(i.scrollbarY, 'click', function (e) { e.preventDefault(); return e.stopPropagation();  });
+  i.event.bind(i.scrollbarYRail, 'click', function (e) { e.preventDefault(); return e.stopPropagation();  });
+  i.event.bind(i.scrollbarY, 'mousedown', function (e) { e.preventDefault(); return e.stopPropagation();  });
+  i.event.bind(i.scrollbarYRail, 'mousedown', function (e) {
+    var positionTop =
+      e.pageY -
+      window.pageYOffset -
+      i.scrollbarYRail.getBoundingClientRect().top;
+    var direction = positionTop > i.scrollbarYTop ? 1 : -1;
+
+    i.element.scrollTop += direction * i.containerHeight;
+    updateGeometry(i);
+
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  i.event.bind(i.scrollbarX, 'mousedown', function (e) { e.preventDefault(); return e.stopPropagation(); });
+  i.event.bind(i.scrollbarXRail, 'mousedown', function (e) {
+    var positionLeft =
+      e.pageX -
+      window.pageXOffset -
+      i.scrollbarXRail.getBoundingClientRect().left;
+    var direction = positionLeft > i.scrollbarXLeft ? 1 : -1;
+
+    i.element.scrollLeft += direction * i.containerWidth;
+    updateGeometry(i);
+
+    e.preventDefault();
+    e.stopPropagation();
+  });
+};
+
+var dragThumb = function(i) {
+  bindMouseScrollHandler(i, [
+    'containerWidth',
+    'contentWidth',
+    'pageX',
+    'railXWidth',
+    'scrollbarX',
+    'scrollbarXWidth',
+    'scrollLeft',
+    'x' ]);
+  bindMouseScrollHandler(i, [
+    'containerHeight',
+    'contentHeight',
+    'pageY',
+    'railYHeight',
+    'scrollbarY',
+    'scrollbarYHeight',
+    'scrollTop',
+    'y' ]);
+};
+
+function bindMouseScrollHandler(
+  i,
+  ref
+) {
+  var containerHeight = ref[0];
+  var contentHeight = ref[1];
+  var pageY = ref[2];
+  var railYHeight = ref[3];
+  var scrollbarY = ref[4];
+  var scrollbarYHeight = ref[5];
+  var scrollTop = ref[6];
+  var y = ref[7];
+
+  var element = i.element;
+
+  var startingScrollTop = null;
+  var startingMousePageY = null;
+  var scrollBy = null;
+
+  function mouseMoveHandler(e) {
+    element[scrollTop] =
+      startingScrollTop + scrollBy * (e[pageY] - startingMousePageY);
+    addScrollingClass(i, y);
+    updateGeometry(i);
+
+    e.stopPropagation();
+    e.preventDefault();
+  }
+
+  function mouseUpHandler(e) {
+    removeScrollingClass(i, y);
+    e.stopPropagation();
+    e.preventDefault();
+    i.event.unbind(i.ownerDocument, 'mousemove', mouseMoveHandler);
+  }
+
+  i.event.bind(i[scrollbarY], 'mousedown', function (e) {
+    startingScrollTop = element[scrollTop];
+    startingMousePageY = e[pageY];
+    scrollBy =
+      (i[contentHeight] - i[containerHeight]) /
+      (i[railYHeight] - i[scrollbarYHeight]);
+
+    i.event.bind(i.ownerDocument, 'mousemove', mouseMoveHandler);
+    i.event.once(i.ownerDocument, 'mouseup', mouseUpHandler);
+
+    e.stopPropagation();
+    e.preventDefault();
+  });
+}
+
+var keyboard = function(i) {
+  var element = i.element;
+
+  var elementHovered = function () { return matches(element, ':hover'); };
+  var scrollbarFocused = function () { return matches(i.scrollbarX, ':focus') || matches(i.scrollbarY, ':focus'); };
+
+  function shouldPreventDefault(deltaX, deltaY) {
+    var scrollTop = element.scrollTop;
+    if (deltaX === 0) {
+      if (!i.scrollbarYActive) {
+        return false;
+      }
+      if (
+        (scrollTop === 0 && deltaY > 0) ||
+        (scrollTop >= i.contentHeight - i.containerHeight && deltaY < 0)
+      ) {
+        return !i.settings.wheelPropagation;
+      }
+    }
+
+    var scrollLeft = element.scrollLeft;
+    if (deltaY === 0) {
+      if (!i.scrollbarXActive) {
+        return false;
+      }
+      if (
+        (scrollLeft === 0 && deltaX < 0) ||
+        (scrollLeft >= i.contentWidth - i.containerWidth && deltaX > 0)
+      ) {
+        return !i.settings.wheelPropagation;
+      }
+    }
+    return true;
+  }
+
+  i.event.bind(i.ownerDocument, 'keydown', function (e) {
+    if (
+      (e.isDefaultPrevented && e.isDefaultPrevented()) ||
+      e.defaultPrevented
+    ) {
+      return;
+    }
+
+    if (!elementHovered() && !scrollbarFocused()) {
+      return;
+    }
+
+    var activeElement = document.activeElement
+      ? document.activeElement
+      : i.ownerDocument.activeElement;
+    if (activeElement) {
+      if (activeElement.tagName === 'IFRAME') {
+        activeElement = activeElement.contentDocument.activeElement;
+      } else {
+        // go deeper if element is a webcomponent
+        while (activeElement.shadowRoot) {
+          activeElement = activeElement.shadowRoot.activeElement;
+        }
+      }
+      if (isEditable(activeElement)) {
+        return;
+      }
+    }
+
+    var deltaX = 0;
+    var deltaY = 0;
+
+    switch (e.which) {
+      case 37: // left
+        if (e.metaKey) {
+          deltaX = -i.contentWidth;
+        } else if (e.altKey) {
+          deltaX = -i.containerWidth;
+        } else {
+          deltaX = -30;
+        }
+        break;
+      case 38: // up
+        if (e.metaKey) {
+          deltaY = i.contentHeight;
+        } else if (e.altKey) {
+          deltaY = i.containerHeight;
+        } else {
+          deltaY = 30;
+        }
+        break;
+      case 39: // right
+        if (e.metaKey) {
+          deltaX = i.contentWidth;
+        } else if (e.altKey) {
+          deltaX = i.containerWidth;
+        } else {
+          deltaX = 30;
+        }
+        break;
+      case 40: // down
+        if (e.metaKey) {
+          deltaY = -i.contentHeight;
+        } else if (e.altKey) {
+          deltaY = -i.containerHeight;
+        } else {
+          deltaY = -30;
+        }
+        break;
+      case 32: // space bar
+        if (e.shiftKey) {
+          deltaY = i.containerHeight;
+        } else {
+          deltaY = -i.containerHeight;
+        }
+        break;
+      case 33: // page up
+        deltaY = i.containerHeight;
+        break;
+      case 34: // page down
+        deltaY = -i.containerHeight;
+        break;
+      case 36: // home
+        deltaY = i.contentHeight;
+        break;
+      case 35: // end
+        deltaY = -i.contentHeight;
+        break;
+      default:
+        return;
+    }
+
+    if (i.settings.suppressScrollX && deltaX !== 0) {
+      return;
+    }
+    if (i.settings.suppressScrollY && deltaY !== 0) {
+      return;
+    }
+
+    element.scrollTop -= deltaY;
+    element.scrollLeft += deltaX;
+    updateGeometry(i);
+
+    if (shouldPreventDefault(deltaX, deltaY)) {
+      e.preventDefault();
+    }
+  });
+};
+
+var wheel = function(i) {
+  var element = i.element;
+
+  function shouldPreventDefault(deltaX, deltaY) {
+    var isTop = element.scrollTop === 0;
+    var isBottom =
+      element.scrollTop + element.offsetHeight === element.scrollHeight;
+    var isLeft = element.scrollLeft === 0;
+    var isRight =
+      element.scrollLeft + element.offsetWidth === element.offsetWidth;
+
+    var hitsBound;
+
+    // pick axis with primary direction
+    if (Math.abs(deltaY) > Math.abs(deltaX)) {
+      hitsBound = isTop || isBottom;
+    } else {
+      hitsBound = isLeft || isRight;
+    }
+
+    return hitsBound ? !i.settings.wheelPropagation : true;
+  }
+
+  function getDeltaFromEvent(e) {
+    var deltaX = e.deltaX;
+    var deltaY = -1 * e.deltaY;
+
+    if (typeof deltaX === 'undefined' || typeof deltaY === 'undefined') {
+      // OS X Safari
+      deltaX = -1 * e.wheelDeltaX / 6;
+      deltaY = e.wheelDeltaY / 6;
+    }
+
+    if (e.deltaMode && e.deltaMode === 1) {
+      // Firefox in deltaMode 1: Line scrolling
+      deltaX *= 10;
+      deltaY *= 10;
+    }
+
+    if (deltaX !== deltaX && deltaY !== deltaY /* NaN checks */) {
+      // IE in some mouse drivers
+      deltaX = 0;
+      deltaY = e.wheelDelta;
+    }
+=======
+>>>>>>> 9c6593ad16e8043a41d0c14dc6bc265a33f90d8a
 
     if (abctune.lines[0].staffs[0].subtitle) {
         this.printSubtitleLine(abctune.lines[0].staffs[0].subtitle);

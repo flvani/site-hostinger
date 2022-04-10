@@ -1132,6 +1132,7 @@ SITE.Modal.prototype.show = function (title, subTitle, url, opts ) {
         }, '<br/>&#160;&#160;&#160;' + SITE.translator.getResource('wait') + '<br/><br/>');
     }
 }
+<<<<<<< HEAD
 
 if (!window.SITE)
     window.SITE = { gtagInitiated : false, root: '/mapa' };
@@ -2799,4 +2800,1673 @@ SITE.App.prototype.setFocus = function() {
             this.appView.editorWindow.aceEditor.focus();
     } */
 }
+=======
+
+if (!window.SITE)
+    window.SITE = { gtagInitiated : false, root: '/mapa' };
+
+SITE.AppView = function (app, interfaceParams, playerParams) {
+    
+    var that = this;
+
+    this.app = app;
+    //this.isApp = true;
+    this.parserparams = {};
+
+    this.ypos = 0; // controle de scroll
+    this.lastStaffGroup = -1; // controle de scroll
+    this.lastYpos = 0; // controle de scroll
+    
+    var canvas_id = 'canvasDiv';
+   //var warnings_id = 'warningsDiv';
+
+    this.warnings = [];
+    
+    this.renderedTune = {text:undefined, abc:undefined, title:undefined
+                         ,tab: undefined, div: undefined ,selector: undefined };
+    
+    this.Div = new DRAGGABLE.ui.Window( 
+          interfaceParams.studioDiv
+        , null
+        , {
+            translator: SITE.translator, statusbar: false, draggable: false, 
+            top: "0", left: "0", width: '100%', height: "100%", title: 'EstudioTitle'
+          }
+        , {listener: this, method: 'appViewCallBack'}
+    );
+
+
+    this.keyboardWindow = new DRAGGABLE.ui.Window( 
+        interfaceParams.keyboardDiv
+       ,[  'rotate', 'globe']
+       ,{ title: '', translator: SITE.translator, statusbar: false, draggable: false, 
+          top: "3px", left: "1px"
+        } 
+       ,{listener: this, method: 'keyboardCallback'}
+    );
+
+    // flavio e a feiura - inicio
+
+        this.keyboardWindow.extras = document.createElement('div');
+        this.keyboardWindow.extras.style.display = 'none';
+        this.keyboardWindow.extras.innerHTML = 
+           '<button id="rotateBtnExtra" data-translate="rotate" ><i class="ico-rotate" ></i></button>\
+            <button id="globeBtnExtra"  data-translate="globe" ><i class="ico-world" ></i></button>'
+    
+        this.keyboardWindow.extras.className = 'keyboard-btn-group';
+        this.keyboardWindow.topDiv.appendChild(this.keyboardWindow.extras);
+    
+        this.rotateBtnExtra = document.getElementById("rotateBtnExtra");
+        this.globeBtnExtra = document.getElementById("globeBtnExtra");
+    
+        this.rotateBtnExtra.addEventListener("click", function (evt) {
+            evt.preventDefault();
+            that.keyboardCallback('ROTATE');
+        }, false);
+    
+        this.globeBtnExtra.addEventListener("click", function (evt) {
+            evt.preventDefault();
+            that.keyboardCallback('GLOBE');
+        }, false);
+        
+        this.keyboardWindow.imagem  = document.createElement('div');
+        this.keyboardWindow.imagem.style.display = 'none';
+        this.keyboardWindow.imagem.style.zIndex = '5000';
+        this.keyboardWindow.imagem.className = 'circular';
+        this.keyboardWindow.topDiv.appendChild(this.keyboardWindow.imagem );
+
+        SITE.translator.translate( this.keyboardWindow.extras );
+
+    
+    // flavio e a feiura - fim
+
+    this.Div.setVisible(true);
+    this.Div.dataDiv.style.overflow = 'hidden';
+
+    if (interfaceParams.generate_tablature) {
+        if (interfaceParams.generate_tablature === 'accordion') {
+            this.accordion = new window.ABCXJS.tablature.Accordion( 
+                  interfaceParams.accordion_options 
+                , SITE.properties.options.tabFormat 
+                ,!SITE.properties.options.tabShowOnlyNumbers );
+            if (interfaceParams.accordionNameSpan) {
+                this.accordionNameSpan = document.getElementById(interfaceParams.accordionNameSpan);
+                this.accordionNameSpan.innerHTML = this.accordion.getFullName();
+            }
+        } else {
+            throw new Error('Tablatura para ' + interfaceParams.generate_tablature + ' não suportada!');
+        }
+    }
+
+    this.accordion.setRenderOptions({
+        draggable: false
+       ,show: SITE.properties.studio.keyboard.visible
+       ,transpose: SITE.properties.studio.keyboard.transpose
+       ,mirror: SITE.properties.studio.keyboard.mirror
+       ,scale: 0.85
+       ,label: SITE.properties.studio.keyboard.label
+    });
+
+    this.controlDiv = document.createElement("DIV");
+    this.controlDiv.setAttribute("id", 'controlDiv' );
+    this.controlDiv.setAttribute("class", 'controlDiv btn-group draggableToolBarApp' );
+    
+    this.Div.dataDiv.appendChild(this.controlDiv);
+    
+    this.controlDiv.innerHTML = document.getElementById(interfaceParams.studioControlDiv).innerHTML;
+    document.getElementById(interfaceParams.studioControlDiv).innerHTML = "";
+
+    this.controlDiv.style.borderBottom = "1px solid rgba(255, 153, 34, 0.4)"
+    this.Div.topDiv.style.borderLeft = "1px solid rgba(255, 153, 34, 0.4)"
+    
+    this.media = new SITE.Media( this.Div.dataDiv, interfaceParams.btShowMedia, SITE.properties.studio.media, true ); 
+
+    this.studioCanvasDiv = document.createElement("DIV");
+    this.studioCanvasDiv.setAttribute("id", interfaceParams.studioCanvasDiv );
+    this.studioCanvasDiv.setAttribute("class", "studioCanvasDiv" );
+   
+    this.canvasDiv = document.createElement("DIV");
+    this.canvasDiv.setAttribute("id", canvas_id);
+    this.canvasDiv.setAttribute("class", "canvasDiv" );
+
+    this.studioCanvasDiv.appendChild(this.canvasDiv);
+    this.Div.dataDiv.appendChild(this.studioCanvasDiv);
+    
+    this.renderedTune.div = this.canvasDiv;
+   
+    if(this.ps)
+        this.ps.destroy();
+    
+    this.ps = new PerfectScrollbar( this.studioCanvasDiv, {
+        handlers: ['click-rail', 'drag-thumb', 'keyboard', 'wheel', 'touch'],
+        wheelSpeed: 1,
+        wheelPropagation: false,
+        suppressScrollX: false,
+        minScrollbarLength: 100,
+        swipeEasing: true,
+        scrollingThreshold: 500
+    });
+    
+    if( interfaceParams.onchange ) {
+        this.onchangeCallback = interfaceParams.onchange;
+    }
+    
+    //this.saveButton = document.getElementById(interfaceParams.saveBtn);
+    //this.forceRefreshButton = document.getElementById(interfaceParams.forceRefresh);
+    this.printButton = document.getElementById(interfaceParams.printBtn);
+    this.backButton = document.getElementById(interfaceParams.backBtn);
+    this.showMapButton = document.getElementById(interfaceParams.showMapBtn);
+
+    // player control
+    this.modeButton = document.getElementById(playerParams.modeBtn);
+    this.lyricsButton = document.getElementById(playerParams.lyricsBtn);
+    this.fingeringButton = document.getElementById(playerParams.fingeringBtn);
+    this.tabformatButton = document.getElementById(playerParams.tabformatBtn);
+    this.timerButton = document.getElementById(playerParams.timerBtn);
+    this.FClefButton = document.getElementById(playerParams.FClefBtn);
+    this.GClefButton = document.getElementById(playerParams.GClefBtn);
+    this.playButton = document.getElementById(playerParams.playBtn);
+    this.stopButton = document.getElementById(playerParams.stopBtn);
+    this.gotoMeasureButton = document.getElementById(playerParams.gotoMeasureBtn);
+    this.untilMeasureButton = document.getElementById(playerParams.untilMeasureBtn);
+    this.currentPlayTimeLabel = document.getElementById(playerParams.currentPlayTimeLabel);
+    this.stepButton = document.getElementById(playerParams.stepBtn);
+    this.stepMeasureButton = document.getElementById(playerParams.stepMeasureBtn);
+    this.repeatButton = document.getElementById(playerParams.repeatBtn);
+    this.clearButton = document.getElementById(playerParams.clearBtn);
+    this.tempoButton = document.getElementById(playerParams.tempoSld);
+
+    this.backButton.addEventListener("click", function (evt) {
+        evt.preventDefault();
+        this.blur();
+        that.app.closeAppView();
+    }, false);
+
+    this.showMapButton.addEventListener("click", function (evt) {
+        evt.preventDefault();
+        this.blur();
+        that.showKeyboard();
+        that.keyboardWindow.resize();
+        that.Div.resize();
+        that.resize();
+    }, false);
+
+    /*
+    if(!this.isApp){
+    
+        this.forceRefreshButton.addEventListener("click", function (evt) {
+            evt.preventDefault();
+            this.blur();
+            that.fireChanged(0, {force:true, showProgress:true } );
+        }, false);
+        
+        this.saveButton.addEventListener("click", function (evt) {
+            evt.preventDefault();
+            this.blur();
+            that.salvaMusica();
+        }, false);
+        
+    }
+    */
+
+    this.printButton.addEventListener("click", function (evt) {
+        evt.preventDefault();
+        this.blur();
+        that.printPreview(
+            that.renderedTune.div.innerHTML, 
+            ["#topBar","#appDiv", "#keyboardDiv", "#studioDiv" ], 
+            that.renderedTune.abc.formatting.landscape
+        );
+    }, false);
+
+    this.lyricsButton.addEventListener('click', function (evt) {
+        evt.preventDefault();
+        this.blur();
+        if(that.midiPlayer.playing) that.stopPlay();
+        //window.setTimeout(function(){
+            SITE.properties.options.lyrics = !SITE.properties.options.lyrics;
+            that.parserparams.hideLyrics = !SITE.properties.options.lyrics;
+            that.setLyricsIcon();
+            that.fireChanged(0, {force:true, showProgress:true } );
+        //}, 0 );
+    }, false);
+
+    this.fingeringButton.addEventListener('click', function (evt) {
+        evt.preventDefault();
+        this.blur();
+        if(that.midiPlayer.playing) that.midiPlayer.stopPlay();
+        //window.setTimeout(function(){
+            SITE.properties.options.fingering = !SITE.properties.options.fingering;
+            that.parserparams.hideFingering = !SITE.properties.options.fingering;
+            that.setFingeringIcon();
+            that.fireChanged(0, {force:true, showProgress:true } );
+        //}, 0 );
+    }, false);
+
+    this.tabformatButton.addEventListener('click', function (evt) {
+        evt.preventDefault();
+        this.blur();
+        if(that.midiPlayer.playing) that.midiPlayer.stopPlay();
+        //window.setTimeout(function(){
+            SITE.properties.options.rowsNumbered = !SITE.properties.options.rowsNumbered;
+            that.parserparams.ilheirasNumeradas = SITE.properties.options.rowsNumbered;
+            that.fireChanged(0, {force:true, showProgress:true } );
+        //}, 0 );
+    }, false);
+
+    this.modeButton.addEventListener('click', function (evt) {
+        evt.preventDefault();
+        this.blur();
+        that.changePlayMode();
+    }, false);
+
+    this.timerButton.addEventListener('click', function (evt) {
+        evt.preventDefault();
+        this.blur();
+        SITE.properties.studio.timerOn = ! SITE.properties.studio.timerOn;
+        that.setTimerIcon( 0 );
+    }, false);
+    
+    this.FClefButton.addEventListener('click', function (evt) {
+        evt.preventDefault();
+        this.blur();
+        SITE.properties.studio.bassOn = ! SITE.properties.studio.bassOn;
+        that.setBassIcon();
+    }, false);
+
+    this.GClefButton.addEventListener('click', function (evt) {
+        evt.preventDefault();
+        this.blur();
+        SITE.properties.studio.trebleOn = ! SITE.properties.studio.trebleOn;
+        that.setTrebleIcon();
+    }, false);
+
+    this.playButton.addEventListener("click", function (evt) {
+        evt.preventDefault();
+        this.blur();
+        window.setTimeout(function(){ that.startPlay( 'normal' );}, 0 );
+    }, false);
+
+    this.stopButton.addEventListener("click", function (evt) {
+        evt.preventDefault();
+        this.blur();
+        if(that.currentPlayTimeLabel)
+           that.currentPlayTimeLabel.innerHTML = "00:00";
+        that.stopPlay();
+    }, false);
+
+    this.clearButton.addEventListener("click", function (evt) {
+        evt.preventDefault();
+        this.blur();
+        that.renderedTune.printer.clearSelection();
+        that.accordion.clearKeyboard(true);
+        that.currentPlayTimeLabel.innerHTML = "00:00";
+        that.stopPlay();
+    }, false);
+
+    this.stepButton.addEventListener("click", function (evt) {
+        evt.preventDefault();
+        this.blur();
+        that.startPlay('note');
+    }, false);
+
+    this.stepMeasureButton.addEventListener("click", function (evt) {
+        evt.preventDefault();
+        that.startPlay('measure');
+    }, false);
+
+    this.repeatButton.addEventListener("click", function (evt) {
+        evt.preventDefault();
+        this.blur();
+        if(!that.midiPlayer.playing)
+            that.startPlay('repeat', that.gotoMeasureButton.value, that.untilMeasureButton.value );
+    }, false);
+
+    this.slider = new DRAGGABLE.ui.Slider( this.tempoButton,
+        {
+            min: 25, max: 200, start:100, step:25, speed:100, color: 'white', bgcolor:'red' /*'#ff9922'*/, size:{w:140, h:35, tw:60},
+            callback: function(v) { that.midiPlayer.setAndamento(v); } 
+        } 
+    );
+    
+    this.gotoMeasureButton.addEventListener("keypress", function (evt) {
+        if (evt.keyCode === 13) {
+            that.startPlay('goto', this.value, that.untilMeasureButton.value);
+        }
+    }, false);
+
+    this.gotoMeasureButton.addEventListener("focus", function (evt) {
+        if (this.value === SITE.translator.getResource("gotoMeasure").val) {
+            this.value = "";
+        }
+    }, false);
+
+    this.gotoMeasureButton.addEventListener("blur", function (evt) {
+        if (this.value === "") {
+            this.value = SITE.translator.getResource("gotoMeasure").val;
+        }
+    }, false);
+    
+    this.untilMeasureButton.addEventListener("keypress", function (evt) {
+        if (evt.keyCode === 13) {
+            that.startPlay('goto', that.gotoMeasureButton.value, this.value);
+        }
+    }, false);
+
+    this.untilMeasureButton.addEventListener("focus", function (evt) {
+        if (this.value === SITE.translator.getResource("untilMeasure").val) {
+            this.value = "";
+        }
+    }, false);
+
+    this.untilMeasureButton.addEventListener("blur", function (evt) {
+        if (this.value === "") {
+            this.value = SITE.translator.getResource("untilMeasure").val;
+        }
+    }, false);
+    
+    this.playerCallBackOnScroll = function( player ) {
+        that.setScrolling(player);
+    };
+
+    this.playerCallBackOnPlay = function( player ) {
+        var strTime = player.getTime().cTime;
+        if(that.gotoMeasureButton && ! parseInt(that.untilMeasureButton.value))
+            that.gotoMeasureButton.value = player.currentMeasure;
+        if(that.currentPlayTimeLabel)
+            that.currentPlayTimeLabel.innerHTML = strTime;
+
+        that.midiPlayer.setPlayableClefs( (SITE.properties.studio.trebleOn?"T":"")+(SITE.properties.studio.bassOn?"B":"") );
+    };
+
+    this.playerCallBackOnEnd = function( player ) {
+        var warns = that.midiPlayer.getWarnings();
+        that.playButton.title = SITE.translator.getResource("playBtn");
+        that.playButton.innerHTML = '&#160;<i class="ico-play"></i>&#160;';
+        that.renderedTune.printer.clearSelection();
+        that.accordion.clearKeyboard(true);
+    };
+
+    this.midiParser = new ABCXJS.midi.Parse();
+    this.midiPlayer = new ABCXJS.midi.Player(this);
+    this.midiPlayer.defineCallbackOnPlay( this.playerCallBackOnPlay );
+    this.midiPlayer.defineCallbackOnEnd( this.playerCallBackOnEnd );
+    this.midiPlayer.defineCallbackOnScroll( this.playerCallBackOnScroll );
+    
+};
+
+SITE.AppView.prototype.setup = function( tab, accordionId) {
+    
+    this.accordion.loadById(accordionId);
+    
+    this.renderedTune.abc = tab.abc;
+    this.renderedTune.text = tab.text;
+    this.renderedTune.title = tab.title;
+    
+    this.changePlayMode(SITE.properties.studio.mode);
+    this.setBassIcon();
+    this.setTrebleIcon();
+    this.setTimerIcon( 0 );
+    
+    this.setVisible(true);
+    this.setKeyboardDetails();
+
+    this.fireChanged(0, {force:true} );
+    this.studioCanvasDiv.scrollTop = 0;
+
+    this.Div.setTitle( tab.title );
+    this.Div.setSubTitle( '- ' + this.accordion.getTxtModel() + ' ' +  this.accordion.getTxtTuning() );
+
+    this.keyboardWindow.setTitle(this.accordion.getTxtTuning() + ' - ' + this.accordion.getTxtNumButtons() );
+
+    this.showKeyboard(SITE.properties.studio.keyboard.visible);
+    
+    this.keyboardWindow.resize();
+    this.Div.resize();
+    this.resize();
+
+    SITE.translator.translate( this.Div.topDiv );
+};
+
+SITE.AppView.prototype.resizeLeft = function( ) {
+    
+    var winH = window.innerHeight
+                || document.documentElement.clientHeight
+                || document.body.clientHeight;
+
+    var winW = window.innerWidth
+                || document.documentElement.clientWidth
+                || document.body.clientWidth;
+
+    var w = (winW - 2 ); 
+    var h = (winH - 4 ); 
+    var l = SITE.properties.studio.keyboard.visible? this.keyboardWindow.topDiv.clientWidth+1 : 0;
+
+    this.keyboardWindow.topDiv.style.top=0;
+    this.keyboardWindow.topDiv.style.left=0;
+    this.keyboardWindow.topDiv.style.height = Math.max(h,200) +"px";
+
+    this.Div.topDiv.style.top=0;
+    this.Div.topDiv.style.left= l+"px";
+    this.Div.topDiv.style.height = Math.max(h,200) +"px";
+    this.Div.topDiv.style.width = Math.max(w-l,400) +"px";
+   
+    var w = 0, e = 0;
+    var c = this.controlDiv.clientHeight;
+    var t = this.Div.dataDiv.clientHeight;
+    
+    this.studioCanvasDiv.style.height = t-(w+e+c+6) +"px";
+
+    this.media.posiciona();
+    
+    (this.ps) && this.ps.update();
+    
+};
+
+SITE.AppView.prototype.resizeRight = function( ) {
+    
+    var winH = window.innerHeight
+                || document.documentElement.clientHeight
+                || document.body.clientHeight;
+
+    var winW = window.innerWidth
+            || document.documentElement.clientWidth
+            || document.body.clientWidth;
+
+    var w = (winW - 2 ); 
+    var h = (winH - 4 ); 
+    var l = SITE.properties.studio.keyboard.visible? this.keyboardWindow.topDiv.clientWidth+1 : 0;
+        
+    this.keyboardWindow.topDiv.style.top=0;
+    this.keyboardWindow.topDiv.style.left= (w-l+1)+"px";
+    this.keyboardWindow.topDiv.style.height = Math.max(h,200) +"px";
+
+    this.Div.topDiv.style.top=0;
+    this.Div.topDiv.style.left=0;
+    this.Div.topDiv.style.height = Math.max(h,200) +"px";
+    this.Div.topDiv.style.width = Math.max(w-l,400) +"px";
+    
+    var w = 0, e = 0;
+    var c = this.controlDiv.clientHeight;
+    var t = this.Div.dataDiv.clientHeight;
+    
+    this.studioCanvasDiv.style.height = t-(w+e+c+6) +"px";
+
+    this.media.posiciona();
+    
+    (this.ps) && this.ps.update();
+    
+};
+
+SITE.AppView.prototype.showKeyboard = function(show) {
+    SITE.properties.studio.keyboard.visible = 
+            (typeof show === 'undefined'? ! SITE.properties.studio.keyboard.visible : show );
+    
+    this.accordion.render_opts.show = SITE.properties.studio.keyboard.visible;
+    
+    if(SITE.properties.studio.keyboard.visible) {
+        this.keyboardWindow.setVisible(true);
+        this.accordion.printKeyboard(this.keyboardWindow.dataDiv);
+        this.showMapButton.innerHTML = '<i class="ico-keyboard" ></i>';
+    } else {
+        this.accordion.render_opts.show = false;
+        this.keyboardWindow.setVisible(false);
+        this.showMapButton.innerHTML = '<i class="ico-keyboard" style="opacity:0.5; filter: grayscale(1);"></i>'+
+                                                         '<i class="ico-forbidden" style="position:absolute;left:4px;top:4px; filter: grayscale(1);"></i>';
+    }
+};
+
+SITE.AppView.prototype.setKeyboardDetails = function( ) {
+
+    this.keyboardWindow.imagem.innerHTML = 
+        '<img src="'+this.app.accordion.loaded.image+'" title="' +
+        this.app.accordion.getFullName() + ' ' + SITE.translator.getResource('keys') + '">';
+
+    if( SITE.properties.options.keyboardRight )
+        this.resize = this.resizeRight;
+    else    
+        this.resize = this.resizeLeft;
+    
+    if( SITE.properties.options.suppressTitles ) {
+        this.keyboardWindow.imagem.style.display='inline';
+        this.keyboardWindow.extras.style.display='inline';
+    } else{
+        this.keyboardWindow.imagem.style.display='none';
+        this.keyboardWindow.extras.style.display='none';
+    }
+
+    this.Div.setMenuVisible(!SITE.properties.options.suppressTitles);
+    this.keyboardWindow.setMenuVisible(!SITE.properties.options.suppressTitles);
+    this.keyboardMirrorElements()
+}
+
+SITE.AppView.prototype.keyboardMirrorElements = function( e ) {
+
+    if (this.keyboardWindow.extras) {
+        if(SITE.properties.studio.keyboard.mirror){
+            this.keyboardWindow.extras.style.right = '';
+            this.keyboardWindow.extras.style.left = '5px';
+            this.keyboardWindow.imagem.style.right = '';
+            this.keyboardWindow.imagem.style.left = '25px';
+        } else{
+            this.keyboardWindow.extras.style.right = '5px';
+            this.keyboardWindow.extras.style.left = '';
+            this.keyboardWindow.imagem.style.right = '25px';
+            this.keyboardWindow.imagem.style.left = '';
+        }
+    }
+}
+
+SITE.AppView.prototype.keyboardCallback = function( e ) {
+    switch(e) {
+        case 'ROTATE':
+            this.accordion.rotateKeyboard(this.keyboardWindow.dataDiv);
+            this.accordion.rotateKeyboard(this.keyboardWindow.dataDiv);
+            SITE.properties.studio.keyboard.transpose = this.accordion.render_opts.transpose;
+            SITE.properties.studio.keyboard.mirror = this.accordion.render_opts.mirror;
+
+            this.keyboardMirrorElements();
+
+            break;
+        case 'GLOBE':
+            this.accordion.changeNotation();
+            SITE.properties.studio.keyboard.label = this.accordion.render_opts.label;
+            break;
+        case 'CLOSE':
+            this.showKeyboard(false);
+            this.resize();
+            break;
+    }
+};
+
+
+SITE.AppView.prototype.appViewCallBack = function( e ) {
+    switch(e) {
+        case 'CLOSE':
+            this.app.closeAppView();
+            break;
+    }
+};
+        
+SITE.AppView.prototype.stopPlay = function( e ) {
+    this.midiPlayer.stopPlay();
+};
+
+SITE.AppView.prototype.setVisible = function(  visible ) {
+    this.Div.parent.style.display = visible?'block':'none';
+};
+
+SITE.AppView.prototype.setScrolling = function(player) {
+    if( !this.studioCanvasDiv || !player.currAbsElem || player.currAbsElem.staffGroup === this.lastStaffGroup ) return;
+    
+    this.lastStaffGroup = player.currAbsElem.staffGroup;
+    
+    var fixedTop = player.printer.staffgroups[0].top;
+    var vp = this.studioCanvasDiv.clientHeight - fixedTop;
+    var top = player.printer.staffgroups[player.currAbsElem.staffGroup].top-12;
+    var bottom = top + player.printer.staffgroups[player.currAbsElem.staffGroup].height;
+
+    if( bottom > vp+this.ypos || this.ypos > top-fixedTop ) {
+        
+        this.ypos = top;
+        this.studioCanvasDiv.scrollTop = this.ypos;    
+    }
+};
+
+SITE.AppView.prototype.changePlayMode = function(mode) {
+    
+    SITE.properties.studio.mode = mode? mode : 
+            (SITE.properties.studio.mode==="normal"? "learning":"normal");
+    
+    this.midiPlayer.setAndamento( this.slider.getValue() );
+    
+    if( SITE.properties.studio.mode === "normal" ) {
+        $("#divDidacticPlayControls" ).hide();
+        SITE.properties.studio.mode  = "normal";
+        this.modeButton.innerHTML = '<i class="ico-listening" ></i>';
+        $("#divNormalPlayControls" ).fadeIn();
+        $("#spanShowMedia" ).fadeIn();
+    } else {
+        $("#divNormalPlayControls" ).hide();
+        SITE.properties.studio.mode  = "learning";
+        this.modeButton.innerHTML = '<i class="ico-learning" ></i>';
+        $("#divDidacticPlayControls" ).fadeIn();
+        $("#spanShowMedia" ).hide();
+    }
+};
+
+SITE.AppView.prototype.startPlay = function( type, value, valueF ) {
+    this.ypos = this.studioCanvasDiv.scrollTop;
+    this.lastStaffGroup = -1;
+    var that = this;
+    
+    if( this.midiPlayer.playing) {
+        
+        if (type === "normal" ) {
+            this.playButton.title = SITE.translator.getResource("playBtn");
+            this.playButton.innerHTML = '&#160;<i class="ico-play"></i>&#160;';
+            this.midiPlayer.pausePlay();
+        } else {
+            this.midiPlayer.pausePlay(true);
+        }    
+        
+    } else {
+        this.accordion.clearKeyboard();
+        
+        // esse timeout é só para garantir o tempo para iniciar o play
+        window.setTimeout(function(){that.StartPlayWithTimer(that.renderedTune.abc.midi, type, value, valueF, SITE.properties.studio.timerOn ? 10 : 0); }, 0 );
+    }
+};
+
+SITE.AppView.prototype.setBassIcon = function() {
+    if( SITE.properties.studio.bassOn ) {
+        this.FClefButton.innerHTML = '<i class="ico-clef-bass" ></i>';
+    } else {
+        this.FClefButton.innerHTML = '<i class="ico-clef-bass" style="opacity:0.5; filter: grayscale(1);"></i>'+
+                          '<i class="ico-forbidden" style="position:absolute;left:4px;top:3px; filter: grayscale(1);"></i>';
+    }
+};
+
+SITE.AppView.prototype.setTrebleIcon = function() {
+    if( SITE.properties.studio.trebleOn ) {
+        this.GClefButton.innerHTML = '<i class="ico-clef-treble" ></i>';
+    } else {
+        this.GClefButton.innerHTML = '<i class="ico-clef-treble" style="opacity:0.5; filter: grayscale(1);"></i>'+
+                          '<i class="ico-forbidden" style="position:absolute;left:4px;top:3px; filter: grayscale(1);"></i>';
+    }
+};
+
+SITE.AppView.prototype.setLyricsIcon = function( ) {
+    if( SITE.properties.options.lyrics ) {
+        this.lyricsButton.innerHTML = '<i class="ico-letter-l" ></i>';
+    } else {
+        this.lyricsButton.innerHTML = '<i class="ico-letter-l" style="opacity:0.5; filter: grayscale(1);"></i>'+
+                                          '<i class="ico-forbidden" style="position:absolute;left:4px;top:4px; filter: grayscale(1);"></i>';
+    }
+};
+
+SITE.AppView.prototype.setFingeringIcon = function( ) {
+    if( SITE.properties.options.fingering ) {
+        this.fingeringButton.innerHTML = '<i class="ico-alien-fingering" ></i>';
+    } else {
+        this.fingeringButton.innerHTML = '<i class="ico-alien-fingering" style="opacity:0.5; filter: grayscale(1);"></i>'+
+                                          '<i class="ico-forbidden" style="position:absolute;left:4px;top:4px; filter: grayscale(1);"></i>';
+    }
+};
+
+
+SITE.AppView.prototype.setTimerIcon = function( value ) {
+    value = value || 0;
+    
+    var ico = '00';
+    if( SITE.properties.studio.timerOn ) {
+        switch( value ) {
+            case 0:  ico = '00'; break;
+            case 1:  ico = '05'; break;
+            case 2:  ico = '15'; break;
+            case 3:  ico = '20'; break;
+            case 6:  ico = '30'; break;
+            case 9:  ico = '45'; break;
+            default: ico = '';
+        }
+        if( ico !== ''  ) {
+            if( ico !== '00' ) {
+                MIDI.noteOn(0,  90, 100, 0 );
+                MIDI.noteOff(0, 90, value > 3 ? 0.10 : 0.05  );
+            }
+            this.timerButton.innerHTML = '<i class="ico-timer-'+ico+'" ></i>';
+        }
+    } else {
+        this.timerButton.innerHTML = '<i class="ico-timer-00" style="opacity:0.5; filter: grayscale(1);"></i>'+
+                                          '<i class="ico-forbidden" style="position:absolute;left:4px;top:6px; filter: grayscale(1);"></i>';
+    }
+};
+
+SITE.AppView.prototype.StartPlayWithTimer = function(midi, type, value, valueF, counter ) {
+     var that = this;
+    
+    if( type !== 'note' && SITE.properties.studio.timerOn && counter > 0 ) {
+        that.setTimerIcon( counter );
+        counter -= 1;
+        window.setTimeout(function(){that.StartPlayWithTimer(midi, type, value, valueF, counter); }, 1000.0/3 );
+    } else {
+        that.setTimerIcon( 0 );
+        if(type==="normal") {
+            this.midiPlayer.setPlayableClefs('TB');
+            if( this.midiPlayer.startPlay(this.renderedTune.abc.midi) ) {
+                
+                SITE.ga( 'event', 'play', { 
+                    event_category: 'Mapa'  
+                   ,event_label: this.renderedTune.title
+                });
+         
+                this.playButton.title = SITE.translator.getResource("pause");
+                this.playButton.innerHTML = '&#160;<i class="ico-pause"></i>&#160;';
+            }
+        } else {
+            this.midiPlayer.setPlayableClefs( (SITE.properties.studio.trebleOn?"T":"")+(SITE.properties.studio.bassOn?"B":"") );
+            
+            SITE.ga( 'event', 'didactic-play', { 
+                event_category: 'Mapa'  
+               ,event_label: this.renderedTune.title
+            });
+            
+            this.midiPlayer.startDidacticPlay(this.renderedTune.abc.midi, type, value, valueF );
+        }
+    }
+};
+
+SITE.AppView.prototype.parseABC = function (transpose, force) {
+
+    var text = this.renderedTune.text; // this.getString(); sempre igula
+
+    this.warnings = [];
+
+    if (text === "") {
+        this.renderedTune.text = this.initialText = this.renderedTune.abc = undefined;
+        return true;
+    }
+
+    if (text === this.initialText && !force) {
+        this.updateSelection();
+        return false;
+    }
+
+    if (typeof transpose !== "undefined") {
+        if (this.transposer)
+            this.transposer.reset(transpose);
+        else
+            this.transposer = new ABCXJS.parse.Transposer(transpose);
+    }
+
+    if (!this.abcParser)
+        this.abcParser = new ABCXJS.parse.Parse(this.transposer, this.accordion);
+    try {
+        this.abcParser.parse(text, this.parserparams);
+
+        this.renderedTune.abc = this.abcParser.getTune();
+        this.renderedTune.text = this.initialText = this.abcParser.getStrTune();
+    } catch(e) {
+        waterbug.log( 'Could not parse ABC.' );
+        waterbug.show();
+    }
+
+    var warnings = this.abcParser.getWarnings() || [];
+    for (var j = 0; j < warnings.length; j++) {
+        this.warnings.push(warnings[j]);
+    }
+
+    if (this.midiParser) {
+        this.midiParser.parse(this.renderedTune.abc, this.accordion.loadedKeyboard);
+        this.midiPlayer.reset();
+        this.midiPlayer.setAndamento( this.slider.getValue() );
+        var warnings = this.midiParser.getWarnings();
+        for (var j = 0; j < warnings.length; j++) {
+            this.warnings.push(warnings[j]);
+        }
+    }
+
+    return true;
+
+};
+
+SITE.AppView.prototype.onChange = function() {
+    this.studioCanvasDiv.scrollTop = this.lastYpos;
+    this.resize();
+};
+
+SITE.AppView.prototype.fireChanged = function (transpose, _opts) {
+    
+    if( this.changing ) return;
+    
+    this.lastYpos = this.studioCanvasDiv.scrollTop || 0;               
+    
+    this.changing = true;
+    var opts = _opts || {};
+    var force = opts.force || false;
+    var showProgress = opts.showProgress || false;
+
+    if (this.parseABC(transpose, force)) {
+        this.modelChanged(showProgress);
+    } else {
+        delete this.changing;
+    }
+};
+
+SITE.AppView.prototype.modelChanged = function(showProgress) {
+    var self = this;
+    if(showProgress) {
+        var loader = SITE.startLoader( "ModelChanged" );
+        loader.start(  function() { self.onModelChanged(loader); }, '<br>&nbsp;&nbsp;&nbsp;Gerando partitura...<br><br>' );
+    } else {
+        self.onModelChanged();
+    }    
+};
+
+SITE.AppView.prototype.onModelChanged = function(loader) {
+    
+    this.renderedTune.div.innerHTML = "";
+    this.renderedTune.div.style.display = "none";
+    
+    if (this.renderedTune.abc === undefined) {
+        delete this.changing;
+        return;
+    }
+
+    this.renderedTune.div.style.display = "";
+    var paper = new SVG.Printer( this.renderedTune.div );
+    this.renderedTune.printer = new ABCXJS.write.Printer(paper, this.printerparams, this.accordion.loadedKeyboard );
+    //this.renderedTune.printer.printTune( this.renderedTune.abc, {color:'black', backgroundColor:'#ffd'} );
+    this.renderedTune.printer.printTune( this.renderedTune.abc ); 
+    
+    //if (this.warningsDiv) {
+    //    this.warningsDiv.style.color = this.warnings.length > 0 ? "red" : "green";
+    //    this.warningsDiv.innerHTML = (this.warnings.length > 0 ? this.warnings.join("<br/>") : "No warnings or errors.") ;
+    //}
+    
+    this.renderedTune.printer.addSelectListener(this);
+    this.updateSelection();
+    
+    if (this.onchangeCallback) {
+        this.onchangeCallback(this);
+    }    
+    if( loader ) {
+        loader.update( false, '<br>&nbsp;&nbsp;&nbsp;Gerando tablatura...<br><br>' );
+        loader.stop();
+    }
+    
+    this.media.show(this.renderedTune);
+        
+    delete this.changing;
+    
+};
+
+SITE.AppView.prototype.highlight = function(abcelem) {
+    if( !this.midiPlayer.playing) {
+        if(SITE.properties.studio.keyboard.visible ) {
+            this.accordion.clearKeyboard(true);
+            this.midiParser.setSelection(abcelem);
+        }
+/*         if(SITE.properties.studio.editor.visible) {
+            this.editorWindow.setSelection(abcelem);
+        }   */  
+    }    
+};
+
+// limpa apenas a janela de texto. Os demais elementos são controlados por tempo 
+SITE.AppView.prototype.unhighlight = function(abcelem) {
+/*     if(SITE.properties.studio.editor.visible) {
+        this.editorWindow.clearSelection(abcelem);
+    }    
+ */};
+
+SITE.AppView.prototype.updateSelection = function (force) {
+    var that = this;
+    if( force ) {
+/*         var selection = that.editorWindow.getSelection();
+        try {
+            that.renderedTune.printer.rangeHighlight(selection);
+        } catch (e) {
+        } // maybe printer isn't defined yet?
+ */        delete this.updating;
+    } else {
+        if( this.updating ) return;
+        this.updating = true;
+        setTimeout( that.updateSelection(true), 300 );
+    }
+};
+
+SITE.AppView.prototype.printPreview = function (html, divsToHide, landscape ) {
+    
+    var that = this;
+
+    that.dvPrintPane = document.getElementById('printPreviewDiv');
+    that.divsToHide = divsToHide
+    that.savedDisplays = {};
+    
+    divsToHide.forEach( function( div ) {
+        var hd = document.getElementById(div.substring(1));
+        that.savedDisplays[div.substring(1)] = hd.style.display;
+        hd.style.display = "none";
+        
+    });
+
+    SITE.ga( 'event', 'print', { 
+        event_category: 'Mapa'  
+       ,event_label: this.renderedTune.title
+    });
+
+    this.changePageOrientation(landscape? 'landscape': 'portrait');
+
+    that.dvPrintPane.innerHTML = html;
+    that.dvPrintPane.style.display = 'block';
+
+    setTimeout( function () { 
+        if( window.DiatonicApp ) {
+            window.DiatonicApp.printPage(that.renderedTune.title);
+       } else {
+           window.print();
+           that.endPreview();
+           //setTimeout( function() {  }, 3000);
+       }
+    });
+};
+
+SITE.AppView.prototype.endPreview = function (html, divsToHide, landscape ) {
+    var that = this;
+
+    that.dvPrintPane.style.display = 'none';
+
+    that.divsToHide .forEach( function( div ) {
+        var hd = document.getElementById(div.substring(1));
+        hd.style.display = that.savedDisplays[div.substring(1)];
+    });
+}
+
+SITE.AppView.prototype.changePageOrientation = function (orientation) {
+    var style = document.createElement('style');
+    document.head.appendChild(style);
+    style.innerHTML = '@page {margin: 1cm; size: ' + orientation + '}';
+
+};
+
+if (!window.SITE)
+    window.SITE = { gtagInitiated : false, root: '/mapa' };
+
+SITE.App = function( interfaceParams, tabParams, playerParams ) {
+
+    document.body.style.overflow = 'hidden';
+    
+    var that = this;
+
+    this.container = document.getElementById('appDiv')
+    this.tab = {title:'', text:'', ddmId:'menuSongs', type: 'songs' }
+    
+    this.modal = new SITE.Modal( { disableLinks: true, print: false, callback:{ listener: this, method: 'closeModal'} } )
+
+    this.Back = [] // define a funcao a ser chamada quando o comando back é acioando no telefone
+    
+    this.Back.push({listener:this, method:'closeApp'}); 
+    
+    ABCXJS.write.color.useTransparency = SITE.properties.colors.useTransparency;
+    ABCXJS.write.color.highLight = SITE.properties.colors.highLight;
+    DIATONIC.map.color.fill = SITE.properties.colors.fill;
+    DIATONIC.map.color.background = SITE.properties.colors.background;
+    DIATONIC.map.color.close = SITE.properties.colors.close;
+    DIATONIC.map.color.open = SITE.properties.colors.open;
+    
+    this.settingsMenu = document.getElementById(interfaceParams.settingsMenu);
+
+    this.accordion = new window.ABCXJS.tablature.Accordion( 
+          interfaceParams.accordion_options 
+        , SITE.properties.options.tabFormat 
+        ,!SITE.properties.options.tabShowOnlyNumbers  );
+    
+    this.accordionSelector = new ABCXJS.edit.AccordionSelector( 
+        interfaceParams.mapMenuGaitasDiv, interfaceParams.mapMenuGaitasDiv, 
+        { listener:that, method: 'menuCallback', label: 'Accordion' }
+    );
+
+    this.tab.title = FILEMANAGER.loadLocal('property.' + this.accordion.getId() + '.songs.title')
+                     || this.accordion.loaded.getFirstSong();
+
+    this.openBtn = document.getElementById(interfaceParams.openBtn) ;
+    this.openBtn.addEventListener("click", function(event) { that.openAppView(); }, false);
+
+    this.songSelector = document.getElementById(interfaceParams.mapMenuSongsDiv) ;
+
+    this.gaitaImagePlaceHolder = document.getElementById(interfaceParams.accordionImagePlaceHolder);
+
+    this.settingsMenu.addEventListener("click", function(evt) {
+        evt.preventDefault();
+        this.blur();
+        that.showSettings();
+    }, false );
+
+    this.setVersionLang();
+
+    this.defineInstrument(true);
+    
+    this.showAccordionName();
+    this.showAccordionImage();
+
+    this.accordionSelector.populate(false);
+    
+    this.songSelectorPopulate();
+    
+    SITE.translator.translate();
+    
+    this.setVisible(true);
+    this.resize();
+    
+};
+
+SITE.App.prototype.changeAccordion = function (tabParams) {
+
+    this.accordion.loadById(tabParams.accordionId);
+    
+    this.showAccordionName();
+    this.showAccordionImage();
+    this.accordionSelector.populate(false);
+    this.songSelectorPopulate();
+    this.resize();
+    
+    if (!this.accordion.loaded.localResource) { // não salva informação para acordeão local
+        FILEMANAGER.saveLocal('property.accordion', this.accordion.getId());
+    }
+};
+
+SITE.App.prototype.resize = function() {
+    // o app não tem resize
+    return ;
+};
+
+SITE.App.prototype.songSelectorPopulate = function() {
+
+    var achou = false;
+    var items = this.accordion.loaded.songs;
+    var ddmId = this.tab.ddmId
+    var type  = 'songs';
+
+    this.menuSongs = new DRAGGABLE.ui.DropdownMenu( 
+          this.songSelector
+        , {listener:this, method: 'showABC', translate:false, label: 'Song' }
+        , [{title: '...', ddmId: this.tab.ddmId, itens: []}]
+    );
+    
+    for( var i = 0; i < items.sortedIndex.length; i++) {
+        
+        var title = items.sortedIndex[i];
+        var cleanedTitle = title.replace(/\(.*\)/g,"").trim();
+        var vid = 0;
+        
+        if( ! items.details[title] || isNaN(parseInt(items.details[title].id)) ) {
+            waterbug.logError( 'Missing or incorrect ID (X:nnn) for "' + title +'"' );
+            waterbug.show();
+        } else {
+            vid = items.details[title].id;
+        }
+        
+        if(items.details[title].hidden){
+            continue;
+        }
+        
+        var m = this.menuSongs.addItemSubMenu( ddmId, cleanedTitle +'|'+type+'#'+vid);
+
+        if(title === this.tab.title ) {
+            achou = true;
+            this.menuSongs.setSubMenuTitle( this.tab.ddmId, cleanedTitle );
+            this.menuSongs.selectItem(this.tab.ddmId, m);
+            this.tab.text = this.accordion.loaded.getAbcText(this.tab.type, title);
+        }    
+            
+    }
+
+    if( !achou && items.sortedIndex.length > 0 ) {
+        var title = items.sortedIndex[0];
+        this.tab.title = title;
+        var cleanedTitle = title.replace(/\(.*\)/g,"").trim();
+        this.menuSongs.setSubMenuTitle( this.tab.ddmId, cleanedTitle );
+        this.menuSongs.selectItem(this.tab.ddmId, this.tab.type+'#'+items.details[title].id);
+        this.tab.text = this.accordion.loaded.getAbcText(this.tab.type, title);
+    }
+};
+
+SITE.App.prototype.showABC = function(action) {
+    
+    var type, title;
+    var a = action.split('#');
+    
+    if( action.indexOf('#') >= 0 && parseInt(a[1]) > 0 ) {
+        type = a[0];
+        title = this.accordion.loaded[type].ids[ a[1] ];
+    } else {
+        waterbug.logError( 'ABCX not found!');
+        waterbug.show();
+        return;
+    }
+    
+    if( this.tab.title !== title && this.menuSongs.selectItem( this.tab.ddmId, action ) ) {
+        this.tab.title = title;
+        this.tab.text = this.accordion.loaded.getAbcText( type, title );
+        var cleanedTitle = title.replace(/\(.*\)/g,"").trim();
+        this.menuSongs.setSubMenuTitle( this.tab.ddmId, (cleanedTitle.length>43 ? cleanedTitle.substr(0,40) + "..." : cleanedTitle) );
+        if( !this.accordion.loaded.localResource)
+            FILEMANAGER.saveLocal( 'property.'+this.accordion.getId()+'.'+type+'.title', title );
+    } else {
+        console.log( 'Song title not found!');
+    }
+};
+
+SITE.App.prototype.menuCallback = function (ev) {
+    switch(ev) {
+        case 'GAITA_MINUANO_GC':
+        case 'CONCERTINA_PORTUGUESA':
+        case 'GAITA_HOHNER_CORONA_GCF':
+        case 'GAITA_HOHNER_CORONA_ADG':
+        case 'GAITA_HOHNER_CLUB_IIIM_BR':
+        case 'GAITA_MINUANO_BC_TRANSPORTADA':
+        default: // as gaitas conhecidas e outras carregadas sob demanda
+            this.changeAccordion({accordionId:ev});
+    }
+};
+
+SITE.App.prototype.openAppView = function (button, event) {
+    var that = this;
+
+    if(event) {
+        event.preventDefault();
+        button.blur();
+    }
+
+    if( ! this.appView ) {
+        this.appView = new SITE.AppView(
+            this
+            ,{   // interfaceParams
+                studioDiv: 'studioDiv'
+               ,keyboardDiv: 'keyboardDiv'
+               ,studioControlDiv: 'studioControlDiv'
+               ,studioCanvasDiv: 'studioCanvasDiv'
+               ,generate_tablature: 'accordion'
+               ,backBtn: 'backBtn'
+               ,showMapBtn: 'showMapBtn'
+               ,printBtn: 'printBtn'
+               ,btShowMedia: 'buttonShowMedia'
+               ,accordion_options: {
+                     id: this.accordion.getId()
+                    ,accordionMaps: DIATONIC.map.accordionMaps
+                    ,translator: SITE.translator 
+                    ,render_keyboard_opts:{}
+                }
+               ,onchange: function( appView ) { appView.onChange(); }
+          } 
+          , {   // playerParams
+                modeBtn: "modeBtn"
+              , lyricsBtn: "lyricsBtn"
+              , fingeringBtn: "fingeringBtn"
+              , tabformatBtn: "tabformatBtn"
+              , timerBtn: "timerBtn"
+              , playBtn: "playBtn"
+              , stopBtn: "stopBtn"
+              , clearBtn: "clearBtn"
+              , gotoMeasureBtn: "gotoMeasureBtn"
+              , untilMeasureBtn: "untilMeasureBtn"
+              , stepBtn: "stepBtn"
+              , repeatBtn: "repeatBtn"
+              , stepMeasureBtn: "stepMeasureBtn"
+              , tempoSld: "tempoSld"
+              , GClefBtn: "GClefBtn"
+              , FClefBtn: "FClefBtn"
+              , currentPlayTimeLabel: "currentPlayTimeLabel"
+          } 
+        );
+    }
+
+    this.Back.push({listener:this, method:'closeAppView'}); 
+
+    if( that.tab.text ) {
+        SITE.ga('event', 'page_view', {
+            page_title: that.tab.title
+           ,page_path: SITE.root+'/'+that.accordion.getId()
+           ,event_category: 'View'
+        })        
+
+        var loader = SITE.startLoader( "openAppView" );
+        loader.start(  function() { 
+            that.appView.setup( that.tab, that.accordion.getId() );
+            loader.stop();
+        }, '<br/>&#160;&#160;&#160;'+SITE.translator.getResource('wait')+'<br/><br/>' );
+    }
+};
+
+SITE.App.prototype.setVisible = function ( visible ) {
+    this.container.style.display = (visible? 'block':'none');
+};
+
+SITE.App.prototype.showAccordionImage = function() {
+  this.gaitaImagePlaceHolder.innerHTML = '<img src="'+this.accordion.loaded.image
+        +'" alt="'+this.accordion.getFullName() + ' ' + SITE.translator.getResource('keys') + '" style="height:200px; width:200px;" />';
+};
+
+SITE.App.prototype.showAccordionName = function() {
+    var t = this.accordion.getFullName() + ' <span data-translate="keys">' + SITE.translator.getResource('keys') + '</span>';
+    this.accordionSelector.menu.setSubMenuTitle( this.accordionSelector.ddmId, t );
+};
+
+SITE.App.prototype.defineInstrument = function(onlySet) {
+    var that = this;
+    
+    that.instrument = SITE.properties.options.pianoSound ?  "acoustic_grand_piano" : "accordion" ;
+    
+    var setInstrument = function () {
+        var instrumentId = SITE.properties.options.pianoSound? 0: 21; // accordion
+        MIDI.programChange( 0, instrumentId );
+        MIDI.programChange( 1, instrumentId );
+        MIDI.programChange( 2, instrumentId );
+        MIDI.programChange( 3, instrumentId );
+        MIDI.programChange( 4, instrumentId );
+        MIDI.programChange( 5, instrumentId );
+    };
+    
+    if( onlySet ) {
+        setInstrument();
+        return;
+    }
+    
+    MIDI.widget = new sketch.ui.Timer({
+        size:180
+        //, container: document.getElementById('appDiv')
+        , cor1:SITE.properties.colors.close, cor2: SITE.properties.colors.open});
+    
+    MIDI.widget.setFormat( SITE.translator.getResource('loading'));
+
+    MIDI.loadPlugin({
+         soundfontUrl: "./soundfont/"
+        ,instruments: that.instrument
+        ,onprogress: function( total, done, currentPercent ) {
+            var percent = ((done*100)+currentPercent)/(total);
+            MIDI.widget.setValue(Math.round(percent));
+        }
+        ,callback: function() {
+            setInstrument();
+        }
+    });
+};
+
+SITE.App.prototype.showSettings = function() {
+
+    var that = this;
+
+    var width = 620;
+        
+    var x = 70;
+    
+    this.Back.push({listener:this, method:'closeSettings'}); 
+   
+    if(!this.settings) {
+        this.settings = {};
+        this.settings.popupWin = new DRAGGABLE.ui.Window( 
+              null 
+            , null
+            , { title: 'PreferencesTitle', translator: SITE.translator, statusbar: false, 
+                    top: "40px", left: x+"px", height:'530px',  width: width+'px', zIndex: 70 } 
+            , {listener: this, method: 'settingsCallback'}
+        );
+
+        SITE.ga('event', 'page_view', {
+            page_title: SITE.translator.getResource('PreferencesTitle')
+           ,page_path: SITE.root+'/settings'
+           ,event_category: 'View'
+        })        
+
+
+        this.settings.popupWin.topDiv.style.zIndex = 101;
+
+        this.settings.popupWin.dataDiv.innerHTML= '\
+        <div class="menu-group">\
+            <table>\
+              <tr>\
+                <th colspan="2"><span data-translate="PrefsIdiom" >'+SITE.translator.getResource('PrefsIdiom')+'</span></th>\
+                <th><div id="settingsLanguageMenu" class="topMenu"></div></th>\
+              </tr>\
+              <tr style="display:none;">\
+                <th colspan="2"><br><span data-translate="PrefsTabFormat" >'+SITE.translator.getResource('PrefsTabFormat')+'</span></th>\
+                <th><br><div id="settingsTabMenu" class="topMenu"></div></th>\
+              </tr>\
+              <tr style="height:40px; display:none;">\
+                <td> </td><td colspan="2"><div id="sldOnlyNumbers"></div>\
+                <span data-translate="PrefsPropsOnlyNumbers" >'+SITE.translator.getResource('PrefsPropsOnlyNumbers')+'</span></a></td>\
+              </tr>\
+              <tr>\
+                <th colspan="2"><br><span data-translate="PrefsColor" >'+SITE.translator.getResource('PrefsColor')+'</span></th><td></td>\
+              </tr>\
+              <tr>\
+                <td style="width:15px;"></td><td data-translate="PrefsColorHighlight" >'+SITE.translator.getResource('PrefsColorHighlight')+'</td>\
+                <td><input id="corRealce" type="text" readonly >&nbsp;<div id="sldTransparency"></div>\
+                        <span data-translate="PrefsColorTransparency" >'+SITE.translator.getResource('PrefsColorTransparency')+'</span></td>\
+              </tr>\
+              <tr>\
+                <td></td><td data-translate="PrefsColorClosingBellows" >'+SITE.translator.getResource('PrefsColorClosingBellows')+'</td>\
+                <td><input readonly id="foleFechando" type="text" ></td>\
+              </tr>\
+              <tr>\
+                <td></td><td data-translate="PrefsColorOpeningBellows" >'+SITE.translator.getResource('PrefsColorOpeningBellows')+'</td>\
+                <td><input readonly id="foleAbrindo" type="text" ></td>\
+              </tr>\
+              <tr>\
+                <th colspan="2"><br><span data-translate="PrefsProps" >'+SITE.translator.getResource('PrefsProps')+'</span></th><td></td>\
+              </tr>\
+              <tr style="height:40px;">\
+                <td> </td><td colspan="2"><div id="sldPianoSound"></div>\
+                <span data-translate="PrefsPropsCKPiano" >'+SITE.translator.getResource('PrefsPropsCKPiano')+'</span></a></td>\
+              </tr>\
+              <tr style="height:40px;">\
+                <td> </td><td colspan="2"><div id="sldKeyboardRight"></div>\
+                <span data-translate="PrefsPropsCKkeyboardAlignRight" >'+SITE.translator.getResource('PrefsPropsCKkeyboardAlignRight')+'</span></td>\
+              </tr>\
+              <tr style="height:40px;">\
+                <td> </td><td colspan="2"><div id="sldSuppressTitles"></div>\
+                <span data-translate="PrefsPropsChkSuppressTitles" >'+SITE.translator.getResource('PrefsPropsChkSuppressTitles')+'</span></td>\
+              </tr>\
+              <tr style="display:none;">\
+                <td> </td><td colspan="2"><input id="chkWarnings" type="checkbox">&nbsp;\
+                <span data-translate="PrefsPropsCKShowWarnings" >'+SITE.translator.getResource('PrefsPropsCKShowWarnings')+'</span></td>\
+              </tr>\
+              <tr style="display:none;">\
+                <td> </td><td colspan="2"><input id="chkAutoRefresh" type="checkbox">&nbsp;\
+                <span data-translate="PrefsPropsCKAutoRefresh" >'+SITE.translator.getResource('PrefsPropsCKAutoRefresh')+'</span></td>\
+              </tr>\
+              <tr style="height:30px; white-space:nowrap;">\
+                <td> </td><td colspan="2">\
+                <a id="aPolicy"    href="" style="width:25%; display:block; float: left;"><span data-translate="PrivacyTitle">Politica</span></a>\
+                </td>\
+              </tr>\
+              <tr style="height:30px; white-space:nowrap;">\
+                <td> </td><td colspan="2">\
+                <a id="aTerms" href="" style="width:fit-content; display:block; float: left;"><span data-translate="TermsTitle">Termos</span></a>\
+                </td>\
+              </tr>\
+              </table>\
+        </div>\
+        <div id="pg" class="pushbutton-group" style="right: 0; bottom: 0;" >\
+            <div id="botao1"></div>\n\
+            <div id="botao2"></div>\n\
+            <div id="botao3"></div>\n\
+        </div>';
+     
+        this.settings.sldOnlyNumbers = new DRAGGABLE.ui.Slider( document.getElementById( 'sldOnlyNumbers' ),
+            { min: 0, max: 1, start: 0, step:1, type: 'bin', speed:100, color: 'white', bgcolor:'red', size:{w:60 , h:25, tw:40}, callback: null } 
+        );
+
+        this.settings.sldTransparency = new DRAGGABLE.ui.Slider( document.getElementById( 'sldTransparency' ),
+            { min: 0, max: 1, start: 0, step:1, type: 'bin', speed:100, color: 'white', bgcolor:'red', size:{w:60 , h:25, tw:40}, callback: null } 
+        );
+
+        this.settings.sldPianoSound = new DRAGGABLE.ui.Slider( document.getElementById( 'sldPianoSound' ),
+            { min: 0, max: 1, start: 0, step:1, type: 'bin', speed:100, color: 'white', bgcolor:'red', size:{w:60 , h:25, tw:40}, callback: null } 
+        );
+
+        this.settings.sldKeyboardRight = new DRAGGABLE.ui.Slider( document.getElementById( 'sldKeyboardRight' ),
+            { min: 0, max: 1, start: 0, step:1, type: 'bin', speed:100, color: 'white', bgcolor:'red', size:{w:60 , h:25, tw:40}, callback: null } 
+        );
+
+        this.settings.sldSuppressTitles = new DRAGGABLE.ui.Slider( document.getElementById( 'sldSuppressTitles' ),
+            { min: 0, max: 1, start: 0, step:1, type: 'bin', speed:100, color: 'white', bgcolor:'red', size:{w:60 , h:25, tw:40}, callback: null } 
+        );
+
+        this.settings.popupWin.addPushButtons([
+            'botao1|apply',
+            'botao2|reset|PrefsReset',
+            'botao3|cancel'
+        ]);
+                
+        this.settings.menu = new DRAGGABLE.ui.DropdownMenu(
+               'settingsLanguageMenu'
+            ,  { listener:this, method: 'settingsCallback', translate: false  }
+            ,  [ {title: 'Idioma', ddmId: 'menuIdiomas', itens: [] } ]
+            );
+    
+        this.settings.tabMenu = new DRAGGABLE.ui.DropdownMenu(
+            'settingsTabMenu'
+            ,  { listener:this, method:'settingsCallback', translate: false }
+            ,  [{title: '...', ddmId: 'menuFormato',
+                    itens: [
+                        '&#160;Modelo Alemão|0TAB',
+                        '&#160;Numérica 1 (se disponível)|1TAB',
+                        '&#160;Numérica 2 (se disponível)|2TAB' 
+                    ]}]
+            );
+
+
+        this.aTerms = document.getElementById("aTerms");
+        this.aPolicy = document.getElementById("aPolicy");
+    
+        this.aPolicy.addEventListener("click", function(evt) {
+            evt.preventDefault();
+            this.blur();
+            that.Back.push({listener:that, method:'closeModal'}); 
+            if( SITE.properties.options.language.toUpperCase().indexOf('PT')>=0 )  {
+                that.modal.show('PrivacyTitle', '', 'privacidade/politica.html' );
+            } else {
+                that.modal.show('PrivacyTitle', '', 'privacy/policy.html');
+            }
+        }, false );
+    
+        this.aTerms.addEventListener("click", function(evt) {
+            evt.preventDefault();
+            this.blur();
+            that.Back.push({listener:that, method:'closeModal'}); 
+            if( SITE.properties.options.language.toUpperCase().indexOf('PT')>=0 )  {
+                that.modal.show('TermsTitle', '', 'privacidade/termos.e.condicoes.html' );
+            } else {
+                that.modal.show('TermsTitle', '', 'privacy/terms.n.conditions.html' );
+            }
+        }, false );
+
+        this.settings.tabFormat = SITE.properties.options.tabFormat;
+        this.settings.tabMenu.setSubMenuTitle( 'menuFormato', this.settings.tabMenu.selectItem( 'menuFormato', this.settings.tabFormat.toString()+"TAB" ));
+
+        this.picker = new DRAGGABLE.ui.ColorPicker(['corRealce', 'foleFechando', 'foleAbrindo'], {readonly: false, translator: SITE.translator});
+      
+        SITE.translator.menuPopulate(this.settings.menu, 'menuIdiomas');
+        
+        this.settings.lang = SITE.properties.options.language;
+
+        this.settings.corRealce = document.getElementById( 'corRealce');
+        this.settings.closeColor = document.getElementById( 'foleFechando');
+        this.settings.openColor = document.getElementById( 'foleAbrindo');
+
+        this.settings.showWarnings = document.getElementById( 'chkWarnings');
+        this.settings.autoRefresh = document.getElementById( 'chkAutoRefresh');
+        
+        SITE.translator.translate();
+    }          
+
+    this.settings.originalOnlyNumber = SITE.properties.options.tabShowOnlyNumbers;
+    this.settings.originalLang = SITE.properties.options.language;
+    this.settings.originalPianoSound = SITE.properties.options.pianoSound;
+    
+    this.settings.corRealce.style.backgroundColor = this.settings.corRealce.value = SITE.properties.colors.highLight;
+    this.settings.closeColor.style.backgroundColor = this.settings.closeColor.value = SITE.properties.colors.close;
+    this.settings.openColor.style.backgroundColor = this.settings.openColor.value = SITE.properties.colors.open ;
+
+    this.settings.sldOnlyNumbers.setValue(SITE.properties.options.tabShowOnlyNumbers?"1":"0", false);
+    this.settings.sldTransparency.setValue(SITE.properties.colors.useTransparency?"1":"0", false);
+    this.settings.sldPianoSound.setValue(SITE.properties.options.pianoSound?"1":"0", false);
+    this.settings.sldKeyboardRight.setValue(SITE.properties.options.keyboardRight?"1":"0", false);
+    this.settings.sldSuppressTitles.setValue(SITE.properties.options.suppressTitles?"1":"0", false);
+
+    this.settings.showWarnings.checked = SITE.properties.options.showWarnings;
+    this.settings.autoRefresh.checked = SITE.properties.options.autoRefresh;
+    
+    this.settings.popupWin.setVisible(true);
+    
+};
+
+SITE.App.prototype.settingsCallback = function (action, elem) {
+    switch (action) {
+        case '0TAB':
+        case '1TAB':
+        case '2TAB':
+            this.settings.tabFormat = action;
+            this.settings.tabMenu.setSubMenuTitle( 'menuFormato', this.settings.tabMenu.selectItem( 'menuFormato', action ));
+            break;
+        case 'de_DE':
+        case 'en_US':
+        case 'es_ES':
+        case 'fr_FR':
+        case 'it_IT':
+        case 'pt_BR':
+        case 'ru_RU':
+            this.settings.lang = action;
+            this.settings.menu.setSubMenuTitle( 'menuIdiomas', this.settings.menu.selectItem( 'menuIdiomas', action ));
+            break;
+        case 'MOVE':
+            break;
+        case 'CLOSE':
+        case 'CANCEL':
+            this.Back.pop();
+            this.picker.close();
+            this.settings.popupWin.setVisible(false);
+            break;
+        case 'APPLY':
+            SITE.properties.colors.highLight = this.settings.corRealce.value;
+            SITE.properties.colors.close = this.settings.closeColor.value;
+            SITE.properties.colors.open = this.settings.openColor.value;
+
+            SITE.properties.colors.useTransparency = this.settings.sldTransparency.getBoolValue();
+            SITE.properties.options.keyboardRight = this.settings.sldKeyboardRight.getBoolValue();
+            SITE.properties.options.suppressTitles = this.settings.sldSuppressTitles.getBoolValue();
+            SITE.properties.options.tabShowOnlyNumbers = this.settings.sldOnlyNumbers.getBoolValue();
+            SITE.properties.options.pianoSound = this.settings.sldPianoSound.getBoolValue();
+            SITE.properties.options.language = this.settings.lang;
+
+            SITE.properties.options.showWarnings = this.settings.showWarnings.checked;
+            SITE.properties.options.autoRefresh = this.settings.autoRefresh.checked;
+
+            this.Back.pop();
+            this.picker.close();
+            this.settings.popupWin.setVisible(false);
+            this.applySettings();
+            SITE.SaveProperties();
+            break;
+        case 'RESET':
+            this.alert = new DRAGGABLE.ui.Alert(
+                    this.settings.popupWin, action,
+                    '<br>'+SITE.translator.getResource('resetMsgTitle'),
+                    '<br>'+SITE.translator.getResource('resetMsgDescription'),
+                    {translator: SITE.translator} );
+            break;
+        case 'RESET-YES':
+            this.alert.close();
+            this.picker.close();
+            this.settings.popupWin.setVisible(false);
+            SITE.ResetProperties();
+            SITE.ga( 'event', 'reset', { 
+                event_category: 'Configuration'  
+               ,event_label: SITE.properties.version
+            });
+            
+            this.applySettings();
+            break;
+        case 'RESET-NO':
+        case 'RESET-CANCEL':
+            this.alert.close();
+            break;
+    }
+};
+
+SITE.App.prototype.applySettings = function() {
+
+    //fazer os ajustes quando selecionar o formato de tablatura
+    if( parseInt(this.settings.tabFormat) !== SITE.properties.options.tabFormat || 
+        this.settings.originalOnlyNumber !== SITE.properties.options.tabShowOnlyNumbers ) 
+    {
+        SITE.properties.options.tabFormat = parseInt(this.settings.tabFormat);
+        this.accordion.setFormatoTab(SITE.properties.options.tabFormat,!SITE.properties.options.tabShowOnlyNumbers)
+
+        if (this.appView) {
+            this.appView.accordion.setFormatoTab(SITE.properties.options.tabFormat,!SITE.properties.options.tabShowOnlyNumbers)
+        }
+    }
+
+    if( this.settings.originalLang !== SITE.properties.options.language ) {
+        SITE.ga( 'event', 'changeLang', { 
+            event_category: 'Configuration'  
+           ,event_label: SITE.properties.options.language
+        });
+        SITE.translator.loadLanguage( this.settings.lang, function () { SITE.translator.translate(); } );  
+        this.setVersionLang();
+        SITE.askHelp();
+    }
+    
+    if( this.settings.originalPianoSound !== SITE.properties.options.pianoSound ) {
+        SITE.ga( 'event', 'changeInstrument', { 
+            event_category: 'Configuration'  
+           ,event_label: SITE.properties.options.pianoSound?'piano':'accordion'
+        });
+        this.defineInstrument();
+    }
+
+    (this.appView) && this.appView.setKeyboardDetails()
+   
+    this.resizeActiveWindow();
+    
+    ABCXJS.write.color.useTransparency = SITE.properties.colors.useTransparency;
+    ABCXJS.write.color.highLight = SITE.properties.colors.highLight;
+    DIATONIC.map.color.close = SITE.properties.colors.close;
+    DIATONIC.map.color.open = SITE.properties.colors.open;
+    
+    this.accordion.loadedKeyboard.legenda.setOpen();
+    this.accordion.loadedKeyboard.legenda.setClose();
+};
+
+SITE.App.prototype.resizeActiveWindow = function() {
+    if(this.appView && window.getComputedStyle(this.appView.Div.parent).display !== 'none') {
+       this.appView.resize();
+    } else {    
+        this.resize();
+    }    
+};
+
+SITE.App.prototype.silencia = function(force) {
+    if(this.appView && window.getComputedStyle(this.appView.Div.parent).display !== 'none') {
+        if( this.appView.midiPlayer.playing) {
+            if(force )
+                this.appView.midiPlayer.stopPlay();
+            else
+                this.appView.startPlay('normal'); // pause
+        }
+    }
+};
+
+SITE.App.prototype.setVersionLang = function (  ) {
+    var that = this;
+    this.aVersion = document.getElementById("aVersion");
+
+    this.aVersion.addEventListener("click", function(evt) {
+        evt.preventDefault();
+        this.blur();
+        that.Back.push({listener:that, method:'closeModal'}); 
+        if( SITE.properties.options.language.toUpperCase().indexOf('PT')>=0 )  {
+            that.modal.show('AboutAppTitle', '', 'privacidade/sobreApp.html');
+        } else {
+            that.modal.show('AboutAppTitle', '', 'privacy/aboutApp.html' );
+        }
+    }, false );
+};
+
+SITE.App.prototype.closeSettings = function() {
+    this.settingsCallback('CLOSE');
+};
+
+SITE.App.prototype.closeModal = function( ) {
+        this.modal.close();
+        this.Back.pop();
+};
+
+SITE.App.prototype.closeAppView = function() {
+    this.appView.setVisible(false);
+    this.appView.keyboardWindow.setVisible(false);
+    this.appView.stopPlay();
+    SITE.SaveProperties();
+    this.Back.pop();
+};
+
+
+SITE.App.prototype.closeApp = function () {
+    window.DiatonicApp && window.DiatonicApp.closeApp();
+};
+
+SITE.App.prototype.goBackOrClose = function (  ) {
+    var o = this.Back[this.Back.length-1]; 
+    return o.listener[o.method] ();
+};
+
+SITE.App.prototype.setFocus = function() {
+    /*     if(this.appView && window.getComputedStyle(this.appView.Div.parent).display !== 'none') {
+            this.appView.editorWindow.aceEditor.focus();
+    } */
+}
+>>>>>>> eb813a117fa46d1f03aec15df00195538a5a4b95
     

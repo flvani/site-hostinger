@@ -3506,7 +3506,7 @@ window.ABCXJS.parse.Parse = function(transposer_, accordion_) {
                     
                 }
             }
-            if(switches!==undefined){
+            if( switches !== undefined ) {
                 if(switches.hideLyrics !== undefined){
                     multilineVars.hideLyrics = switches.hideLyrics
                 }
@@ -3515,7 +3515,7 @@ window.ABCXJS.parse.Parse = function(transposer_, accordion_) {
                 }
                 if(switches.ilheirasNumeradas !== undefined){
                     multilineVars.ilheirasNumeradas = switches.ilheirasNumeradas
-                }
+                } 
             }
             
             tune.setFormat(multilineVars);
@@ -12322,12 +12322,13 @@ ABCXJS.midi.Player.prototype.doResume = function(nonStop) {
     // to be compliant with autoplay-policy-changes #webaudio
     MIDI.resume();
     // não pergunte pq: no IOS tenho que tocar uma nota para garantir que não começe com pausa.
-    MIDI.noteOn(0, 40, 1, 0);
-    MIDI.noteOff(0, 40, 0.01);
-    MIDI.noteOn(1, 40, 1, 0);
-    MIDI.noteOff(1, 40, 0.01);
-    MIDI.noteOn(2, 40, 1, 0);
-    MIDI.noteOff(2, 40, 0.01);
+    var lowestNote = 20;
+    MIDI.noteOn(0, lowestNote, 1, 0);
+    MIDI.noteOff(0, lowestNote, 0.01);
+    MIDI.noteOn(1, lowestNote, 1, 0);
+    MIDI.noteOff(1, lowestNote, 0.01);
+    MIDI.noteOn(2, lowestNote, 1, 0);
+    MIDI.noteOff(2, lowestNote, 0.01);
 };
 
 ABCXJS.midi.Player.prototype.startPlay = function(what) {

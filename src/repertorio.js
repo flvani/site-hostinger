@@ -107,10 +107,12 @@ SITE.Repertorio.prototype.geraIndex = function( map ) {
                 continue; //não mostra itens hidden
             }
 
-            var title = t.replace( '(corona)', '' )
-                            .replace( '(club)', '' )
-                            .replace( '(transportada)', '' )
-                            .replace( '(portuguesa)', '' ).trim();
+            var title = t.replace( '(club)', '' )
+                        .replace( '(corona)', '' )
+                        .replace( '(corona-gcf)', '' )
+                        .replace( '(corona-adg)', '' )
+                        .replace( '(transportada)', '' )
+                        .replace( '(portuguesa)', '' ).trim();
                     
             var composer = this.accordion.loaded.songs.details[t].composer;
             var id = this.accordion.loaded.songs.details[t].id;
@@ -210,6 +212,24 @@ h += '<h2>Repertório Geral</h2>\n\
     
     h += '\
 </table>\n\
+</table>\n\
+<br><h2>Corona</h2>\n\
+<h3>Tablaturas para acordeões Corona Series A/D/G e/ou G/F/C</h3>\n\
+<table class="interna"><tr><th>Título</th>'+(map?'':'<th>Autor(es)</th>')+'<th class="center">A/D/G</th><th class="center">G/C/F</th></tr>\n\
+';
+    
+    for( var r = 0; r < repertorio.corona.length; r ++ ) {
+        idx=r+1;
+        h += '<tr>'
+                +'<td class="title" >'+idx+'.&nbsp;'+repertorio.corona[r].title+'</td>'
+                + (map? '\n': '<td class="composer" >'+repertorio.corona[r].composer+'</td>\n' )
+                +'<td class="center">' + this.makeAnchor( map, 'GAITA_HOHNER_CORONA_ADG', repertorio.corona[r].geral  ) 
+                +'</td>\n<td class="center">' + this.makeAnchor( map, 'GAITA_HOHNER_CORONA_GCF', repertorio.corona[r].outro ) 
+                +'</td></tr>\n';
+    }
+    
+    h += '\
+</table>\n\
 <br><h2>Transportada</h2>\n\
 <h3>Tablaturas para acordeão Transportado</h3>\n\
 <table class="interna"><tr><th>Título</th>'+(map?'':'<th>Autor(es)</th>')+'<th class="center">B/C</th></tr>\n\
@@ -239,24 +259,6 @@ h += '<h2>Repertório Geral</h2>\n\
     }
     
     h += '\
-</table>\n\
-<br><h2>Corona</h2>\n\
-<h3>Tablaturas para acordeões Corona Series A/D/G e/ou G/F/C</h3>\n\
-<table class="interna"><tr><th>Título</th>'+(map?'':'<th>Autor(es)</th>')+'<th class="center">A/D/G</th><th class="center">G/C/F</th></tr>\n\
-';
-    
-    for( var r = 0; r < repertorio.corona.length; r ++ ) {
-        idx=r+1;
-        h += '<tr>'
-                +'<td class="title" >'+idx+'.&nbsp;'+repertorio.corona[r].title+'</td>'
-                + (map? '\n': '<td class="composer" >'+repertorio.corona[r].composer+'</td>\n' )
-                +'<td class="center">' + this.makeAnchor( map, 'GAITA_HOHNER_CORONA_ADG', repertorio.corona[r].geral  ) 
-                +'</td>\n<td class="center">' + this.makeAnchor( map, 'GAITA_HOHNER_CORONA_GCF', repertorio.corona[r].outro ) 
-                +'</td></tr>\n';
-    }
-    
-    h += '\
-</table>\n\
 <br>\n\
 </body>\n\
 </html>\n\
